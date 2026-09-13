@@ -1,0 +1,20 @@
+Lettertypen in deze map
+========================
+
+DejaVuSans-Bold.ttf - DejaVu Fonts (vrij te distribueren).
+Zie https://dejavu-fonts.github.io/ voor de licentie.
+
+De overige lettertypen komen van Google Fonts (github.com/google/fonts)
+en staan onder de SIL Open Font License 1.1 (OFL), tenzij anders vermeld.
+Ze mogen vrij worden gebruikt en gebundeld. Bron per familie:
+https://fonts.google.com/ (zoek op de naam).
+
+Meegeleverd (of eenmalig opgehaald door install.bat):
+  Anton, Archivo Black, Audiowide, Barlow Condensed, Bebas Neue, Bungee,
+  Concert One, Kanit, Lilita One, Luckiest Guy, Passion One, Righteous,
+  Russo One, Saira Condensed, Titan One
+  (en optioneel de variabele fonts Oswald, Montserrat, Fredoka, Baloo 2,
+   Rubik wanneer install.bat ze ophaalt).
+
+install.bat controleert deze map bij installatie en haalt alleen
+ontbrekende lettertypen op; wat er al staat wordt niet opnieuw gedownload.

@@ -1,0 +1,2 @@
+Google Fonts (.ttf) worden hier door install.bat neergezet
+(alleen ontbrekende worden opgehaald). Handmatig aanleveren mag ook (B102).
