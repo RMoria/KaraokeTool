@@ -1,0 +1,37 @@
+MIT License
+
+Copyright (c) 2026 Rob Moria
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+
+Fonts
+
+assets/fonts/DejaVuSans-Bold.ttf is not covered by the licence above. It
+is part of the DejaVu Fonts and is distributed under the DejaVu Fonts
+Licence, a free licence derived from the Bitstream Vera Fonts Licence:
+https://dejavu-fonts.github.io/License.html
+
+The other font families this program can use are not part of this
+repository. install.bat fetches them from the Google Fonts repository
+(https://github.com/google/fonts), where every family carries its own
+licence - most of them the SIL Open Font License 1.1, some the Apache
+License 2.0. Those licences travel with the files themselves.

@@ -1,0 +1,44 @@
+# De virtuele omgeving en alles wat daaruit volgt
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Werkmappen: opnames, projecten, tussenresultaten
+input/
+output/
+cache/
+logs/
+config/
+bin/
+.write_test
+
+# Wordt bij elke start opnieuw geschreven
+docs/updates.json
+docs/pakketversies.json
+
+# Lettertypen haalt install.bat op; alleen de terugval staat in de repo
+assets/fonts/*.ttf
+!assets/fonts/DejaVuSans-Bold.ttf
+
+# Meetwerk: hoort bij een ijkverzameling, niet bij het programma
+docs/testhistorie.json
+docs/modelmatrix.md
+docs/modelcombinaties.md
+docs/metingen.md
+docs/testverslag.md
+docs/knipwoorden.txt
+docs/verslagen/
+
+# Interne werkorders en hulpmiddelen die niet naar buiten gaan
+docs/hernoeming_B299_B300.md
+tools/github_export.py
+.karaoketool-export
+
+# Reservekopieen en rommel van editors
+*.bak
+*.orig
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
