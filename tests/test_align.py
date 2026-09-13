@@ -1,0 +1,163 @@
+"""Tests voor modules.align (zonder librosa: pure numpy-onderdelen)."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from modules.align import (
+    OffsetRegion,
+    WindowOffset,
+    _build_regions,
+    _correlate_offset,
+    project_time,
+    regions_from_dicts,
+    regions_to_dicts,
+)
+from modules.config import AlignSettings
+
+
+def test_correlate_offset_finds_shift() -> None:
+    """Een verschoven kopie wordt op de juiste lag teruggevonden."""
+    rng = np.random.default_rng(42)
+    reference = rng.normal(size=(5, 2000)).astype(np.float32)
+    query = reference[:, 300:1300]
+    lag, confidence = _correlate_offset(reference, query)
+    assert lag == pytest.approx(300, abs=0.5)
+    assert confidence > 0.5
+
+
+def test_correlate_offset_negative_lag() -> None:
+    """Ook een negatieve verschuiving (karaoke begint eerder) werkt."""
+    rng = np.random.default_rng(7)
+    query = rng.normal(size=(3, 800)).astype(np.float32)
+    reference = query[:, 200:700]
+    lag, _ = _correlate_offset(reference, query)
+    assert lag == pytest.approx(-200, abs=0.5)
+
+
+def _window(start: float, offset: float, confidence: float = 0.8) -> WindowOffset:
+    return WindowOffset(start=start, end=start + 20.0, offset=offset,
+                        confidence=confidence)
+
+
+def test_build_regions_single_offset() -> None:
+    windows = [_window(t, -0.70) for t in (0.0, 10.0, 20.0, 30.0)]
+    regions = _build_regions(windows, 60.0, -0.70, 0.9, AlignSettings())
+    assert len(regions) == 1
+    assert regions[0].start == 0.0 and regions[0].end == 60.0
+    assert regions[0].offset == pytest.approx(-0.70)
+
+
+def test_build_regions_two_offsets() -> None:
+    windows = ([_window(t, -0.10) for t in (0.0, 10.0, 20.0)]
+               + [_window(t, -0.90) for t in (30.0, 40.0, 50.0)])
+    regions = _build_regions(windows, 80.0, -0.5, 0.5, AlignSettings())
+    assert len(regions) == 2
+    assert regions[0].offset == pytest.approx(-0.10)
+    assert regions[1].offset == pytest.approx(-0.90)
+    # Dekking is aaneengesloten van 0 tot duur.
+    assert regions[0].start == 0.0
+    assert regions[0].end == pytest.approx(regions[1].start)
+    assert regions[1].end == 80.0
+
+
+def test_build_regions_respects_max_offsets() -> None:
+    windows = ([_window(0.0, -0.10), _window(10.0, -0.15),
+                _window(20.0, -0.90), _window(30.0, -0.95)])
+    settings = AlignSettings(max_offsets=1, tolerance_ms=20)
+    regions = _build_regions(windows, 60.0, -0.5, 0.5, settings)
+    assert len(regions) == 1
+
+
+def test_build_regions_fallback_without_confidence() -> None:
+    windows = [_window(0.0, -0.3, confidence=0.01)]
+    regions = _build_regions(windows, 60.0, -0.42, 0.4, AlignSettings())
+    assert len(regions) == 1
+    assert regions[0].offset == pytest.approx(-0.42)
+
+
+def test_project_time() -> None:
+    regions = (OffsetRegion(0.0, 100.0, -0.5, 0.9),
+               OffsetRegion(100.0, 200.0, -1.0, 0.9))
+    assert project_time(50.0, regions) == pytest.approx(49.5)
+    assert project_time(150.0, regions) == pytest.approx(149.0)
+    # Buiten alle regio's: dichtstbijzijnde regio geldt.
+    assert project_time(250.0, regions) == pytest.approx(249.0)
+    assert project_time(10.0, ()) == pytest.approx(10.0)
+
+
+def test_regions_roundtrip() -> None:
+    regions = (OffsetRegion(0.0, 120.5, -0.7, 0.85),)
+    assert regions_from_dicts(regions_to_dicts(regions)) == regions
+
+
+def test_smooth_regions_rejects_local_outlier() -> None:
+    """Een LOSSE uitschieter tussen stabiele buren gaat naar de lokale trend.
+
+    (B249) De oude aanpak trok elke afwijking naar de globale mediaan en
+    dwong niet-dalende offsets af; dat sloeg echte drift plat. Nu wordt
+    alleen een uitschieter t.o.v. zijn buren bijgetrokken, terwijl een
+    geleidelijke helling behouden blijft (zie de drift-test hieronder).
+    """
+    from modules.align import OffsetRegion, _smooth_regions
+    regions = (OffsetRegion(0, 10, 0.70, 0.72),
+               OffsetRegion(10, 20, 4.40, 0.60),   # losse uitschieter
+               OffsetRegion(20, 30, 0.65, 0.50),
+               OffsetRegion(30, 40, 0.68, 0.52))
+    out = _smooth_regions(regions)
+    offsets = [r.offset for r in out]
+    assert max(offsets) < 1.0                       # uitschieter afgevlakt
+
+
+def test_smooth_regions_keeps_gradual_drift() -> None:
+    """Geleidelijke (ook dalende) drift blijft behouden (B249).
+
+    De karaoke kan over de duur vóór het origineel gaan lopen (offset zakt);
+    dat mag niet worden platgeslagen. Wel blijft de geprojecteerde tijd
+    monotoon (geen terugsprong).
+    """
+    from modules.align import (OffsetRegion, _smooth_regions, project_time)
+    regions = tuple(
+        OffsetRegion(i * 10.0, i * 10.0 + 10.0, -i * 1.5, 0.7)
+        for i in range(6))                          # 0, -1.5, -3, ... -7.5
+    out = _smooth_regions(regions)
+    offsets = [r.offset for r in out]
+    assert min(offsets) < -5.0                      # drift NIET platgeslagen
+    # Geprojecteerde tijd loopt niet terug.
+    times = [project_time(t, out) for t in range(0, 60, 2)]
+    assert times == sorted(times)
+
+
+def test_full_alignment_with_librosa(tmp_path) -> None:
+    """Integratietest met echte audio; wordt overgeslagen zonder librosa."""
+    pytest.importorskip("librosa")
+    from pathlib import Path
+
+    from modules.align import determine_offsets
+    from modules.audio import save_wav
+
+    rng = np.random.default_rng(3)
+    sample_rate = 22050
+    duration_s = 30
+    # Ritmisch signaal: ruis-bursts op onregelmatige plekken.
+    original = np.zeros(sample_rate * duration_s, dtype=np.float32)
+    for position_s in (1.0, 2.2, 4.1, 5.0, 7.3, 9.9, 12.0, 14.8, 17.1,
+                       19.5, 21.2, 24.4, 26.0, 28.3):
+        index = int(position_s * sample_rate)
+        original[index:index + 2000] = rng.normal(
+            0, 0.4, 2000).astype(np.float32)
+    shift = int(0.5 * sample_rate)  # karaoke begint 0,5 s later
+    karaoke = np.concatenate([np.zeros(shift, dtype=np.float32),
+                              original])[:original.size]
+
+    original_path = tmp_path / "original.wav"
+    karaoke_path = tmp_path / "karaoke.wav"
+    save_wav(original_path, original[:, None], sample_rate)
+    save_wav(karaoke_path, karaoke[:, None], sample_rate)
+
+    regions = determine_offsets(Path(original_path), Path(karaoke_path),
+                                AlignSettings(window_s=8.0, step_s=4.0))
+    assert regions
+    # offset = karaoke - origineel = +0,5 s
+    assert regions[0].offset == pytest.approx(0.5, abs=0.05)
