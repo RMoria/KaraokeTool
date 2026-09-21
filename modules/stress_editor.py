@@ -200,7 +200,7 @@ class SentenceCanvas(QWidget):
             return
 
 
-class KlemtoonEditorDialog(QDialog):
+class StressEditorDialog(QDialog):
     """The stress editor: pick a sentence, couple, and the rest fits."""
 
     def __init__(self, karaoke_lines: Sequence,

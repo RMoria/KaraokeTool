@@ -68,7 +68,8 @@ def export_result(
         ExportError: On an unknown source format or missing input.
     """
     if not processed_wav.exists():
-        raise ExportError(f"Bewerkt bestand niet gevonden: {processed_wav}")
+        raise ExportError(
+            t("err_export_processed_missing").format(path=processed_wav))
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = source_suffix.lower()
 
@@ -97,7 +98,8 @@ def export_result(
                               bitrate=bitrate)
         return target
 
-    raise ExportError(f"Onbekend bronformaat: {source_suffix}")
+    raise ExportError(
+        t("err_export_unknown_format").format(suffix=source_suffix))
 
 
 def nearest_cbr_bitrate(bit_rate: int | None) -> int:

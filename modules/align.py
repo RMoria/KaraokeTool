@@ -272,14 +272,14 @@ def _features(path: Path) -> tuple[np.ndarray, float]:
     try:
         import librosa
     except ImportError as exc:
-        raise AlignError("Het package 'librosa' is niet geïnstalleerd; "
-                         "draai install.bat opnieuw.") from exc
+        raise AlignError(t("err_librosa_missing")) from exc
     try:
         samples, _ = librosa.load(str(path), sr=_SR, mono=True)
     except Exception as exc:  # noqa: BLE001 - librosa/audioread errors
-        raise AlignError(f"Kan audio niet laden voor uitlijning: {path}") from exc
+        raise AlignError(
+            t("err_align_audio_unreadable").format(path=path)) from exc
     if samples.size < _SR:
-        raise AlignError(f"Audio te kort om uit te lijnen: {path}")
+        raise AlignError(t("err_align_audio_too_short").format(path=path))
 
     onset = librosa.onset.onset_strength(y=samples, sr=_SR, hop_length=_HOP)
     chroma = librosa.feature.chroma_stft(y=samples, sr=_SR, hop_length=_HOP)

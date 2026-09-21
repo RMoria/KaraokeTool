@@ -483,7 +483,7 @@ def test_the_mapping_is_read_the_way_it_is_written() -> None:
     not - which is the case the editor exists for."""
     from modules import gui
 
-    block = inspect.getsource(gui.MainWindow._open_klemtoon_editor)
+    block = inspect.getsource(gui.MainWindow._open_stress_editor)
     assert "by_karaoke = {int(k): int(v)" in block
     assert "for original_index, karaoke_index in" not in block
 
@@ -527,11 +527,11 @@ def test_releasing_a_coupling_puts_the_times_back(qapp=None) -> None:
     from PySide6.QtWidgets import QApplication
 
     QApplication.instance() or QApplication([])
-    from modules.stress_editor import KlemtoonEditorDialog
+    from modules.stress_editor import StressEditorDialog
 
     lines = [timing.timedline_from_text(0, "zing maar mee", 0.0, 3.0)]
     original = [timing.timedline_from_text(0, "sing along now", 0.0, 3.0)]
-    dialog = KlemtoonEditorDialog(lines, lambda *a: None,
+    dialog = StressEditorDialog(lines, lambda *a: None,
                                   original_lines=original)
     before = [(s.start, s.end) for s in dialog._karaoke[0].syllables]
     dialog._canvas._anchors[1] = 0
@@ -548,7 +548,7 @@ def test_closing_without_saving_changes_nothing() -> None:
     from modules import stress_editor
 
     source = inspect.getsource(
-        stress_editor.KlemtoonEditorDialog.done)
+        stress_editor.StressEditorDialog.done)
     assert "DialogCode.Accepted" in source
 
 

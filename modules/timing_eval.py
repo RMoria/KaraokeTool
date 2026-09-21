@@ -17,6 +17,8 @@ import statistics as _st
 from pathlib import Path
 from typing import Any, Sequence
 
+from .translations import t
+
 
 def load_rows(path: str | Path) -> list[dict[str, Any]]:
     """Read the line list from a timing file (object or list format)."""
@@ -63,14 +65,14 @@ def compare(auto_rows: Sequence[dict[str, Any]],
     (normalised) text count. Error measures in **milliseconds**.
 
     Returns:
-        ``{"per_block": {blok: {"onset": {...}, "duration": {...}}}, "total":
-        {"onset": {...}, "duration": {...}}}`` with per measure
-        ``n/gem/med/max``.
+        ``{"per_block": {block: {"onset": {...}, "duration": {...}}},
+        "total": {"onset": {...}, "duration": {...}}}`` with per measure
+        ``n/avg/med/max``.
     """
-    per_blok_on: dict[int, list[float]] = {}
-    per_blok_du: dict[int, list[float]] = {}
-    alle_on: list[float] = []
-    alle_du: list[float] = []
+    per_block_on: dict[int, list[float]] = {}
+    per_block_du: dict[int, list[float]] = {}
+    all_on: list[float] = []
+    all_du: list[float] = []
     for a, h in zip(auto_rows, ref_rows):
         if _norm(a.get("text")) != _norm(h.get("text")):
             continue
@@ -78,19 +80,19 @@ def compare(auto_rows: Sequence[dict[str, Any]],
         oa, oh = _onset(a), _onset(h)
         if oa is not None and oh is not None:
             error = abs(oa - oh) * 1000.0
-            per_blok_on.setdefault(block, []).append(error)
-            alle_on.append(error)
+            per_block_on.setdefault(block, []).append(error)
+            all_on.append(error)
         da, dh = _duration(a), _duration(h)
         if da is not None and dh is not None:
             error = abs(da - dh) * 1000.0
-            per_blok_du.setdefault(block, []).append(error)
-            alle_du.append(error)
+            per_block_du.setdefault(block, []).append(error)
+            all_du.append(error)
     per_block = {
-        block: {"onset": _stats(per_blok_on.get(block, [])),
-               "duration": _stats(per_blok_du.get(block, []))}
-        for block in sorted(set(per_blok_on) | set(per_blok_du))}
+        block: {"onset": _stats(per_block_on.get(block, [])),
+               "duration": _stats(per_block_du.get(block, []))}
+        for block in sorted(set(per_block_on) | set(per_block_du))}
     return {"per_block": per_block,
-            "total": {"onset": _stats(alle_on), "duration": _stats(alle_du)}}
+            "total": {"onset": _stats(all_on), "duration": _stats(all_du)}}
 
 
 def compare_paths(auto_path: str | Path,
@@ -100,17 +102,31 @@ def compare_paths(auto_path: str | Path,
 
 
 def format_report(result: dict[str, Any]) -> str:
-    """Make a readable per-block table (ms) from :func:`compare`."""
-    lines = ["blok |  n | onset gem |  onset max | duur gem",
-              "-----+----+-----------+------------+---------"]
-    for block, maten in result["per_block"].items():
-        on, du = maten["onset"], maten["duration"]
+    """Make a readable per-block table (ms) from :func:`compare`.
+
+    B562: this raised a ``KeyError`` on every call. It asked for
+    ``gem``, and :func:`_stats` has written ``avg`` since the rename of
+    B299 - so the only thing this function could produce was a
+    traceback, and the only caller is a command-line tool that was
+    itself broken (B550 found that one: it called ``vergelijk_paden``,
+    which was renamed in the same round). Two halves of one tool, both
+    dead, neither noticed, because nothing ran it. It has a test now.
+    """
+    # B562: the separators of the header sat one column to the left of
+    # the ones in the rows - the value is eight wide and "ms" makes ten
+    # in a column of eleven. Nobody had seen it, because this function
+    # raised before it could print anything.
+    header = t("eval_report_header")
+    rule = "-----+----+------------+------------+---------"
+    lines = [header, rule]
+    for block, measures in result["per_block"].items():
+        on, du = measures["onset"], measures["duration"]
         lines.append(f"{block:>4} | {on['n']:>2} | "
-                      f"{on['gem']:>8.0f}ms | {on['max']:>8.0f}ms | "
-                      f"{du['gem']:>6.0f}ms")
+                      f"{on['avg']:>8.0f}ms | {on['max']:>8.0f}ms | "
+                      f"{du['avg']:>6.0f}ms")
     tot = result["total"]["onset"]
-    lines.append("-----+----+-----------+------------+---------")
-    lines.append(f"totaal onset: gem {tot['gem']:.0f}ms, "
-                  f"med {tot['med']:.0f}ms, max {tot['max']:.0f}ms "
-                  f"(n={tot['n']})")
+    lines.append(rule)
+    lines.append(t("eval_report_total").format(
+        avg=f"{tot['avg']:.0f}", med=f"{tot['med']:.0f}",
+        max=f"{tot['max']:.0f}", n=tot["n"]))
     return "\n".join(lines)

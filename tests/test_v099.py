@@ -92,49 +92,76 @@ def test_no_literal_log_texts_left_in_the_modules() -> None:
                            "t(...):\n" + "\n".join(offenders))
 
 
-def test_the_literal_exception_texts_do_not_grow() -> None:
-    """The other half of the door, counted rather than closed (B550).
+def test_no_literal_exception_texts_left_in_the_modules() -> None:
+    """Every ``raise`` takes its text from the translation layer too.
 
-    The test above covers ``logger.x(...)``. It does not cover
-    ``raise SomeError("...")``, and that is where the language rule
-    still leaks: fifty-two of those stand in ``modules/``, nearly all
-    of them Dutch, and several reach the user through the log window
-    without following his language choice. Moving them all to the
-    translation layer is a job of its own - fifty-two texts, two
-    languages, and every one of them is something he reads - so it has
-    its own build number and is written down in the log rather than
-    half done here.
+    B550 counted these and held the number at fifty-two with a ratchet,
+    because moving them all was a job of its own: fifty-two texts, two
+    languages, and every one of them something the user reads in the
+    log window. B559 did that job, so the ratchet becomes the rule the
+    log lines have had since B356 - with the same reasoning. A message
+    that stays behind in Dutch stops following the language choice, and
+    the next one slips in the same way if nothing says no.
 
-    What this test does is stop it growing. A ratchet, like the TODO
-    lists of the language guard: the number may fall, and the moment it
-    does the number here has to fall with it. It may not rise.
+    ``modules/`` only, deliberately: `tools/` prints to a terminal for
+    whoever runs it by hand and has no language setting to follow.
+
+    A concatenation counts as a literal too. The first version of this
+    only looked at a plain string and an f-string, and the review
+    showed what that misses: ``raise ValueError("Breedte moet " +
+    str(n) + " zijn")`` walked straight through it.
     """
     import ast
 
+    def literal_text(node) -> str:
+        """The text a raise() spells out itself, if any."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            return "".join(piece.value for piece in node.values
+                           if isinstance(piece, ast.Constant))
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return literal_text(node.left) + literal_text(node.right)
+        return ""
+
     modules_dir = Path(__file__).resolve().parents[1] / "modules"
-    literal = []
+    offenders = []
     for path in sorted(modules_dir.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Raise)
                     and isinstance(node.exc, ast.Call) and node.exc.args):
                 continue
-            first = node.exc.args[0]
-            text = None
-            if isinstance(first, ast.Constant) \
-                    and isinstance(first.value, str):
-                text = first.value
-            elif isinstance(first, ast.JoinedStr):
-                text = "".join(piece.value for piece in first.values
-                               if isinstance(piece, ast.Constant))
+            text = literal_text(node.exc.args[0])
             if text and text.strip():
-                literal.append(f"{path.name}:{node.lineno}")
-    assert len(literal) <= 52, (
-        "more raise() texts outside the translation layer than there "
-        "were: " + ", ".join(literal))
-    assert len(literal) >= 52, (
-        f"only {len(literal)} left - lower the number in this test, "
-        "otherwise it stops being a ratchet")
+                offenders.append(f"{path.name}:{node.lineno} {text[:50]!r}")
+    assert not offenders, ("raise() with a literal text instead of "
+                           "t(...):\n" + "\n".join(offenders))
+
+
+def test_no_translation_key_is_written_twice() -> None:
+    """A key that stands twice in one table is a dead text.
+
+    Found while adding the fifty-two of B559: ``err_ffmpeg_missing``
+    already existed, the new one was written under the same name, and
+    Python keeps the last - so one of the two messages was simply gone
+    and nothing said a word. ``log_startup_size`` had been standing
+    twice since long before that, for the same reason.
+    """
+    import ast
+    from collections import Counter
+
+    path = (Path(__file__).resolve().parents[1] / "modules"
+            / "translations.py")
+    doubles = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if not (isinstance(node, ast.Dict) and len(node.keys) > 50):
+            continue
+        keys = [k.value for k in node.keys
+                if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+        doubles += [f"line {node.lineno}: {key}"
+                    for key, count in Counter(keys).items() if count > 1]
+    assert not doubles, "keys written twice: " + ", ".join(doubles)
 
 
 def test_the_log_keys_really_exist() -> None:

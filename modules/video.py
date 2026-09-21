@@ -391,8 +391,8 @@ def render_video(
     """
     untimed = [line.index for line in lines if line.end <= 0]
     if untimed:
-        raise VideoError("timing.json bevat regels zonder tijden "
-                         f"(regelnummers {untimed[:8]}); vul de timing in.")
+        raise VideoError(
+            t("err_timing_untimed_lines").format(lines=untimed[:8]))
     # The order of the karaoke text is leading; there is NO sorting on
     # time, so that all lines appear in the given order.
     palette = colors or _DEFAULT_COLORS
@@ -428,7 +428,7 @@ def render_video(
     # place on screen.
     main_lines = list(ordered)
     if not main_lines:
-        raise VideoError("Geen zangregels in timing.json.")
+        raise VideoError(t("err_timing_no_lines"))
 
     # The audio shifts with the same silence, so effectively longer.
     # B530: the properties are kept - the number of channels decides how
@@ -455,12 +455,13 @@ def render_video(
     try:
         logo = Image.open(logo_path).convert("RGBA")
     except OSError as exc:
-        raise VideoError(f"Logo onleesbaar: {logo_path}") from exc
+        raise VideoError(
+            t("err_logo_unreadable").format(path=logo_path)) from exc
     logo_large = _scale(logo, int(height * 0.45))  # larger logo (B71)
 
     executable = ffmpeg_module.find_executable("ffmpeg")
     if executable is None:
-        raise VideoError("ffmpeg niet gevonden (zie README.md).")
+        raise VideoError(t("err_video_ffmpeg_missing"))
     target.parent.mkdir(parents=True, exist_ok=True)
     # B468: ffmpeg used to write straight onto ``target`` with ``-y``. It
     # truncates that file the moment it starts, so a render that was
@@ -596,8 +597,8 @@ def render_video(
     except BrokenPipeError as exc:
         process.wait()
         _discard(scratch)
-        raise VideoError("ffmpeg brak de verbinding af: "
-                         f"{_stderr(process)}") from exc
+        raise VideoError(t("err_video_ffmpeg_disconnected").format(
+            detail=_stderr(process))) from exc
     except BaseException:
         # Anything else that can go wrong while pumping frames (a picture
         # that will not load, a write error that Windows does not report
@@ -608,7 +609,8 @@ def render_video(
         proc.unregister(process)
     if process.returncode != 0:
         _discard(scratch)
-        raise VideoError(f"ffmpeg faalde: {_stderr(process)}")
+        raise VideoError(
+            t("err_video_ffmpeg_failed").format(detail=_stderr(process)))
     # B530: the render checks its own result before it is put in place.
     # The picture was shifted forward by ``lead_padding`` and exactly
     # that much silence has to stand in front of the sound; if it does

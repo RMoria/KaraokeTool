@@ -5242,6 +5242,100 @@ What of the list is NOT in it, and why:
   pause lasts about two. Changing either without measuring is guessing;
   the yardstick (1.5.5/1.5.10) can say what it does.
 
+Included in v1.0.7:
+
+- **B559 - the last fifty-two texts that did not follow the language
+  choice.** Every `raise SomeError("...")` in `modules/` carried its
+  message literally. Not an aesthetic matter: several of them are what
+  the user reads in the log window when something goes wrong - no
+  ffmpeg, a broken configuration file, a transcription that failed -
+  and they stayed Dutch whatever language he chose, while every log
+  line had been going through `t(...)` since B356.
+
+  The guard of B356 covers `logger.x(...)` and nothing else, which is
+  how a whole second class slipped past it. B550 found them, counted
+  them, and could do no more than hold the number at fifty-two with a
+  ratchet, because moving them is fifty-two texts in two languages and
+  every one of them something he reads. That is done now, and the
+  ratchet has become the rule: a `raise` with a literal text turns the
+  suite red, exactly as a `logger` call does.
+
+  Fifty of the fifty-two render byte for byte what they rendered
+  before - whitespace, `!r` quoting, format specifications and all,
+  checked one by one against the v1.0.6 files. Deliberately: he reads
+  these sentences, three tests match on their wording, and a rewrite
+  dressed up as a move is how a conversion quietly changes behaviour.
+  The two that did move are the `KeyError` texts in
+  `modules/dependencies.py`, which were English where everything
+  around them was Dutch; those now follow the language like the rest.
+  The English side is new throughout and is a translation, not a
+  paraphrase.
+
+  Two things fell out of it. `err_ffmpeg_missing` already existed with
+  another text, and the new key went in under the same name - Python
+  keeps the last one in a dict literal, so one of the two messages was
+  gone and nothing said a word. That one was made and unmade within
+  this release; `log_startup_size` had been standing twice in the
+  shipped tree for a long time, for exactly the same reason.
+  `test_no_translation_key_is_written_twice` refuses both from now on.
+  It is the kind of mistake that only a machine notices: two identical
+  keys are three hundred lines apart and both look right.
+
+  The rule itself has one more hole than the first version of it saw.
+  A concatenation - `raise ValueError("Breedte moet " + str(n) + "
+  zijn")` - is a literal too, and walked straight through a check that
+  only looked at plain strings and f-strings. It counts now. The scope
+  is `modules/` on purpose: `tools/` prints to a terminal for whoever
+  runs it by hand, and there is no language setting to follow there.
+
+- **B560 - the Dutch identifiers no stem caught, and why there was
+  always one.** The deny-list of the language guard can never be a
+  dictionary; that is written down and it is true. But it also had a
+  bug: `DUTCH_STEMS` cut the pattern on its LAST bracket, which is the
+  one of the trailing `(_|$)`, so the final stem came out as `zoek)(_`
+  plus a stray `$` - whichever word stood last in the list was dead.
+  Two people had noticed the symptom and worked around it by keeping a
+  known-dead word in last place, rather than looking at the cut. It
+  reads the first bracket now, which is the group of stems.
+
+  Then the renames themselves: `cel`, `uit` and `op_een_cel` in
+  `modules/timing_editor.py`; eleven locals in `modules/gui.py`;
+  eleven in `tools/rename_identifiers.py`, which was almost entirely
+  Dutch inside. And one public name, `KlemtoonEditorDialog` in
+  `modules/stress_editor.py` - the module had been renamed long ago
+  and the class inside it had not. Ten stems were added to the
+  deny-list and a dozen rejected because they also live inside an
+  English word: `cel` in "cell", `uit` in "fruit", `pad` in "padded",
+  `lang` in "language". Eleven were added in the end, and none of them
+  matches a single identifier anywhere in the tree - checked, because
+  a guard with false alarms is a guard that gets switched off.
+
+- **B561 - the report words go through the translation layer too.**
+  The per-project text report in `modules/test_panel.py` and the table
+  of `modules/timing_eval.py` wrote their Dutch straight into the
+  output. Same class as the fifty-two, same answer.
+
+- **B562 - `format_report` raised a `KeyError` on every call.** It
+  asked for `gem`, and `_stats` has written `avg` since the rename of
+  B299. So the only thing that function could produce was a traceback
+  - and its one caller, `tools/timing_eval.py`, was broken in the same
+  round (B550 found that one: it called `vergelijk_paden`, renamed at
+  B379). Two halves of one tool, both dead for a hundred versions,
+  neither noticed, because nothing ever ran it. Both halves work now
+  and there is a test that actually runs the thing, which is the whole
+  lesson: a tool without a test is a tool that has stopped working and
+  has not told anyone.
+
+  The first version of that test did not run it either. It fed rows
+  without syllables, and the measures are taken from the syllables -
+  so `per_block` came back empty, the loop that reads `avg` never
+  executed, and the test passed against the broken code. The review
+  proved it by putting `gem` back and watching the suite stay green.
+  It now asserts on the per-block rows themselves. And with the table
+  finally printing, a second thing showed up that had been wrong all
+  along: the header put its separators one column to the left of the
+  rows. The test checks the columns line up.
+
 Included in v1.0.6:
 
 - **B555 - the last two Dutch names, and the only ones he also sees in

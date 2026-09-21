@@ -390,9 +390,13 @@ def _text_rows(context, report: Reporter, cancelled) -> list[str]:
         if not lyrics_blocks or not karaoke_blocks:
             return []
         same = (len(lyrics_blocks) == len(karaoke_blocks) and sum(lyrics_blocks) == sum(karaoke_blocks))
-        return [f"{song:30s} songtekst {sum(lyrics_blocks):3d}/{len(lyrics_blocks):2d} blok"
-                f"  karaoke {sum(karaoke_blocks):3d}/{len(karaoke_blocks):2d} blok"
-                f"{'' if same else '   <<< WIJKT AF'}"]
+        return [t("report_text_blocks").format(
+            song=f"{song:30s}",
+            lyrics_lines=f"{sum(lyrics_blocks):3d}",
+            lyrics_blocks=f"{len(lyrics_blocks):2d}",
+            karaoke_lines=f"{sum(karaoke_blocks):3d}",
+            karaoke_blocks=f"{len(karaoke_blocks):2d}",
+            flag="" if same else t("report_text_blocks_differ"))]
 
     return across_projects(context, _projects(context), per_project,
                           report, cancelled)

@@ -1,17 +1,17 @@
-"""Scope-bewust hernoemen van identifiers (B299, fase 2)."""
+"""Scope-aware renaming of identifiers (B299, phase 2)."""
 import ast, json, pathlib, sys
 
-def offsets(bron):
-    uit, pos = [0], 0
-    for r in bron.splitlines(keepends=True):
-        pos += len(r); uit.append(pos)
-    return uit
+def offsets(source):
+    out, pos = [0], 0
+    for r in source.splitlines(keepends=True):
+        pos += len(r); out.append(pos)
+    return out
 
-def punten_voor(bron, mapping):
-    boom = ast.parse(bron)
-    off = offsets(bron)
-    punten = []
-    for node in ast.walk(boom):
+def points_for(source, mapping):
+    tree = ast.parse(source)
+    off = offsets(source)
+    points = []
+    for node in ast.walk(tree):
         name = col = lineno = None
         if isinstance(node, ast.Name):
             name, lineno, col = node.id, node.lineno, node.col_offset
@@ -20,10 +20,10 @@ def punten_voor(bron, mapping):
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if node.name in mapping:
                 # the name follows 'def '/'class ' on the def line
-                line = bron[off[node.lineno-1]:off[node.lineno]]
+                line = source[off[node.lineno-1]:off[node.lineno]]
                 idx = line.find(node.name)
                 if idx >= 0:
-                    punten.append((off[node.lineno-1]+idx,
+                    points.append((off[node.lineno-1]+idx,
                                    off[node.lineno-1]+idx+len(node.name), node.name))
             continue
         elif isinstance(node, ast.Attribute):
@@ -32,34 +32,36 @@ def punten_voor(bron, mapping):
                 start_search = (off[node.value.end_lineno-1]
                                 + node.value.end_col_offset)
                 end_search = off[node.end_lineno-1] + node.end_col_offset
-                stuk = bron[start_search:end_search]
-                idx = stuk.rfind(node.attr)
+                piece = source[start_search:end_search]
+                idx = piece.rfind(node.attr)
                 if idx >= 0:
-                    punten.append((start_search+idx,
+                    points.append((start_search+idx,
                                    start_search+idx+len(node.attr),
                                    node.attr))
             continue
         if name and name in mapping:
             s = off[lineno-1] + col
-            punten.append((s, s+len(name), name))
-    return sorted(set(punten), reverse=True)
+            points.append((s, s+len(name), name))
+    return sorted(set(points), reverse=True)
 
 def main():
-    wortel = pathlib.Path(sys.argv[1])
+    root = pathlib.Path(sys.argv[1])
     mapping = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
-    n_best = n_verv = 0
-    for pad in sorted(wortel.rglob("*.py")):
-        if "__pycache__" in str(pad): continue
-        bron = pad.read_text(encoding="utf-8")
-        try: punten = punten_voor(bron, mapping)
+    n_files = n_replaced = 0
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in str(path): continue
+        source = path.read_text(encoding="utf-8")
+        try: points = points_for(source, mapping)
         except SyntaxError as e:
-            print(f"  !! {pad}: {e}"); continue
-        if not punten: continue
-        for s, e, oud in punten:
-            if bron[s:e] != oud: continue          # veiligheidscheck
-            bron = bron[:s] + mapping[oud] + bron[e:]
-            n_verv += 1
-        pad.write_text(bron, encoding="utf-8"); n_best += 1
-    print(f"bestanden: {n_best}, vervangingen: {n_verv}")
+            print(f"  !! {path}: {e}"); continue
+        if not points: continue
+        for s, e, old in points:
+            if source[s:e] != old: continue          # safety check
+            source = source[:s] + mapping[old] + source[e:]
+            n_replaced += 1
+        path.write_text(source, encoding="utf-8"); n_files += 1
+    print(f"files: {n_files}, replacements: {n_replaced}")
 
-main()
+
+if __name__ == "__main__":
+    main()

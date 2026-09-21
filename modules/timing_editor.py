@@ -380,19 +380,19 @@ class TimingCanvas(QWidget):
         orig_cells = timing_module.original_view_cells(
             self._originals, self._view_mode, line_block)
         self._orig_cells = orig_cells
-        for oi, cel in enumerate(orig_cells):
-            ox1 = cel["start"] * self._pps
-            ox2 = cel["end"] * self._pps
+        for oi, cell in enumerate(orig_cells):
+            ox1 = cell["start"] * self._pps
+            ox2 = cell["end"] * self._pps
             y = _ORIG_LANE_TOP + (oi % 2) * _ORIG_ROW_H
-            rows = cel.get("rows") or []
-            uit = bool(rows) and all(
+            rows = cell.get("rows") or []
+            disabled = bool(rows) and all(
                 self._lines[r].get("disabled")
                 for r in rows if 0 <= r < len(self._lines))
             # Mirrored standalone crowd line (B193): exists only in the
             # karaoke, not real original text. Red/dotted instead of the
             # usual beige, so that it is not mistaken for original text
             # among the real original sentences (B257).
-            is_crowd = bool(cel.get("crowd"))
+            is_crowd = bool(cell.get("crowd"))
             # B499: this sentence is fetched back from the original, so
             # THIS block is blue - the text stays readable.
             own = [r for r in rows if 0 <= r < len(self._lines)]
@@ -400,7 +400,7 @@ class TimingCanvas(QWidget):
                 self._lines[r].get("restore") for r in own)
             moved = fetched and any(int(self._lines[r]["index"])
                                     in self._moved_restores for r in own)
-            if uit:
+            if disabled:
                 fill_color = QColor(200, 200, 200, 120)
             elif fetched:
                 fill_color = _ORIG_RESTORE
@@ -425,15 +425,15 @@ class TimingCanvas(QWidget):
                                 style))
             painter.drawRect(int(ox1), y, max(3, int(ox2 - ox1)),
                              _ORIG_ROW_H - 4)
-            painter.setPen(QPen(QColor(120, 120, 120) if uit
+            painter.setPen(QPen(QColor(120, 120, 120) if disabled
                                 else QColor(90, 30, 30) if is_crowd
                                 else QColor(60, 50, 30)))
-            prefix = "[uit] " if uit else ("[crowd] " if is_crowd else "")
+            prefix = "[uit] " if disabled else ("[crowd] " if is_crowd else "")
             # B485: the background piece belongs to this sentence and is
             # shown with it, between brackets so that it is clear it is
             # not sung along with.
-            background = str(cel.get("bg") or "")
-            text_value = prefix + cel["text"] + (
+            background = str(cell.get("bg") or "")
+            text_value = prefix + cell["text"] + (
                 f"  [{background}]" if background else "")
             painter.drawText(int(ox1) + 4, y + 18,
                              text_value[:int((ox2 - ox1) / 7) or 1])
@@ -458,22 +458,22 @@ class TimingCanvas(QWidget):
         from . import timing as timing_module
         self._cells = timing_module.editor_view_cells(self._lines,
                                                       self._view_mode)
-        for row, cel in enumerate(self._cells):
-            x1, x2 = cel["start"] * self._pps, cel["end"] * self._pps
+        for row, cell in enumerate(self._cells):
+            x1, x2 = cell["start"] * self._pps, cell["end"] * self._pps
             y = _LANES_TOP + (row % 3) * 34
-            uit = cel.get("uit", False)
-            rows = cel.get("rows") or []
+            disabled = cell.get("uit", False)
+            rows = cell.get("rows") or []
             # B499: the karaoke text stays as it is. The marking belongs
             # to the ORIGINAL that is fetched back, so it is shown there;
             # colouring the karaoke sentence blue as well hid the very
             # text the user is working on.
-            background = bool(cel.get("bg"))       # B507
-            if uit:
+            background = bool(cell.get("bg"))       # B507
+            if disabled:
                 fill = QColor(200, 200, 200, 120)   # disabled = grey
             elif background:
                 fill = _BG_BLOCK
             else:
-                fill = _RED if cel["crowd"] else _GREEN
+                fill = _RED if cell["crowd"] else _GREEN
             painter.fillRect(int(x1), y, max(3, int(x2 - x1)), 28, fill)
             # B499: the sentence keeps its text and its colour, but a
             # blue border says that it is fetched back from the original
@@ -497,10 +497,10 @@ class TimingCanvas(QWidget):
                                 else 1,
                                 Qt.DotLine if background else Qt.SolidLine))
             painter.drawRect(int(x1), y, max(3, int(x2 - x1)), 28)
-            painter.setPen(QPen(QColor(120, 120, 120) if uit
+            painter.setPen(QPen(QColor(120, 120, 120) if disabled
                                 else QColor(70, 110, 75) if background
                                 else QColor(40, 40, 40)))
-            label = ("[uit] " + cel["text"]) if uit else cel["text"]
+            label = ("[uit] " + cell["text"]) if disabled else cell["text"]
             painter.drawText(int(x1) + 4, y + 19,
                              label[:int((x2 - x1) / 7) or 1])
 
@@ -568,31 +568,31 @@ class TimingCanvas(QWidget):
         moment = position.x() / self._pps
         # Clicking a cell selects it (for disabling/enabling, B180) - in
         # every view, including 'woorden'.
-        op_een_cel = False                      # B414
-        for ci, cel in enumerate(getattr(self, "_cells", [])):
+        on_a_cell = False                      # B414
+        for ci, cell in enumerate(getattr(self, "_cells", [])):
             y = _LANES_TOP + (ci % 3) * 34
             if (y <= position.y() <= y + 28
-                    and cel["start"] * self._pps <= position.x()
-                    <= cel["end"] * self._pps):
+                    and cell["start"] * self._pps <= position.x()
+                    <= cell["end"] * self._pps):
                 # B507: a background block selects nothing - but the
                 # click DID land on a block, so it must not fall through
                 # to a later cell (three positions on is the same row)
                 # and it must not move the playhead either.
-                if not cel.get("rows"):
-                    op_een_cel = True
+                if not cell.get("rows"):
+                    on_a_cell = True
                     break
                 self._sel_cell = ci
                 self._sel_orig = None          # karaoke selection wins (B198)
                 self.update()
-                op_een_cel = True
+                on_a_cell = True
                 break
         # Clicking a cell in the original lane selects it, so that a line
         # can be disabled/enabled there as well (B198).
-        for oi, cel in enumerate(getattr(self, "_orig_cells", [])):
+        for oi, cell in enumerate(getattr(self, "_orig_cells", [])):
             y = _ORIG_LANE_TOP + (oi % 2) * _ORIG_ROW_H
             if (y <= position.y() <= y + _ORIG_ROW_H - 4
-                    and cel["start"] * self._pps <= position.x()
-                    <= cel["end"] * self._pps):
+                    and cell["start"] * self._pps <= position.x()
+                    <= cell["end"] * self._pps):
                 self._sel_orig = oi
                 self._sel_cell = None
                 self.update()
@@ -600,7 +600,7 @@ class TimingCanvas(QWidget):
         # Dragging/stretching on cells: in 'zinnen' per line, in 'blokken'
         # per block (B162). In the 'words' view only for orientation.
         if self._view_mode in ("sentences", "blocks"):
-            for ci, cel in enumerate(getattr(self, "_cells", [])):
+            for ci, cell in enumerate(getattr(self, "_cells", [])):
                 y = _LANES_TOP + (ci % 3) * 34
                 if not (y <= position.y() <= y + 28):
                     continue
@@ -608,10 +608,10 @@ class TimingCanvas(QWidget):
                 # moves with the sentence it belongs to; grabbing it
                 # separately would let the user pull it loose from its
                 # own line, and it has no rows to move anyway.
-                if not cel.get("rows"):
+                if not cell.get("rows"):
                     continue
                 mode = self._hit_mode(position.x(),
-                                      (cel["start"], cel["end"]))
+                                      (cell["start"], cell["end"]))
                 if mode is not None:
                     self._drag = ("cel", ci, mode, moment)
                     return
@@ -633,7 +633,7 @@ class TimingCanvas(QWidget):
         # screen and the place you are looking anyway when you are
         # timing a line. Only the empty spots: hitting a block still
         # means grabbing that block, and that is caught above.
-        in_text_lane = position.y() >= _LANES_TOP and not op_een_cel
+        in_text_lane = position.y() >= _LANES_TOP and not on_a_cell
         if position.y() <= _AXIS_TOP + 20 or in_vocal_lane or in_text_lane:
             # Click (on the waveforms/time bar, the vocal stem lane
             # (B230) or an empty spot in the text lane): playhead +
@@ -670,11 +670,11 @@ class TimingCanvas(QWidget):
             self.update()
             return
         # kind == "cel": one sentence (zinnen) or a whole block (blokken).
-        cel = self._cells[row] if row < len(self._cells) else None
-        if cel is None:
+        cell = self._cells[row] if row < len(self._cells) else None
+        if cell is None:
             return
-        rows = cel.get("rows", [])
-        start, end = cel["start"], cel["end"]
+        rows = cell.get("rows", [])
+        start, end = cell["start"], cell["end"]
         limit = self._duration                    # B345
         if mode == "verplaats":
             width = end - start
@@ -751,12 +751,13 @@ class TimingCanvas(QWidget):
         """Show a <-> cursor when the mouse is on a stretchable edge."""
         on_edge = False
         if self._view_mode in ("sentences", "blocks"):
-            for ci, cel in enumerate(self._cells):
+            for ci, cell in enumerate(self._cells):
                 top = _LANES_TOP + (ci % 3) * 34
-                if not cel.get("rows"):        # B507: background block
+                if not cell.get("rows"):        # B507: background block
                     continue
                 if top <= y <= top + 28 and self._hit_mode(
-                        x, (cel["start"], cel["end"])) in ("links", "rechts"):
+                        x, (cell["start"], cell["end"])) in (
+                        "links", "rechts"):
                     on_edge = True
                     break
         if not on_edge:

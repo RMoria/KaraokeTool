@@ -10,6 +10,7 @@ import logging
 import math
 
 import numpy as np
+from .translations import t
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ def compute_peaks(samples: np.ndarray, columns: int) -> np.ndarray:
         per time slot, normalised to 0..1.
     """
     if columns < 1:
-        raise ValueError("columns moet minimaal 1 zijn")
+        raise ValueError(t("err_columns_minimum"))
     mono = np.abs(samples)
     if mono.ndim > 1:
         mono = mono.max(axis=1)
@@ -48,7 +49,7 @@ def compute_peaks(samples: np.ndarray, columns: int) -> np.ndarray:
 def resample_peaks(peaks: np.ndarray, width: int) -> np.ndarray:
     """Scale a peak series to another width (max per range)."""
     if width < 1:
-        raise ValueError("width moet minimaal 1 zijn")
+        raise ValueError(t("err_width_minimum"))
     if len(peaks) == width:
         return peaks
     edges = np.linspace(0, len(peaks), width + 1).astype(int)

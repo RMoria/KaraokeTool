@@ -52,7 +52,9 @@ DUTCH = re.compile(
     r"vensters|lettergreep|instelling|verslag|historie|overgeslagen|"
     r"varianten|huidig|ruimer|terugval|nulmeting|opnieuw|gekozen|"
     r"zichtbare|acties|actie|vinkjes|knop|achtergrond|voorvoegsel|"
-    r"vooraf|haalt|fout|aantal|waarde|naam|zoek)(_|$)", re.I)
+    r"vooraf|haalt|fout|aantal|waarde|naam|activiteit|bron|"
+    r"diagnostiek|keuze|leeg|patronen|punten|verbergen|voor|wortel|"
+    r"zoek|klemtoon)(_|$)", re.I)
 
 #: Words that exist in Dutch and not in English. Function words only:
 #: they are what prose is made of, they are too common to avoid, and
@@ -157,8 +159,15 @@ def _dutch_identifiers(path: Path) -> list[str]:
 
 
 #: The stems of :data:`DUTCH`, on their own, for the check below.
+#:
+#: B560: this used to cut the pattern on its LAST bracket, which is the
+#: one of the trailing ``(_|$)`` - so the final stem came out as
+#: ``zoek)(_`` and a stray ``$``, and whichever word stood last in the
+#: list was quietly dead. Two people worked around that by keeping a
+#: known-dead word in last place instead of fixing it. The group of
+#: stems is the FIRST bracket, so that is the one to read.
 DUTCH_STEMS = tuple(part for part in
-                    DUTCH.pattern.split("(", 1)[1].rsplit(")", 1)[0].split("|")
+                    DUTCH.pattern.split("(", 1)[1].split(")", 1)[0].split("|")
                     if part)
 
 

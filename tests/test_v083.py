@@ -163,3 +163,47 @@ def test_config_roundtrip_timing_arbitration(tmp_path) -> None:
     assert back.advanced.block_anchor_barrier is False
     assert back.advanced.anchor_weight_high == 2.5
     assert back.advanced.anchor_weight_onset == 12.0
+
+
+def test_format_report_really_runs(tmp_path) -> None:
+    """B562: it raised a KeyError on every call.
+
+    ``format_report`` asked for ``gem`` while ``_stats`` has written
+    ``avg`` since B299, so the only thing it could produce was a
+    traceback - and its one caller, ``tools/timing_eval.py``, was
+    broken in the same round (it called ``vergelijk_paden``). Two
+    halves of one tool, both dead for a hundred versions, because
+    nothing ever ran it. This is what running it looks like.
+    """
+    from modules import timing_eval
+
+    def row(index, block, text, start, end):
+        # The measures are taken from the SYLLABLES; a row without them
+        # gives None and falls out of the comparison. The first version
+        # of this test had no syllables, so `per_block` came back empty
+        # and the loop that reads `avg` - the very line B562 fixed -
+        # never ran. It passed against the broken code.
+        return {"index": index, "block": block, "text": text,
+                "syllables": [{"text": text, "start": start, "end": end}]}
+
+    auto = [row(0, 1, "een", 1.0, 2.0), row(1, 1, "twee", 3.0, 4.0),
+            row(2, 2, "drie", 5.0, 6.0)]
+    reference = [row(0, 1, "een", 1.1, 2.2), row(1, 1, "twee", 3.0, 4.5),
+                 row(2, 2, "drie", 5.2, 6.0)]
+    result = timing_eval.compare(auto, reference)
+    assert result["per_block"], "no block compared - the table stays empty"
+
+    report = timing_eval.format_report(result)
+    lines = report.splitlines()
+
+    assert len(lines) == len(result["per_block"]) + 4   # header, rule, rule
+    assert "ms" in report
+    # The per-block rows really were rendered, which is what B562 broke.
+    assert any(line.startswith("   1 |") for line in lines), report
+    assert any(line.startswith("   2 |") for line in lines), report
+    # And the columns line up. They did not: the header put its
+    # separators one column to the left of the rows, which nobody had
+    # seen because the function raised before it printed anything.
+    positions = {tuple(i for i, c in enumerate(line) if c in "|+")
+                 for line in lines if "|" in line or "+" in line}
+    assert len(positions) == 1, report

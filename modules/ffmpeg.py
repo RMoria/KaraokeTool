@@ -89,7 +89,8 @@ def probe(path: Path) -> AudioProperties:
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise FfmpegError(f"Onleesbare ffprobe-uitvoer voor {path}") from exc
+        raise FfmpegError(
+            t("err_ffprobe_unreadable").format(path=path)) from exc
 
     properties = _parse_probe_output(data)
     if path.suffix.lower() == ".mp3":
@@ -187,10 +188,8 @@ def _tool(name: str) -> str:
     """Give the path to a required program or raise a clear error."""
     path = find_executable(name)
     if path is None:
-        raise FfmpegError(
-            f"{name} niet gevonden. Installeer ffmpeg (zie README.md) of zet "
-            f"{name}.exe in de map: {_BIN_DIR}"
-        )
+        raise FfmpegError(t("err_ffmpeg_tool_missing").format(
+            name=name, folder=_BIN_DIR))
     return path
 
 
@@ -201,18 +200,19 @@ def _run(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
         # B356: via proc.run, zodat Stop hem ook echt kan afschieten.
         return proc.run(list(args), check=True)
     except FileNotFoundError as exc:
-        raise FfmpegError(f"Programma niet gevonden: {args[0]}") from exc
-    except subprocess.CalledProcessError as exc:
         raise FfmpegError(
-            f"{args[0]} faalde (exitcode {exc.returncode}): {exc.stderr.strip()}"
-        ) from exc
+            t("err_program_missing").format(name=args[0])) from exc
+    except subprocess.CalledProcessError as exc:
+        raise FfmpegError(t("err_program_failed").format(
+            name=args[0], code=exc.returncode,
+            detail=exc.stderr.strip())) from exc
 
 
 def _parse_probe_output(data: dict[str, Any]) -> AudioProperties:
     """Convert the JSON output of ffprobe to :class:`AudioProperties`."""
     streams = [s for s in data.get("streams", []) if s.get("codec_type") == "audio"]
     if not streams:
-        raise FfmpegError("Geen audiostream gevonden")
+        raise FfmpegError(t("err_ffmpeg_no_audio_stream"))
     stream = streams[0]
     fmt = data.get("format", {})
 

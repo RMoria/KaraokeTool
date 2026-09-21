@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from . import karaoke_text, song_text
+from .translations import t
 
 logger = logging.getLogger(__name__)
 
@@ -342,8 +343,8 @@ def _dependants_index() -> dict[str, tuple[str, ...]]:
     for artefact in ARTEFACTS.values():
         for source in artefact.sources:
             if source not in index:
-                raise KeyError(
-                    f"Unknown source {source!r} for {artefact.name!r}")
+                raise KeyError(t("err_unknown_source").format(
+                    source=repr(source), name=repr(artefact.name)))
             index[source].append(artefact.name)
     return {name: tuple(children) for name, children in index.items()}
 
@@ -369,7 +370,8 @@ def dependents(changed: Iterable[str], include_self: bool = False
     start = list(changed)
     for name in start:
         if name not in ARTEFACTS:
-            raise KeyError(f"Unknown artefact: {name!r}")
+            raise KeyError(
+                t("err_unknown_artefact").format(name=repr(name)))
     seen: set[str] = set()
     queue = list(start)
     while queue:

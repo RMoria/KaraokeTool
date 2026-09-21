@@ -35,7 +35,7 @@ def load_audio(path: Path) -> tuple[np.ndarray, int]:
     try:
         data, sample_rate = sf.read(path, dtype="float32", always_2d=True)
     except (RuntimeError, sf.LibsndfileError) as exc:
-        raise AudioError(f"Kan audio niet laden: {path}") from exc
+        raise AudioError(t("err_audio_load").format(path=path)) from exc
     logger.debug(t("log_audio_loaded"),
                  path.name, data.shape[0], sample_rate, data.shape[1])
     return data, int(sample_rate)
@@ -56,7 +56,7 @@ def save_wav(path: Path, data: np.ndarray, sample_rate: int) -> None:
     try:
         sf.write(path, data, sample_rate, subtype="PCM_16")
     except (RuntimeError, sf.LibsndfileError) as exc:
-        raise AudioError(f"Kan audio niet opslaan: {path}") from exc
+        raise AudioError(t("err_audio_save").format(path=path)) from exc
     logger.info(t("log_wav_saved"), path)
 
 
@@ -71,7 +71,7 @@ def db_to_amplitude(db: float) -> float:
 def duration_seconds(data: np.ndarray, sample_rate: int) -> float:
     """Calculate the duration of an audio fragment in seconds."""
     if sample_rate <= 0:
-        raise AudioError("Sample rate moet positief zijn")
+        raise AudioError(t("err_audio_positive_rate"))
     return data.shape[0] / float(sample_rate)
 
 

@@ -466,6 +466,87 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                         "koppeling(en). Analyse opnieuw uitvoeren.",
         # --- Pipeline error messages (B296) ---------------------------
         "err_no_project_delete": "Geen project geladen om te verwijderen.",
+        "eval_report_header": "blok |  n |  onset gem |  onset max | duur gem",
+        "eval_report_total": "totaal onset: gem {avg}ms, med {med}ms, "
+                             "max {max}ms (n={n})",
+        "report_text_blocks": "{song} songtekst {lyrics_lines}/{lyrics_blocks} blok"
+                              "  karaoke {karaoke_lines}/{karaoke_blocks} blok{flag}",
+        "report_text_blocks_differ": "   <<< WIJKT AF",
+        "err_librosa_missing": "Het package 'librosa' is niet geïnstalleerd; "
+                               "draai install.bat opnieuw.",
+        "err_align_audio_unreadable": "Kan audio niet laden voor uitlijning: "
+                                      "{path}",
+        "err_align_audio_too_short": "Audio te kort om uit te lijnen: {path}",
+        "err_audio_positive_rate": "Sample rate moet positief zijn",
+        "err_audio_load": "Kan audio niet laden: {path}",
+        "err_audio_save": "Kan audio niet opslaan: {path}",
+        "err_config_not_found": "Configuratiebestand niet gevonden: {path}",
+        "err_config_bad_json": "Ongeldige JSON in {path}: {detail}",
+        "err_config_search_words_list": "'search_words' moet een lijst van "
+                                        "woorden zijn",
+        "err_config_search_words_empty": "'search_words' mag geen lege "
+                                         "woorden bevatten",
+        "err_config_section_object": "Sectie voor {name} moet een object "
+                                     "zijn",
+        "err_config_gain_db": "'gain_db' moet 0 of negatief zijn (demping)",
+        "err_config_fade_negative": "Fadetijden mogen niet negatief zijn",
+        "err_config_margin_negative": "'margin_ms' mag niet negatief zijn",
+        "err_config_max_offsets": "'align.max_offsets' moet minimaal 1 zijn",
+        "err_config_window_step": "'align.window_s' en 'align.step_s' moeten "
+                                  "positief zijn",
+        "err_config_search_tolerance": "'align.search_s'/'align.tolerance_ms' "
+                                       "zijn ongeldig",
+        "err_config_align_confidence": "'align.min_confidence' moet tussen 0 "
+                                       "en 1 liggen (0 zelf niet: dan blijft "
+                                       "er geen enkel betrouwbaar "
+                                       "uitlijnvenster over)",
+        "err_config_analysis_confidence": "'analysis.min_confidence' moet "
+                                          "tussen 0 en 1 liggen",
+        "err_config_short_word_letters": "'analysis.short_word_max_letters' "
+                                         "moet minimaal 1 zijn",
+        "err_config_cluster_similarity": "'cluster.similarity_threshold' "
+                                         "moet tussen 0 en 1 liggen",
+        "err_config_cluster_invalid": "'cluster'-instellingen zijn ongeldig",
+        "err_config_token_duration": "'cluster.max_token_duration_s' moet "
+                                     "positief zijn",
+        "err_config_video_invalid": "'video'-instellingen zijn ongeldig",
+        "err_config_no_track": "Minstens één van "
+                               "'tracks.original'/'tracks.karaoke' moet aan "
+                               "staan",
+        "err_unknown_artefact": "Onbekend artefact: {name}",
+        "err_unknown_source": "Onbekende bron {source} voor {name}",
+        "err_export_unknown_format": "Onbekend bronformaat: {suffix}",
+        "err_export_processed_missing": "Bewerkt bestand niet gevonden: "
+                                        "{path}",
+        "err_ffmpeg_tool_missing": "{name} niet gevonden. Installeer ffmpeg (zie "
+                              "README.md) of zet {name}.exe in de map: "
+                              "{folder}",
+        "err_ffmpeg_no_audio_stream": "Geen audiostream gevonden",
+        "err_ffprobe_unreadable": "Onleesbare ffprobe-uitvoer voor {path}",
+        "err_program_missing": "Programma niet gevonden: {name}",
+        "err_program_failed": "{name} faalde (exitcode {code}): {detail}",
+        "err_demucs_missing": "Demucs is niet geïnstalleerd.",
+        "err_demucs_no_stems": "Demucs leverde geen stemmen op.",
+        "err_demucs_failed": "Demucs faalde: {detail}",
+        "err_demucs_model_failed": "Demucs-model laden mislukt: {detail}",
+        "err_timing_untimed_lines": "timing.json bevat regels zonder tijden "
+                                    "(regelnummers {lines}); vul de timing "
+                                    "in.",
+        "err_timing_no_lines": "Geen zangregels in timing.json.",
+        "err_video_ffmpeg_missing": "ffmpeg niet gevonden (zie README.md).",
+        "err_video_ffmpeg_failed": "ffmpeg faalde: {detail}",
+        "err_logo_unreadable": "Logo onleesbaar: {path}",
+        "err_video_ffmpeg_disconnected": "ffmpeg brak de verbinding af: "
+                                         "{detail}",
+        "err_columns_minimum": "columns moet minimaal 1 zijn",
+        "err_width_minimum": "width moet minimaal 1 zijn",
+        "err_transcription_failed": "Transcriptie mislukt: {detail}",
+        "err_cache_unreadable": "Cache onleesbaar: {path}",
+        "err_faster_whisper_missing": "Het package 'faster-whisper' is niet "
+                                      "geïnstalleerd; draai install.bat "
+                                      "opnieuw.",
+        "err_whisper_model_failed": "Whisper-model kon niet geladen worden: "
+                                    "{detail}",
         "err_demucs_unavailable": "Demucs is niet beschikbaar; installeer de "
                                   "grote modellen via install.bat.",
         "err_no_original_instrumental": "Geen origineel gevonden om een "
@@ -1011,7 +1092,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "log_sentence_coupling": 'Zin-koppeling: %s (%s)',
         "log_separation_failed_karaoke": 'Zangscheiding mislukt; hele karaoke gebruikt',
         "log_separation_failed_original": 'Zangscheiding origineel mislukt; mix gebruikt',
-        "log_startup_size": "Venster bij het starten van %dx%d naar %dx%d gebracht (%s maat was te klein voor de inhoud)",
         "log_startup_size": "Venster bij het starten van %dx%d naar %dx%d "
                             "gebracht (%s maat was te klein voor de inhoud)",
         "log_after_song_end": "%d koppeling(en) losgemaakt die na het einde van "
@@ -1494,6 +1574,87 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                         "Analyse again.",
         # --- Pipeline error messages (B296) ---------------------------
         "err_no_project_delete": "No project loaded to delete.",
+        "eval_report_header": "block|  n |  onset avg |  onset max |  dur avg",
+        "eval_report_total": "total onset: avg {avg}ms, med {med}ms, "
+                             "max {max}ms (n={n})",
+        "report_text_blocks": "{song} lyrics {lyrics_lines}/{lyrics_blocks} blocks"
+                              "  karaoke {karaoke_lines}/{karaoke_blocks} blocks{flag}",
+        "report_text_blocks_differ": "   <<< DIFFERS",
+        "err_librosa_missing": "The package 'librosa' is not installed; run "
+                               "install.bat again.",
+        "err_align_audio_unreadable": "Cannot load audio for the alignment: "
+                                      "{path}",
+        "err_align_audio_too_short": "Audio too short to align: {path}",
+        "err_audio_positive_rate": "Sample rate has to be positive",
+        "err_audio_load": "Cannot load audio: {path}",
+        "err_audio_save": "Cannot save audio: {path}",
+        "err_config_not_found": "Configuration file not found: {path}",
+        "err_config_bad_json": "Invalid JSON in {path}: {detail}",
+        "err_config_search_words_list": "'search_words' has to be a list of "
+                                        "words",
+        "err_config_search_words_empty": "'search_words' may not hold empty "
+                                         "words",
+        "err_config_section_object": "The section for {name} has to be an "
+                                     "object",
+        "err_config_gain_db": "'gain_db' has to be 0 or negative "
+                              "(attenuation)",
+        "err_config_fade_negative": "Fade times may not be negative",
+        "err_config_margin_negative": "'margin_ms' may not be negative",
+        "err_config_max_offsets": "'align.max_offsets' has to be at least 1",
+        "err_config_window_step": "'align.window_s' and 'align.step_s' have "
+                                  "to be positive",
+        "err_config_search_tolerance": "'align.search_s'/'align.tolerance_ms' "
+                                       "are invalid",
+        "err_config_align_confidence": "'align.min_confidence' has to lie "
+                                       "between 0 and 1 (not 0 itself: then "
+                                       "no reliable alignment window is left "
+                                       "at all)",
+        "err_config_analysis_confidence": "'analysis.min_confidence' has to "
+                                          "lie between 0 and 1",
+        "err_config_short_word_letters": "'analysis.short_word_max_letters' "
+                                         "has to be at least 1",
+        "err_config_cluster_similarity": "'cluster.similarity_threshold' has "
+                                         "to lie between 0 and 1",
+        "err_config_cluster_invalid": "The 'cluster' settings are invalid",
+        "err_config_token_duration": "'cluster.max_token_duration_s' has to "
+                                     "be positive",
+        "err_config_video_invalid": "The 'video' settings are invalid",
+        "err_config_no_track": "At least one of "
+                               "'tracks.original'/'tracks.karaoke' has to be "
+                               "on",
+        "err_unknown_artefact": "Unknown artefact: {name}",
+        "err_unknown_source": "Unknown source {source} for {name}",
+        "err_export_unknown_format": "Unknown source format: {suffix}",
+        "err_export_processed_missing": "Processed file not found: {path}",
+        "err_ffmpeg_tool_missing": "{name} not found. Install ffmpeg (see "
+                              "README.md) or put {name}.exe in the folder: "
+                              "{folder}",
+        "err_ffmpeg_no_audio_stream": "No audio stream found",
+        "err_ffprobe_unreadable": "Unreadable ffprobe output for {path}",
+        "err_program_missing": "Program not found: {name}",
+        "err_program_failed": "{name} failed (exit code {code}): {detail}",
+        "err_demucs_missing": "Demucs is not installed.",
+        "err_demucs_no_stems": "Demucs produced no stems.",
+        "err_demucs_failed": "Demucs failed: {detail}",
+        "err_demucs_model_failed": "Loading the Demucs model failed: "
+                                   "{detail}",
+        "err_timing_untimed_lines": "timing.json holds lines without times "
+                                    "(line numbers {lines}); fill the timing "
+                                    "in.",
+        "err_timing_no_lines": "No sung lines in timing.json.",
+        "err_video_ffmpeg_missing": "ffmpeg not found (see README.md).",
+        "err_video_ffmpeg_failed": "ffmpeg failed: {detail}",
+        "err_logo_unreadable": "Logo unreadable: {path}",
+        "err_video_ffmpeg_disconnected": "ffmpeg broke off the connection: "
+                                         "{detail}",
+        "err_columns_minimum": "columns has to be at least 1",
+        "err_width_minimum": "width has to be at least 1",
+        "err_transcription_failed": "Transcription failed: {detail}",
+        "err_cache_unreadable": "Cache unreadable: {path}",
+        "err_faster_whisper_missing": "The package 'faster-whisper' is not "
+                                      "installed; run install.bat again.",
+        "err_whisper_model_failed": "The Whisper model could not be loaded: "
+                                    "{detail}",
         "err_demucs_unavailable": "Demucs is not available; install the large "
                                   "models via install.bat.",
         "err_no_original_instrumental": "No original found to create an "

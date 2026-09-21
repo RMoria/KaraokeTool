@@ -574,9 +574,9 @@ class MainWindow(QMainWindow):
 
         # Titles belong to the project (B210): start empty so that nothing
         # of the previous project lingers; project.json refills them soon.
-        leeg_titels = {k: "" for k in pipeline.VIDEO_TITLE_KEYS}
+        empty_titles = {k: "" for k in pipeline.VIDEO_TITLE_KEYS}
         new_config = replace(config, song=replace(config.song, title=title),
-                             video=replace(config.video, **leeg_titels))
+                             video=replace(config.video, **empty_titles))
         config_module.save_config(new_config, old_paths.config_file)
         # B445: without a title this is the record of no project at all,
         # and it lands in output/settings/. Reading yes, writing no -
@@ -603,11 +603,12 @@ class MainWindow(QMainWindow):
         self._context = pipeline.apply_project_titles(self._context)
         pipeline.migrate_input_names(self._context)      # B324
         if title and not self._context.config.video.karaoke_title.strip():
-            voor = (display_name or title.replace("_", " ")).strip()
+            prefill = (display_name or title.replace("_", " ")).strip()
             self._context = replace(self._context, config=replace(
                 self._context.config, video=replace(
-                    self._context.config.video, karaoke_title=voor)))
-            pipeline.set_project_title(self._context, "karaoke_title", voor)
+                    self._context.config.video, karaoke_title=prefill)))
+            pipeline.set_project_title(self._context, "karaoke_title",
+                                       prefill)
         # Verify that all paths/project.json belong to the right subdir
         # (B95b); on a mismatch we warn instead of silently continuing.
         ok, message = pipeline.check_project_paths(self._context)
@@ -697,7 +698,7 @@ class MainWindow(QMainWindow):
         # stress along), then edit timing (B200). 'Check video input' is
         # gone (B178); every button checks its own requirements itself.
         stress_button = QPushButton(t("video_edit_stress"))
-        stress_button.clicked.connect(self._open_klemtoon_editor)
+        stress_button.clicked.connect(self._open_stress_editor)
         actions_layout.addWidget(stress_button)
         timing_button = QPushButton(t("video_timing"))
         timing_button.clicked.connect(self._do_generate_timing)
@@ -796,11 +797,11 @@ class MainWindow(QMainWindow):
 
         self._run(task, on_done)
 
-    def _open_klemtoon_editor(self) -> None:
+    def _open_stress_editor(self) -> None:
         """Open the stress editor on the stored timing (B151)."""
         self._commit_pending_field()
         from . import timing as timing_module
-        from .stress_editor import KlemtoonEditorDialog
+        from .stress_editor import StressEditorDialog
         context = self._context
         timing_path = context.paths.timing_file
         if not timing_path.exists():
@@ -853,7 +854,7 @@ class MainWindow(QMainWindow):
             self._log(t("stress_saved"))
             self._show_timing_lines()
 
-        dialog = KlemtoonEditorDialog(lines, on_save,
+        dialog = StressEditorDialog(lines, on_save,
                                       original_lines=original_lines,
                                       anchors=pipeline.stress_anchors(context),
                                       parent=self)
@@ -1125,9 +1126,9 @@ class MainWindow(QMainWindow):
             tl.addWidget(rb)
         lay.addWidget(text_group)
 
-        muziek_grp = QGroupBox(t("render_opts_audio"))
-        ml = QVBoxLayout(muziek_grp)
-        muziek_bg = QButtonGroup(dlg)
+        music_group = QGroupBox(t("render_opts_audio"))
+        ml = QVBoxLayout(music_group)
+        music_buttons = QButtonGroup(dlg)
         # 'Karaoke from original' (demucs) is deliberately gone from this
         # pop-up (B247): the karaoke music is the audio against which the
         # alignment and timing were made, regardless of whether it comes
@@ -1141,9 +1142,9 @@ class MainWindow(QMainWindow):
             rb.setProperty("code", code)
             if i == 0:
                 rb.setChecked(True)
-            muziek_bg.addButton(rb)
+            music_buttons.addButton(rb)
             ml.addWidget(rb)
-        lay.addWidget(muziek_grp)
+        lay.addWidget(music_group)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
@@ -1153,7 +1154,7 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None
         return (text_bg.checkedButton().property("code"),
-                muziek_bg.checkedButton().property("code"))
+                music_buttons.checkedButton().property("code"))
 
     def _do_render_video(self) -> None:
         """Render the karaoke video in the background."""
@@ -1443,13 +1444,14 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError):
             return
         vs = self._context.config.video
-        te_lang = video.overflowing_lines(timed, vs.width, vs.height,
-                                          vs.font)
-        if te_lang:
-            preview = "\n  - ".join(line_number[:60] for line_number in te_lang[:8])
+        too_long = video.overflowing_lines(timed, vs.width, vs.height,
+                                           vs.font)
+        if too_long:
+            preview = "\n  - ".join(line_number[:60]
+                                    for line_number in too_long[:8])
             QMessageBox.warning(
                 self, t("lines_overflow_title"),
-                t("lines_overflow_body").format(count=len(te_lang),
+                t("lines_overflow_body").format(count=len(too_long),
                                                 preview=preview))
 
     def _choose_logo(self) -> None:
@@ -1512,7 +1514,7 @@ class MainWindow(QMainWindow):
         self._log(t("parallel_detect_log").format(
             state=t("on") if checked else t("off")))
 
-    def _toggle_diagnostiek(self, checked: bool) -> None:
+    def _toggle_diagnostics(self, checked: bool) -> None:
         """Turn writing of local diagnostic files on or off (B143)."""
         config = self._context.config
         self._update_config(replace(
@@ -1883,7 +1885,7 @@ class MainWindow(QMainWindow):
         self._diagnostics_box = QCheckBox(t("diagnostics_option"))
         self._diagnostics_box.setToolTip(t("diagnostics_tip"))
         self._diagnostics_box.setChecked(config.advanced.diagnostics)
-        self._diagnostics_box.toggled.connect(self._toggle_diagnostiek)
+        self._diagnostics_box.toggled.connect(self._toggle_diagnostics)
         outer.addWidget(self._diagnostics_box)
 
         cache_row = QHBoxLayout()
@@ -1997,9 +1999,9 @@ class MainWindow(QMainWindow):
             self._show_timing_lines()          # always the latest state (B240)
         log_group = getattr(self, "_log_group", None)
         if log_group is not None:
-            verbergen = index in (getattr(self, "_settings_tab_index", -1),
+            hide_log = index in (getattr(self, "_settings_tab_index", -1),
                                   getattr(self, "_help_tab_index", -1))
-            log_group.setVisible(not verbergen)
+            log_group.setVisible(not hide_log)
 
     def _populate_font_combo(self) -> None:
         """Fill the font menu from assets/fonts; select the current choice."""
@@ -2046,13 +2048,13 @@ class MainWindow(QMainWindow):
             return
         from PySide6.QtGui import QFont, QFontDatabase
         path = self._font_combo.currentData() or ""
-        familie = ""
+        family = ""
         if path:
             font_id = QFontDatabase.addApplicationFont(path)
             families = QFontDatabase.applicationFontFamilies(font_id) \
                 if font_id != -1 else []
-            familie = families[0] if families else ""
-        label.setFont(QFont(familie, 22) if familie else QFont("", 22))
+            family = families[0] if families else ""
+        label.setFont(QFont(family, 22) if family else QFont("", 22))
 
     def _pick_video_font(self) -> None:
         from dataclasses import replace as _replace
@@ -2771,8 +2773,8 @@ class MainWindow(QMainWindow):
         self._log_view.setMinimumHeight(panel_min_h)
         m_layout.addWidget(self._log_view)
 
-        activiteit = QGroupBox(t("activity_group"))
-        a_layout = QVBoxLayout(activiteit)
+        activity = QGroupBox(t("activity_group"))
+        a_layout = QVBoxLayout(activity)
         self._activity_view = QPlainTextEdit()
         self._activity_view.setReadOnly(True)
         self._activity_view.setMaximumBlockCount(1000)  # do not let it fill
@@ -2780,7 +2782,7 @@ class MainWindow(QMainWindow):
         a_layout.addWidget(self._activity_view)
 
         row.addWidget(messages, stretch=1)
-        row.addWidget(activiteit, stretch=1)
+        row.addWidget(activity, stretch=1)
 
         # Mirror the root log lines (INFO+, as previously in the cmd) to
         # the activity panel; thread-safe via a Qt signal.
@@ -2864,12 +2866,12 @@ class MainWindow(QMainWindow):
 
     def _choose_file(self, stem: str) -> None:
         """Choose a supported audio file and copy it to the input folder."""
-        patronen = " ".join(f"*{ext}"
+        patterns = " ".join(f"*{ext}"
                             for ext in filesystem.SUPPORTED_EXTENSIONS)
         chosen, _ = QFileDialog.getOpenFileName(
             self, t("choose_file_for").format(stem=t(stem)),
             pipeline.input_start_dir(self._context, stem),   # B206
-            t("filter_audio").format(patterns=patronen))
+            t("filter_audio").format(patterns=patterns))
         if not chosen:
             return
         source = Path(chosen)
@@ -2968,18 +2970,18 @@ class MainWindow(QMainWindow):
                              number: int) -> str | None:
         """There is a passage in another script; in which language should
         Whisper run (B495)?"""
-        keuzes = [t("lang_second_first").format(code=first),
-                  t("lang_second_other").format(code=second),
-                  t("lang_auto")]
+        choices = [t("lang_second_first").format(code=first),
+                   t("lang_second_other").format(code=second),
+                   t("lang_auto")]
         choice, ok = QInputDialog.getItem(
             self, t("lang_second_title"),
             t("lang_second_prompt").format(code=second, count=number),
-            keuzes, 0, False)
+            choices, 0, False)
         if not ok:
             return None
-        if choice == keuzes[1]:
+        if choice == choices[1]:
             return second
-        if choice == keuzes[2]:
+        if choice == choices[2]:
             return "auto"
         return first
 

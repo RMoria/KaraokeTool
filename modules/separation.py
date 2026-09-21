@@ -51,7 +51,7 @@ def separate(audio_path: Path, work_dir: Path,
         SeparationError: If Demucs is missing or the separation fails.
     """
     if not is_available():
-        raise SeparationError("Demucs is niet geïnstalleerd.")
+        raise SeparationError(t("err_demucs_missing"))
     # Empty the work folder first so that old stems are never reused
     # (B135).
     if work_dir.exists():
@@ -69,12 +69,13 @@ def separate(audio_path: Path, work_dir: Path,
         proc.run(command, check=True)
     except (subprocess.CalledProcessError, OSError) as exc:
         detail = getattr(exc, "stderr", "") or str(exc)
-        raise SeparationError(f"Demucs faalde: {detail}") from exc
+        raise SeparationError(
+            t("err_demucs_failed").format(detail=detail)) from exc
 
     vocals = _find_stem(work_dir, "vocals")
     instrumental = _find_stem(work_dir, "no_vocals")
     if vocals is None or instrumental is None:
-        raise SeparationError("Demucs leverde geen stemmen op.")
+        raise SeparationError(t("err_demucs_no_stems"))
     return {"vocals": vocals, "instrumental": instrumental}
 
 
@@ -231,9 +232,10 @@ def _marker_matches(marker: Path, checksum: str, model: str) -> bool:
 def warmup(model: str = "htdemucs") -> None:
     """Load the Demucs model once (forces the download)."""
     if not is_available():
-        raise SeparationError("Demucs is niet geïnstalleerd.")
+        raise SeparationError(t("err_demucs_missing"))
     try:
         from demucs.pretrained import get_model  # type: ignore
         get_model(model)
     except Exception as exc:  # noqa: BLE001
-        raise SeparationError(f"Demucs-model laden mislukt: {exc}") from exc
+        raise SeparationError(
+            t("err_demucs_model_failed").format(detail=exc)) from exc

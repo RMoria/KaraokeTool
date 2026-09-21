@@ -236,7 +236,7 @@ def test_the_editor_does_not_grab_a_background_block() -> None:
     from modules import timing_editor
 
     source = _source_of(timing_editor)
-    assert source.count('if not cel.get("rows"):') >= 2
+    assert source.count('if not cell.get("rows"):') >= 2
 
 
 # --------------------------------------------------------------------------
@@ -645,8 +645,8 @@ def test_clicking_a_background_block_selects_nothing_and_stops_there() -> None:
     from modules import timing_editor
 
     source = inspect.getsource(timing_editor.TimingCanvas.mousePressEvent)
-    hit = source.index('if not cel.get("rows"):')
-    assert "op_een_cel = True" in source[hit:hit + 200]
+    hit = source.index('if not cell.get("rows"):')
+    assert "on_a_cell = True" in source[hit:hit + 200]
     assert "break" in source[hit:hit + 200]
 
 

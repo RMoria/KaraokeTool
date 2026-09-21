@@ -182,7 +182,7 @@ def test_an_empty_spot_in_the_text_lane_moves_the_playhead() -> None:
 
     source = inspect.getsource(timing_editor.TimingCanvas.mousePressEvent)
     assert "in_text_lane" in source
-    assert "op_een_cel" in source
+    assert "on_a_cell" in source
 
 
 def test_the_sentence_step_and_the_onset_step_have_their_own_column() -> None:

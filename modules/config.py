@@ -314,11 +314,13 @@ def load_config(path: Path) -> AppConfig:
             has invalid values.
     """
     if not path.exists():
-        raise ConfigError(f"Configuratiebestand niet gevonden: {path}")
+        raise ConfigError(t("err_config_not_found").format(path=path))
     try:
         raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ConfigError(f"Ongeldige JSON in {path}: {exc}") from exc
+        raise ConfigError(
+            t("err_config_bad_json").format(path=path, detail=exc)
+        ) from exc
 
     defaults = KaraokeSettings()
     karaoke = KaraokeSettings(
@@ -491,17 +493,19 @@ def save_config(config: AppConfig, path: Path) -> None:
 def _parse_search_words(value: Any) -> tuple[str, ...]:
     """Convert the list of search words into a tuple and validate it."""
     if not isinstance(value, (list, tuple)):
-        raise ConfigError("'search_words' moet een lijst van woorden zijn")
+        raise ConfigError(t("err_config_search_words_list"))
     words = tuple(str(word).strip().lower() for word in value)
     if not words or any(not word for word in words):
-        raise ConfigError("'search_words' mag geen lege woorden bevatten")
+        raise ConfigError(t("err_config_search_words_empty"))
     return words
 
 
 def _dataclass_from_mapping(cls: type, mapping: Any) -> Any:
     """Build a dataclass from a dict and ignore unknown keys."""
     if not isinstance(mapping, dict):
-        raise ConfigError(f"Sectie voor {cls.__name__} moet een object zijn")
+        raise ConfigError(
+            t("err_config_section_object").format(name=cls.__name__)
+        )
     known = {f.name for f in fields(cls)}
     unknown = set(mapping) - known
     if unknown:
@@ -512,38 +516,35 @@ def _dataclass_from_mapping(cls: type, mapping: Any) -> Any:
 def _validate(config: AppConfig) -> None:
     """Check value ranges; raise ConfigError on errors."""
     if config.karaoke.gain_db > 0:
-        raise ConfigError("'gain_db' moet 0 of negatief zijn (demping)")
+        raise ConfigError(t("err_config_gain_db"))
     if config.karaoke.fade_in_ms < 0 or config.karaoke.fade_out_ms < 0:
-        raise ConfigError("Fadetijden mogen niet negatief zijn")
+        raise ConfigError(t("err_config_fade_negative"))
     if config.karaoke.margin_ms < 0:
-        raise ConfigError("'margin_ms' mag niet negatief zijn")
+        raise ConfigError(t("err_config_margin_negative"))
     if config.align.max_offsets < 1:
-        raise ConfigError("'align.max_offsets' moet minimaal 1 zijn")
+        raise ConfigError(t("err_config_max_offsets"))
     if config.align.window_s <= 0 or config.align.step_s <= 0:
-        raise ConfigError("'align.window_s' en 'align.step_s' moeten positief zijn")
+        raise ConfigError(t("err_config_window_step"))
     if config.align.search_s <= 0 or config.align.tolerance_ms < 0:
-        raise ConfigError("'align.search_s'/'align.tolerance_ms' zijn ongeldig")
+        raise ConfigError(t("err_config_search_tolerance"))
     # B301: bound it just like analyse.min_confidence. This was the only
     # threshold that was not checked, while 0.0 breaks the alignment: all
     # windows then keep confidence 0 and the weighted averaging in
     # ``align._build_regions`` divides by a weight sum of zero.
     if not 0.0 < config.align.min_confidence <= 1.0:
-        raise ConfigError("'align.min_confidence' moet tussen 0 en 1 liggen "
-                          "(0 zelf niet: dan blijft er geen enkel betrouwbaar "
-                          "uitlijnvenster over)")
+        raise ConfigError(t("err_config_align_confidence"))
     if not 0.0 <= config.analysis.min_confidence <= 1.0:
-        raise ConfigError("'analysis.min_confidence' moet tussen 0 en 1 liggen")
+        raise ConfigError(t("err_config_analysis_confidence"))
     if config.analysis.short_word_max_letters < 1:
-        raise ConfigError("'analysis.short_word_max_letters' moet minimaal 1 zijn")
+        raise ConfigError(t("err_config_short_word_letters"))
     if not 0.0 < config.cluster.similarity_threshold <= 1.0:
-        raise ConfigError("'cluster.similarity_threshold' moet tussen 0 en 1 liggen")
+        raise ConfigError(t("err_config_cluster_similarity"))
     if config.cluster.merge_gap_ms < 0 or config.cluster.max_ngram < 1:
-        raise ConfigError("'cluster'-instellingen zijn ongeldig")
+        raise ConfigError(t("err_config_cluster_invalid"))
     if config.cluster.max_token_duration_s <= 0:
-        raise ConfigError("'cluster.max_token_duration_s' moet positief zijn")
+        raise ConfigError(t("err_config_token_duration"))
     if config.video.width < 320 or config.video.height < 180 \
             or config.video.fps < 1:
-        raise ConfigError("'video'-instellingen zijn ongeldig")
+        raise ConfigError(t("err_config_video_invalid"))
     if not (config.tracks.original or config.tracks.karaoke):
-        raise ConfigError("Minstens één van 'tracks.original'/"
-                          "'tracks.karaoke' moet aan staan")
+        raise ConfigError(t("err_config_no_track"))

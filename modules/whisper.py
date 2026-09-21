@@ -150,7 +150,8 @@ def transcribe(
     except (WhisperError, CancelledError):
         raise
     except Exception as exc:  # noqa: BLE001 - model library has many errors
-        raise WhisperError(f"Transcriptie mislukt: {exc}") from exc
+        raise WhisperError(
+            t("err_transcription_failed").format(detail=exc)) from exc
     elapsed = time.perf_counter() - started
 
     word_count = sum(len(segment.words) for segment in segments)
@@ -261,7 +262,8 @@ def transcribe_slice(audio_path: Path, settings: WhisperSettings,
     except (WhisperError, CancelledError):
         raise
     except Exception as exc:  # noqa: BLE001 - model library has many errors
-        raise WhisperError(f"Transcriptie mislukt: {exc}") from exc
+        raise WhisperError(
+            t("err_transcription_failed").format(detail=exc)) from exc
     shift = float(start)
     if not shift:
         return segments
@@ -311,7 +313,8 @@ def load_segments(path: Path) -> tuple[Segment, ...]:
         data = json.loads(path.read_text(encoding="utf-8"))
         return segments_from_dicts(data)
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise WhisperError(f"Cache onleesbaar: {path}") from exc
+        raise WhisperError(
+            t("err_cache_unreadable").format(path=path)) from exc
 
 
 def segments_to_dicts(segments: tuple[Segment, ...]) -> list[dict[str, Any]]:
@@ -536,10 +539,7 @@ def _load_model(settings: WhisperSettings) -> Any:
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
-        raise WhisperError(
-            "Het package 'faster-whisper' is niet geïnstalleerd; "
-            "draai install.bat opnieuw."
-        ) from exc
+        raise WhisperError(t("err_faster_whisper_missing")) from exc
 
     from . import measure_pool
 
@@ -562,7 +562,7 @@ def _load_model(settings: WhisperSettings) -> Any:
                                  num_workers=workers)
         except Exception as exc:  # noqa: BLE001
             raise WhisperError(
-                f"Whisper-model kon niet geladen worden: {exc}") from exc
+                t("err_whisper_model_failed").format(detail=exc)) from exc
         _MODEL_CACHE[key] = model
         logger.info(t("log_whisper_model_lanes"), workers, threads)
         return model
