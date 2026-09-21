@@ -37,6 +37,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
+from . import karaoke_text, song_text
+
 logger = logging.getLogger(__name__)
 
 #: The two tracks. Deliberately repeated here instead of imported from
@@ -81,8 +83,10 @@ def _artefacts() -> dict[str, Artefact]:
     add("input:original", SOURCE,
         what="input/origineel.* (the original recording)")
     add("input:karaoke", SOURCE, what="input/karaoke.* (the karaoke version)")
-    add("input:lyrics", SOURCE, what="input/songtekst.txt")
-    add("input:karaoke_text", SOURCE, what="input/karaoketekst.txt")
+    add("input:lyrics", SOURCE,
+        what=f"input/{song_text.LYRICS_FILENAME}")
+    add("input:karaoke_text", SOURCE,
+        what=f"input/{karaoke_text.FILENAME}")
     add("input:logo", SOURCE,
         what="input/logo.* (the logo shown in the video)")
     add("config:whisper", SOURCE, what="setting: Whisper model and language")
@@ -116,9 +120,9 @@ def _artefacts() -> dict[str, Artefact]:
     add("source_karaoke", STEP, ["input:karaoke"],
         "sha1 + wav path of the prepared karaoke")
     add("source_lyrics", STEP, ["input:lyrics"],
-        "sha1 of songtekst.txt as the program knows it")
+        f"sha1 of {song_text.LYRICS_FILENAME} as the program knows it")
     add("source_karaoke_text", STEP, ["input:karaoke_text"],
-        "sha1 of karaoketekst.txt as the program knows it")
+        f"sha1 of {karaoke_text.FILENAME} as the program knows it")
     add("source_logo", STEP, ["input:logo"],
         "sha1 of the logo as the program knows it")
     add("config_signature", STEP, [],

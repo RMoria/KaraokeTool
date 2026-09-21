@@ -164,7 +164,7 @@ def _timing_project(tmp_path, text: str):
     from modules import pipeline
 
     context = _context(tmp_path)
-    karaoke = context.paths.input_dir / "karaoketekst.txt"
+    karaoke = context.paths.input_dir / "karaoke_text.txt"
     karaoke.write_text(text, encoding="utf-8")
     pipeline.remember_sources(context)
 
@@ -177,7 +177,7 @@ def _timing_project(tmp_path, text: str):
 
 
 def test_a_text_change_keeps_the_hand_made_timing(tmp_path) -> None:
-    """The afternoon that was lost: editing karaoketekst.txt in Notepad
+    """The afternoon that was lost: editing karaoke_text.txt in Notepad
     removed timing.json without a question being asked, while choosing
     the same file through the dialog has kept it since B99."""
     from modules import pipeline

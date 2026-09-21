@@ -25,10 +25,10 @@ def _project(tmp_path, lyrics: str = "", karaoke: str = ""):
     paths = ProjectPaths(root=tmp_path, song="Proef")
     ensure_directories(paths)
     if lyrics:
-        (paths.input_dir / "songtekst.txt").write_text(lyrics,
-                                                       encoding="utf-8")
+        (paths.input_dir / "lyrics.txt").write_text(lyrics,
+                                                    encoding="utf-8")
     if karaoke:
-        (paths.input_dir / "karaoketekst.txt").write_text(karaoke,
+        (paths.input_dir / "karaoke_text.txt").write_text(karaoke,
                                                           encoding="utf-8")
     return pipeline.AppContext(paths=paths, config=default_config(),
                                store=ProjectStore(paths.project_file))

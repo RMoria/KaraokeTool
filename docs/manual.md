@@ -23,8 +23,8 @@ The buttons below appear in the same order as in the app. Steps marked
      you have no karaoke track, make one with **"Karaoke uit origineel"**
      (Demucs strips out the vocals; the result also lands in the output
      folder as `karaoke_demucs.mp3`).
-   - Put the **songtekst** (`songtekst.txt`), the **karaoketekst**
-     (`karaoketekst.txt`) and optionally a **logo** in place on this tab.
+   - Put the **songtekst** (`lyrics.txt`), the **karaoketekst**
+     (`karaoke_text.txt`) and optionally a **logo** in place on this tab.
      The original lyrics drive the language detection and the linking;
      the karaoke lyrics and the logo are what go into the video. Behind
      each file you see the name it had on your machine, not the internal
@@ -107,7 +107,7 @@ While a step is running its button turns yellow. **Stop** aborts the
 running step; that button never turns yellow itself, because it starts
 nothing.
 
-## Text notation (karaoketekst.txt)
+## Text notation (karaoke_text.txt)
 
 - **One logical sentence per line.** Never break lines arbitrarily.
 - **Blank line** = section break (block).
@@ -138,8 +138,8 @@ nothing.
   that sounds *at the same time* as the previous line — a backing vocal
   singing "Tonight, tonight" while the lead vocal carries on, often
   written in brackets in the lyrics, e.g. "Sunday, Bloody Sunday
-  (Tonight, tonight)". Works in `songtekst.txt` (original) as well as in
-  `karaoketekst.txt` (karaoke), independently of each other — you can
+  (Tonight, tonight)". Works in `lyrics.txt` (original) as well as in
+  `karaoke_text.txt` (karaoke), independently of each other — you can
   use it in one file without the other.
   - As a block:
 

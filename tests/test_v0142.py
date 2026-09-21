@@ -194,9 +194,9 @@ def test_without_any_coupling_the_editor_still_gets_the_text(
     """An empty lane is no answer: he can then put nothing in the right
     place, which is precisely what he needs the editor for."""
     context = _context(tmp_path)
-    (context.paths.input_dir / "songtekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text(
         "een regel\ntwee regel\ndrie regel\n", encoding="utf-8")
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "aap noot\nmies wim\n", encoding="utf-8")
     items, mapping = pipeline.editor_originals(context)
     assert [item["text"] for item in items] == \

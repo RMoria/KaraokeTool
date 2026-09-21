@@ -5242,6 +5242,140 @@ What of the list is NOT in it, and why:
   pause lasts about two. Changing either without measuring is guessing;
   the yardstick (1.5.5/1.5.10) can say what it does.
 
+Included in v1.0.6:
+
+- **B555 - the last two Dutch names, and the only ones he also sees in
+  Explorer.** `input/<song>/songtekst.txt` and `karaoketekst.txt` are
+  `lyrics.txt` and `karaoke_text.txt` now. Everywhere else the program
+  had called them that for a long time already - `input:lyrics`,
+  `source_lyrics`, the `lyrics` and `karaoke_text` keys in
+  `input_names` - so what was left was one file name that had to be
+  translated in the head on every read.
+
+  The first question was whether it would cost him anything, because
+  twenty-two projects carry hand-made word coupling and hand-made
+  timing and those are worth more than the rename. It does not.
+  `sync_input_changes` compares the SHA1 of a source and nothing else;
+  the `path` beside it is written in two places and read back in
+  exactly one, and that one is the karaoke AUDIO, for its suffix. A
+  rename with unchanged content is therefore invisible to the whole
+  derivation chain, which the review proved on a project made on disk:
+  pins, `timing.json` and `timing_auto.json` all still there
+  afterwards. The stored path is rewritten all the same, because a path
+  naming a file that no longer exists is a lie waiting for the next
+  reader.
+
+  But the same review proved the other half, and that one was a hole
+  big enough to sink the release. Renaming NOTHING is what costs him.
+  From `sync_input_changes` a project that still holds `songtekst.txt`
+  looks like one whose lyrics have been DELETED, and its answer to a
+  deleted source is to throw away everything derived from it. Measured
+  on disk: pins gone, `timing.json` gone, `timing_auto.json` gone, and
+  the rescue of B407/B429 cannot step in because it needs the karaoke
+  text and that is missing under its new name too. One click on any
+  step button, and no backup exists unless the migration has already
+  run. So `unmigrated_texts` sits at the head of `sync_input_changes`,
+  which every step passes through: an unmigrated project refuses,
+  names the file it found and says what to run. The hard cut is only
+  defensible with that gate in front of it.
+
+  No fallback on the old name. That was a deliberate choice against the
+  softer one: a program that reads both names has two truths for one
+  file, and that is exactly how a rename stays half done for years -
+  see the `input_names` keys, which were still being repaired at B324,
+  four versions after the rename that caused them. So the app opens the
+  new name only, and a project has to be migrated before it opens.
+
+  `tools/migrate_texts.py` does that, in the shape of `migrate_b299.py`:
+  a dry run by default that only says what it would do, a
+  `.pre_b555.bak` beside every file before anything is written and
+  nothing ever deleted, idempotent so running it twice is harmless, and
+  afterwards a check per project that the new file holds byte for byte
+  what the old one held and that no recorded path still names the old
+  one. Where BOTH names are present it does nothing at all and says so:
+  that is the only case in which he can lose something, and guessing
+  which of the two he meant is not this script's job. Fourteen tests
+  cover each of those cases on a real folder.
+
+  Three of those tests exist because the review broke the first
+  version. It rewrote any path ENDING in the old name, so somebody's
+  `my_songtekst.txt` became `my_lyrics.txt` silently; it raised on a
+  `project.json` whose `steps` are not a mapping - which `ProjectStore`
+  tolerates - and it raised AFTER the renaming, so the verification
+  never ran; and its verification searched the whole `project.json` for
+  the old words, which also hits `input_names`, where the name of the
+  file the USER picked is kept. A text he called "Kedeng songtekst.txt"
+  would have been reported as a leftover on a migration that was
+  perfectly fine, and a check that cries wolf gets ignored on the one
+  occasion it is right.
+
+  A fourth came out of running the dry run over his real installation
+  rather than over a test folder, which is why that was worth doing.
+  It reported 44 files to rename and 0 paths to correct, where the
+  answer is 44 and 44: the paths in `project.json` are WINDOWS paths,
+  `PurePath` follows the platform it runs on, and on anything else
+  `PurePath("C:\\x\\songtekst.txt").name` is the whole string. It
+  would have worked on his machine and silently done half the job
+  anywhere else - including in this sandbox, where every test of it
+  runs.
+
+  And one safety measure was removed rather than fixed: it claimed to
+  refuse while the app was running, on a `.write_test` that nothing in
+  the program ever leaves behind. A promise in a docstring with nothing
+  underneath it is worse than no promise. The real protection is the
+  gate above, which is in the app itself.
+
+  The reason this was a job of thirty-three files instead of two lines
+  is that the name was typed out everywhere: the GUI, and
+  `tools/timing_regression.py`, and the descriptions behind
+  `dependencies.md`, and every test that makes an input folder.
+  Eighteen files read the two constants now, seventy-three times over.
+  The next rename is two lines.
+
+- **B556 - the language guard did not read import aliases.** `from .
+  import song_text as songtekst_module` stood three times in
+  `modules/pipeline.py` - in the module this whole rename is about -
+  and the guard called that file clean, because the walk looked at
+  function, class, argument and variable names and never at
+  `ast.alias`. The three are gone (`song_text` was already imported at
+  the top of the file, so they were shadows of a name that was there),
+  and the walk reads aliases now.
+
+- **B557 - the two labels of the input panel were code, not
+  translation.** "Songtekst" and "Karaoketekst" stood in `gui.py` as
+  literal dictionary keys, and were therefore Dutch whatever language
+  was chosen. They come from `t(...)` now, like everything else in that
+  panel.
+
+- **B558 - `woorden.json` and `segmenten.json`.** The same kind as
+  B555 and much cheaper, because nothing reads them: not the app, not a
+  tool, not a test. They are `words.json` and `segments.json` now.
+  `words.csv` beside them had been English for a long time already,
+  which is how this pair stayed invisible - the folder read as half
+  converted and nobody looked twice.
+
+  Two things to know rather than to fix. The old pair is not cleaned
+  up: `write_outputs` makes the folder if it is not there and never
+  clears it, so a stale `woorden.json` sits beside the new one until
+  the folder goes, and quietly drifts. And `tools/timing_regression.py`
+  and `projects_without_cache` look for
+  `output/<song>/original/segments.json`, which no project has until it
+  has been detected again - so until then the yardstick silently skips
+  all twenty-two. That is a measurement, not data, and he re-detects
+  when he measures anyway.
+
+What is NOT in it:
+
+- The fifty-two literal `raise` texts of B550 are still literal. This
+  release did not touch them; the ratchet still holds the number at
+  fifty-two.
+- The Dutch report words in `modules/test_panel.py` and
+  `modules/timing_eval.py` (`songtekst`, `blok`, the keys `gem` and
+  `med`) stay. Those end up in reports the user reads, so they are
+  interface language rather than code - but they are written as literal
+  strings instead of through `t(...)`, so they belong with those
+  fifty-two rather than here.
+
 Included in v1.0.5:
 
 - **B549 - emptying the cache quietly cost the hand-made coupling.**

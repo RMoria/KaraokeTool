@@ -20,10 +20,12 @@ Deliberate Dutch stays out of scope, because it is content and not the
 language of the code: the ``nl`` half of ``translations.py``, the file
 ``languages/nl.json``, and the markup the user types in his own lyrics
 (``[pauze]`` beside ``[pause]``). The data files his projects are built
-from - ``songtekst.txt``, ``karaoketekst.txt`` and the keys of the same
-name in ``project.json`` - are Dutch too, but those are waiting on a
-migration rather than on a translation: renaming them rewrites every
-project on his disk.
+from were Dutch too, and were waiting on a migration rather than on a
+translation, because renaming them rewrites every project on his disk.
+B555 did the migration: they are now ``lyrics.txt`` and
+``karaoke_text.txt``, with the keys of the same name in
+``project.json``. The old words stay in :data:`DUTCH_NAMES`, so the
+guard still catches them if they ever come back.
 
 The prose guard is the weakest of the three and says so out loud. It
 weighs Dutch function words against English ones, which is a heuristic,
@@ -139,6 +141,15 @@ def _dutch_identifiers(path: Path) -> list[str]:
                 found.append(node.name)
         elif isinstance(node, ast.arg) and _dutch_name_part(node.arg):
             found.append(node.arg)
+        elif isinstance(node, ast.alias):
+            # B556: an import alias is a name like any other, and this
+            # walk did not look at one. `from . import song_text as
+            # songtekst_module` stood three times in `pipeline.py`, in
+            # the module the rename of B555 is about, and the guard
+            # reported that file clean.
+            name = node.asname or node.name.rsplit(".", 1)[-1]
+            if _dutch_name_part(name):
+                found.append(name)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) \
                 and _dutch_name_part(node.id):
             found.append(node.id)

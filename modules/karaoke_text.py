@@ -41,7 +41,9 @@ from .translations import t
 
 logger = logging.getLogger(__name__)
 
-FILENAME = "karaoketekst.txt"
+#: B555: ``karaoketekst.txt`` until v1.0.5. See
+#: ``song_text.LYRICS_FILENAME`` for the reasoning.
+FILENAME = "karaoke_text.txt"
 
 _CROWD_START = ("[crowd]",)
 _CROWD_END = ("[/crowd]", "[einde crowd]")

@@ -314,8 +314,8 @@ def _project(root: Path, song: str, video: bool = True, title: str = ""):
     ensure_directories(paths)
     paths.project_file.write_text('{"created": "", "steps": {}}',
                                   encoding="utf-8")
-    (paths.input_dir / "songtekst.txt").write_text("een", encoding="utf-8")
-    (paths.input_dir / "karaoketekst.txt").write_text("twee", encoding="utf-8")
+    (paths.input_dir / "lyrics.txt").write_text("een", encoding="utf-8")
+    (paths.input_dir / "karaoke_text.txt").write_text("twee", encoding="utf-8")
     (paths.input_dir / "original.mp3").write_bytes(b"geluid")
     config = default_config()
     config = _replace(config, song=_replace(config.song, title=song))
@@ -357,8 +357,8 @@ def test_the_collection_gets_a_folder_per_project(tmp_path) -> None:
                                               with_sources=True)
     assert projects == 2 and files == 8
     names = sorted(p.name for p in (target / "Een_Lied").iterdir())
-    assert names == ["Een Lied_2.mp4", "karaoketekst.txt", "original.mp3",
-                     "songtekst.txt"]
+    assert names == ["Een Lied_2.mp4", "karaoke_text.txt", "lyrics.txt",
+                     "original.mp3"]
 
 
 def test_the_newest_render_goes_along(tmp_path) -> None:

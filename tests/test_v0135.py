@@ -39,7 +39,7 @@ def test_punctuation_still_yields_nothing() -> None:
 
 
 def test_the_lyrics_count_the_pieces(tmp_path) -> None:
-    path = tmp_path / "songtekst.txt"
+    path = tmp_path / song_text.LYRICS_FILENAME
     path.write_text("La-la-la, na-na\nwoah-oh\n", encoding="utf-8")
     assert [w.text for w in song_text.load_lyrics(path)] == [
         "La", "la", "la", "na", "na", "woah", "oh"]

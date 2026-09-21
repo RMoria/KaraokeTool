@@ -299,9 +299,9 @@ def test_check_text_alignment_inline_crowd(tmp_path: Path) -> None:
     false structure mismatch when both texts have the same line
     layout."""
     context = _context(tmp_path)
-    (context.paths.input_dir / "songtekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text(
         "K zeg oeh!\nIk zeg ah!\n", encoding="utf-8")
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "K zeg oeh! [crowd]Oeh![/crowd]\nIk zeg ah! [crowd]Ah![/crowd]\n",
         encoding="utf-8")
     ok, _ = pipeline.check_text_alignment(context)
@@ -311,12 +311,12 @@ def test_check_text_alignment_inline_crowd(tmp_path: Path) -> None:
 def test_texts_identical(tmp_path: Path) -> None:
     """B115: identical lyrics and karaoke text are recognised."""
     context = _context(tmp_path)
-    (context.paths.input_dir / "songtekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text(
         "Rood Witte Zangers", encoding="utf-8")
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "rood  witte\nzangers", encoding="utf-8")
     assert pipeline.texts_identical(context) is True
-    (context.paths.input_dir / "songtekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text(
         "Iets heel anders hier", encoding="utf-8")
     assert pipeline.texts_identical(context) is False
 
@@ -888,9 +888,9 @@ def test_video_input_status_reports_missing(tmp_path: Path) -> None:
     assert items == {"lyrics": False, "karaoke_text": False, "logo": False,
                      "timing": False, "offset": False}
 
-    (context.paths.input_dir / "songtekst.txt").write_text("Kedeng\n",
-                                                           encoding="utf-8")
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text("Kedeng\n",
+                                                        encoding="utf-8")
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "[crowd]\nLa-la-la\n[/crowd]\nEcht zingen\n", encoding="utf-8")
     (context.paths.input_dir / "logo.png").write_bytes(b"png")
     items2 = dict((key, (present, detail)) for key, _name, present, detail
@@ -906,7 +906,7 @@ def test_generate_timing_without_alignment(tmp_path: Path) -> None:
     from modules.timing import load_timing
 
     context = _context(tmp_path)
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "# Intro\nGroen Zwarte Zangers\n[crowd]\nLa-la-la\n[/crowd]\n",
         encoding="utf-8")
     target, count, detail = pipeline.generate_timing(context)
@@ -920,7 +920,7 @@ def test_generate_timing_without_alignment(tmp_path: Path) -> None:
 
 
 def test_generate_timing_requires_text(tmp_path: Path) -> None:
-    with pytest.raises(PipelineError, match="karaoketekst"):
+    with pytest.raises(PipelineError, match="karaoke_text"):
         pipeline.generate_timing(_context(tmp_path))
 
 
@@ -929,10 +929,10 @@ def test_generate_timing_falls_back_to_lyrics(tmp_path: Path) -> None:
     from modules.timing import load_timing
 
     context = _context(tmp_path)
-    (context.paths.input_dir / "songtekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text(
         "Rood Witte Zangers\nVooraan in de polonaise\n", encoding="utf-8")
-    # No karaoketekst.txt present.
-    assert pipeline.karaoke_text_path(context).name == "songtekst.txt"
+    # No karaoke_text.txt present.
+    assert pipeline.karaoke_text_path(context).name == "lyrics.txt"
     target, count, _ = pipeline.generate_timing(context)
     assert target.exists() and count == 2
     assert all(line.end > line.start for line in load_timing(target))
@@ -1055,8 +1055,8 @@ def test_apply_manual_damping_back_from_original(tmp_path: Path) -> None:
 
 def test_check_text_alignment(tmp_path: Path) -> None:
     context = _context(tmp_path)
-    song = context.paths.input_dir / "songtekst.txt"
-    karaoke = context.paths.input_dir / "karaoketekst.txt"
+    song = context.paths.input_dir / "lyrics.txt"
+    karaoke = context.paths.input_dir / "karaoke_text.txt"
 
     # Equal number of sections (2 blocks each) -> ok.
     song.write_text("Kedeng kedeng\n\nEen twee drie\n", encoding="utf-8")
@@ -1108,10 +1108,10 @@ def test_language_for_uses_the_lyrics_file(tmp_path: Path) -> None:
     """
     pytest.importorskip("langdetect")
     context = _context(tmp_path)
-    (context.paths.input_dir / "songtekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text(
         "Tu étais formidable, nous étions formidables, formidable",
         encoding="utf-8")
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "Wij lopen vooraan in de polonaise met een frikandel "
         "en een glas bier in de hand",
         encoding="utf-8")

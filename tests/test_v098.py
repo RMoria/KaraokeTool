@@ -268,7 +268,7 @@ def test_lyrics_edited_outside_the_app_are_noticed(
     including v0.97 the program noticed that nowhere, and the timing and
     the manual couplings kept pointing at the old text."""
     context = _context(tmp_path)
-    lyrics = context.paths.input_dir / "songtekst.txt"
+    lyrics = context.paths.input_dir / "lyrics.txt"
     lyrics.write_text("een twee drie\n", encoding="utf-8")
     pipeline.remember_sources(context)
 
@@ -291,13 +291,13 @@ def test_karaoke_text_edited_outside_the_app_spares_the_coupling(
     """And the other way round: changing the parody text must NOT cost
     the manual word couplings."""
     context = _context(tmp_path)
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "regel een\n", encoding="utf-8")
     pipeline.remember_sources(context)
     context.store.set_step("word_coupling", {"pins": {"0": [1]}})
     context.store.set_step("timing", {"lines": 1})
 
-    (context.paths.input_dir / "karaoketekst.txt").write_text(
+    (context.paths.input_dir / "karaoke_text.txt").write_text(
         "regel twee\n", encoding="utf-8")
     assert pipeline.sync_input_changes(context) == ("input:karaoke_text",)
     assert context.store.get_step("timing") is None
@@ -325,7 +325,7 @@ def test_unchanged_project_throws_nothing_away(tmp_path: Path) -> None:
     """The opposite risk: throwing everything away at every step because
     the fingerprint has never been stored yet."""
     context = _context(tmp_path)
-    (context.paths.input_dir / "songtekst.txt").write_text(
+    (context.paths.input_dir / "lyrics.txt").write_text(
         "een twee\n", encoding="utf-8")
     context.store.set_step("timing", {"lines": 2})
     # First time: no fingerprints known yet -> throw nothing away.

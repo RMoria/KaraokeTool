@@ -55,8 +55,8 @@ def test_load_segments_corrupt(tmp_path: Path) -> None:
 
 def test_write_outputs_creates_all_files(tmp_path: Path) -> None:
     write_outputs(_example_segments(), {"model": "large-v3"}, tmp_path)
-    for name in ("transcript.txt", "words.csv", "woorden.json",
-                 "segmenten.json", "run_info.json"):
+    for name in ("transcript.txt", "words.csv", "words.json",
+                 "segments.json", "run_info.json"):
         assert (tmp_path / name).exists(), name
 
 
@@ -78,7 +78,7 @@ def test_words_csv_content(tmp_path: Path) -> None:
 
 def test_words_json_content(tmp_path: Path) -> None:
     write_outputs(_example_segments(), {}, tmp_path)
-    words = json.loads((tmp_path / "woorden.json").read_text(encoding="utf-8"))
+    words = json.loads((tmp_path / "words.json").read_text(encoding="utf-8"))
     assert len(words) == 4
     assert words[2] == {"text": "oe", "start": 3.0, "end": 3.4,
                         "confidence": 0.42, "segment": 1}

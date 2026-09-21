@@ -1963,7 +1963,7 @@ def _chunk_one_song(context, song, report, cancelled,
             f" {wc.unheard_seconds(merged, windows):.1f} s |"
             f" {filled_total} | - |")
         # The words themselves, so that "are those 248 words real?" can
-        # be answered against songtekst.txt instead of believed (B410).
+        # be answered against lyrics.txt instead of believed (B410).
         words_per_song[song] = (dict(runs), list(merged))
     lines += ["", t("heavy_language_used").format(
         code=language if language != "auto" else t("heavy_language_auto"))]

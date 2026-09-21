@@ -22,10 +22,10 @@ itself depends on.
 
 Two couplings are not obvious and explain a lot:
 
-- `karaoketekst.txt` also steers the **word coupling of the lyrics**,
+- `karaoke_text.txt` also steers the **word coupling of the lyrics**,
   through the filler-word priority, and therefore the line times. Your
   parody text helps decide which original words get coupled.
-- `songtekst.txt` sits in the cache key of Whisper (as the initial
+- `lyrics.txt` sits in the cache key of Whisper (as the initial
   prompt). Changing the lyrics can force a full re-transcription.
 
 What deliberately does NOT carry through matters just as much, because
@@ -57,7 +57,7 @@ Change this and 25 derivatives lapse.
 - Files: `cache:demucs_karaoke`, `cache:karaoke_edited`, `cache:karaoke_wav`, `cache:original_for_restore`, `cache:transcription_karaoke`, `output:alignment_json`, `output:analysis_karaoke`, `output:clusters_karaoke`, `output:karaoke_edit`, `output:timing`, `output:timing_diagnostics`
 
 
-### `input:lyrics` — input/songtekst.txt
+### `input:lyrics` — input/lyrics.txt
 
 Change this and 22 derivatives lapse.
 
@@ -66,7 +66,7 @@ Change this and 22 derivatives lapse.
 - Files: `cache:karaoke_edited`, `cache:transcription_original`, `output:analysis_original`, `output:clusters_original`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
 
-### `input:karaoke_text` — input/karaoketekst.txt
+### `input:karaoke_text` — input/karaoke_text.txt
 
 Change this and 7 derivatives lapse.
 
@@ -164,8 +164,8 @@ Change this and 7 derivatives lapse.
 |---|---|---|---|
 | `input:original` | source | input/origineel.* (the original recording) | *(source)* |
 | `input:karaoke` | source | input/karaoke.* (the karaoke version) | *(source)* |
-| `input:lyrics` | source | input/songtekst.txt | *(source)* |
-| `input:karaoke_text` | source | input/karaoketekst.txt | *(source)* |
+| `input:lyrics` | source | input/lyrics.txt | *(source)* |
+| `input:karaoke_text` | source | input/karaoke_text.txt | *(source)* |
 | `input:logo` | source | input/logo.* (the logo shown in the video) | *(source)* |
 | `config:whisper` | source | setting: Whisper model and language | *(source)* |
 | `config:forced_alignment` | source | setting: more precise word times (wav2vec2) | *(source)* |
@@ -179,8 +179,8 @@ Change this and 7 derivatives lapse.
 | `config:models` | source | setting: which models are switched on | *(source)* |
 | `source_original` | step | sha1 + wav path of the prepared original | `input:original` |
 | `source_karaoke` | step | sha1 + wav path of the prepared karaoke | `input:karaoke` |
-| `source_lyrics` | step | sha1 of songtekst.txt as the program knows it | `input:lyrics` |
-| `source_karaoke_text` | step | sha1 of karaoketekst.txt as the program knows it | `input:karaoke_text` |
+| `source_lyrics` | step | sha1 of lyrics.txt as the program knows it | `input:lyrics` |
+| `source_karaoke_text` | step | sha1 of karaoke_text.txt as the program knows it | `input:karaoke_text` |
 | `source_logo` | step | sha1 of the logo as the program knows it | `input:logo` |
 | `config_signature` | step | the settings in use, per group (to notice a change) | *(none — always stays valid)* |
 | `cache:original_wav` | file | cache/original.wav | `source_original` |

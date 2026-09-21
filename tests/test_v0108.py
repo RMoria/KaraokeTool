@@ -119,9 +119,9 @@ def _project(tmp_path: Path, lyrics: str, karaoke_text: str,
 
     paths = ProjectPaths(root=tmp_path, song="Proef")
     ensure_directories(paths)
-    (paths.input_dir / "songtekst.txt").write_text(lyrics,
-                                                   encoding="utf-8")
-    (paths.input_dir / "karaoketekst.txt").write_text(karaoke_text,
+    (paths.input_dir / "lyrics.txt").write_text(lyrics,
+                                                encoding="utf-8")
+    (paths.input_dir / "karaoke_text.txt").write_text(karaoke_text,
                                                       encoding="utf-8")
     context = pipeline.AppContext(paths=paths, config=default_config(),
                                   store=ProjectStore(paths.project_file))

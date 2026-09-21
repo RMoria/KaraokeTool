@@ -917,13 +917,12 @@ def _detect_language_probs(text: str) -> list[tuple[str, float]]:
 def _text_for_language(context: AppContext, track: str) -> Path:
     """The text file on which the language of a track is detected.
 
-    Original -> songtekst.txt, karaoke -> karaoketekst.txt (B115).
+    Original -> lyrics.txt, karaoke -> karaoke_text.txt (B115).
     """
     from . import karaoke_text
-    from . import song_text as songtekst_module
     if track == TRACK_KARAOKE:
         return context.paths.input_dir / karaoke_text.FILENAME
-    return context.paths.input_dir / songtekst_module.LYRICS_FILENAME
+    return context.paths.input_dir / song_text.LYRICS_FILENAME
 
 
 def language_candidates(context: AppContext,
@@ -1331,7 +1330,7 @@ def lyrics_override(context: AppContext) -> list[tuple[str, int]] | None:
     """The edited (cut/merged) lyrics words (B156).
 
     ``None`` if the user has not adjusted the lyrics words in the
-    coupling editor; then the normal songtekst.txt applies. This only
+    coupling editor; then the normal lyrics.txt applies. This only
     changes the coupling/analysis, not the karaoke text shown in the
     video.
     """
@@ -1371,7 +1370,7 @@ def _word_overlaps_dropped_segment(
     hallucination (B287)?
 
     Uses the same anchor window idea as the filler word match attempt in
-    ``songtekst.align_lyrics`` (B276): the time span between the nearest
+    ``song_text.align_lyrics`` (B276): the time span between the nearest
     neighbouring words before and after it that are coupled. If a
     filtered out hallucination segment falls (partly) within it, that is
     presumably the reason this word could not be coupled.
@@ -1835,8 +1834,7 @@ def texts_identical(context: AppContext) -> bool:
     probably with the original.
     """
     from . import karaoke_text
-    from . import song_text as songtekst_module
-    lyrics = context.paths.input_dir / songtekst_module.LYRICS_FILENAME
+    lyrics = context.paths.input_dir / song_text.LYRICS_FILENAME
     karaoke = context.paths.input_dir / karaoke_text.FILENAME
     if not (lyrics.exists() and karaoke.exists()):
         return False
@@ -1988,7 +1986,7 @@ def detect_track(context: AppContext, track: str,
     language_code = _language_for(context, track)
     # B263: pass the (deduplicated) lyrics along as Whisper context,
     # only for the original (the karaoke text is the parody, other
-    # vocabulary). Without songtekst.txt this stays empty (no behaviour
+    # vocabulary). Without lyrics.txt this stays empty (no behaviour
     # change). The prompt counts in the cache key: edited lyrics
     # without an audio change must be transcribed again.
     prompt = ""
@@ -2350,7 +2348,7 @@ def projects_without_cache(context: AppContext) -> list[str]:
     """Projects that were transcribed once but whose cache is gone (1.5).
 
     TEMPORARY tool. With a cleared cache the measurement - and a rebuild
-    of the coupling - runs on ``original/segmenten.json``, and that is
+    of the coupling - runs on ``original/segments.json``, and that is
     the RAW transcription from before the forced alignment (B348). Only
     projects whose audio is still there are named, because without that
     nothing can be transcribed.
@@ -2811,10 +2809,30 @@ def _model_states(config: AppConfig) -> dict[str, bool]:
             for model in model_register.register()}
 
 
+def unmigrated_texts(context: AppContext) -> tuple[str, ...]:
+    """The old text file names still lying in this project (B555).
+
+    A project is unmigrated when the old name is there and the new one
+    is not. Both present is not this function's business: the migration
+    leaves that case alone on purpose, and the program simply reads the
+    new one.
+
+    Returns the OLD names, so the message can say what to look for.
+    """
+    from . import karaoke_text
+
+    pairs = (("songtekst.txt", song_text.LYRICS_FILENAME),
+             ("karaoketekst.txt", karaoke_text.FILENAME))
+    directory = context.paths.input_dir
+    return tuple(old_name for old_name, new_name in pairs
+                 if (directory / old_name).exists()
+                 and not (directory / new_name).exists())
+
+
 def sync_input_changes(context: AppContext) -> tuple[str, ...]:
     """Notice that a source has changed outside the app, and act (B311).
 
-    The user edits ``songtekst.txt`` in Notepad, drops another
+    The user edits ``lyrics.txt`` in Notepad, drops another
     ``origineel.mp3`` into the folder with Explorer, or turns a setting
     off. Nothing in the program noticed that: the timing, the sentence
     coupling, the manual couplings (which count word POSITIONS) and the
@@ -2827,7 +2845,25 @@ def sync_input_changes(context: AppContext) -> tuple[str, ...]:
 
     Returns:
         The names of the changed sources.
+
+    Raises:
+        PipelineError: If the project still carries the file names from
+            before B555. See :func:`unmigrated_texts`.
     """
+    # B555: a project that has not been migrated looks, from here, like
+    # one whose lyrics have been DELETED - and this function's answer to
+    # a deleted source is to throw away everything derived from it. One
+    # click on any step button would cost the word coupling, timing.json
+    # and timing_auto.json, without a question and without a backup,
+    # because the rescue of B407/B429 needs the karaoke text and that is
+    # missing under its new name too. So this is the gate: it runs at
+    # the head of every step, which is exactly where the refusal has to
+    # sit.
+    stale = unmigrated_texts(context)
+    if stale:
+        raise PipelineError(t("err_not_migrated").format(
+            names=", ".join(stale)))
+
     changed: list[str] = []
     for source, step_name in _FINGERPRINTED.items():
         path = _source_file(context, source)
@@ -4328,11 +4364,11 @@ def _clean_segments_and_alignment(
 def _filler_priority_lines(context: AppContext) -> frozenset[int]:
     """Karaoke text line numbers where a filler word is extra important (B276).
 
-    Gives the line numbers of karaoketekst.txt that contain real
+    Gives the line numbers of karaoke_text.txt that contain real
     (non-filler word) content. Lyrics and karaoke text share the same
     structure separated by empty lines, so line number ``n`` in the one
     corresponds to line number ``n`` in the other; this function
-    therefore only reads the karaoke text, and ``songtekst.align_lyrics``
+    therefore only reads the karaoke text, and ``song_text.align_lyrics``
     subsequently tests the line number of each lyrics word against it
     (B288). If there is a filler word on such a line in the lyrics (e.g.
     lyrics "Oh, de mooiste momenten," / karaoke text "Ben ik een
@@ -4713,7 +4749,7 @@ def _place_skipped_on_energy(context: AppContext, aligned: tuple) -> tuple:
 
 def _lyrics_alignment(context: AppContext,
                       segments: tuple) -> tuple | None:
-    """Align the lyrics if ``input/songtekst.txt`` exists."""
+    """Align the lyrics if ``input/lyrics.txt`` exists."""
     lyrics_path = context.paths.input_dir / song_text.LYRICS_FILENAME
     if not lyrics_path.exists():
         return None
@@ -5406,7 +5442,7 @@ def _originals_without_coupling(context: AppContext) -> tuple[list, dict]:
 
     An empty lane used to be the answer, and then the user cannot put
     anything in its place - which is exactly what he needs the editor
-    for. The text is in ``songtekst.txt``; only its timing is unknown.
+    for. The text is in ``lyrics.txt``; only its timing is unknown.
     Every sentence is spread evenly over the song so it is at least
     visible and can be dragged to where it belongs, and every karaoke
     line is coupled proportionally so it has something to hang on.
@@ -5579,7 +5615,7 @@ def _line_blocks(lines_present: Sequence[int],
     """Block number per entry of ``lines_present``.
 
     A block boundary is a gap in the lyrics line numbers (a blank line
-    in ``songtekst.txt``).
+    in ``lyrics.txt``).
 
     B375: a [bg] line drops out of ``lines_present`` (those words sound
     at the same time as the neighbouring line and do not count as a line
@@ -5948,7 +5984,7 @@ def _original_lines_detailed(context: AppContext) -> list[dict] | None:
     per_line_times: dict[int, list[tuple[float, float]]] = {}
     per_line_word_spans: dict[int, list[tuple[str, float, float]]] = {}
     for word in aligned:
-        # B264: simultaneous backing vocals ([bg] in songtekst.txt) do not
+        # B264: simultaneous backing vocals ([bg] in lyrics.txt) do not
         # count as an own lyrics line - those sound at the same time as the
         # surrounding line instead of after each other, and would otherwise
         # disturb the sentence coupling just like an uncounted crowd block
@@ -6064,8 +6100,8 @@ def clear_original_overrides(context: AppContext) -> None:
 def karaoke_text_path(context: AppContext) -> Path | None:
     """The song text file to be shown for the video (B125).
 
-    Normally ``karaoketekst.txt`` (the parody). If that is missing, the
-    tool falls back on ``songtekst.txt`` so that you can also make a
+    Normally ``karaoke_text.txt`` (the parody). If that is missing, the
+    tool falls back on ``lyrics.txt`` so that you can also make a
     karaoke video of the original without a separate karaoke text.
     ``None`` if neither of the two exists.
     """
@@ -6524,9 +6560,7 @@ def check_text_alignment(context: AppContext) -> tuple[bool, str]:
     deviates (e.g. a verse that has dropped out).
     """
     from . import karaoke_text
-    from . import song_text as songtekst_module
-
-    lyrics_path = context.paths.input_dir / songtekst_module.LYRICS_FILENAME
+    lyrics_path = context.paths.input_dir / song_text.LYRICS_FILENAME
     karaoke_path = context.paths.input_dir / karaoke_text.FILENAME
     if not (lyrics_path.exists() and karaoke_path.exists()):
         return True, t("text_align_missing")

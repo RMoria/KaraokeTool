@@ -88,7 +88,7 @@ def test_the_second_language_counts_as_a_filler() -> None:
 def _context(tmp_path, text: str):
     paths = ProjectPaths(root=tmp_path, song="Proef")
     ensure_directories(paths)
-    (paths.input_dir / "songtekst.txt").write_text(text, encoding="utf-8")
+    (paths.input_dir / "lyrics.txt").write_text(text, encoding="utf-8")
     return pipeline.AppContext(paths=paths, config=default_config(),
                                store=ProjectStore(paths.project_file))
 

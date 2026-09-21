@@ -27,7 +27,7 @@ hand-set.
 
 ``<output-map>`` is the ``output/`` folder of an installation. A project
 is measured when it has ``settings/timing.json``,
-``settings/timing_auto.json`` and ``original/segmenten.json``.
+``settings/timing_auto.json`` and ``original/segments.json``.
 
 The stored ``timing_auto.json`` is often made by a much older version of
 the app (its version is in the header), so a comparison against it says
@@ -49,6 +49,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from modules import karaoke_text, song_text               # noqa: E402
 from modules import pipeline                              # noqa: E402
 from modules import timing_checks                         # noqa: E402
 from modules import timing as timing_module               # noqa: E402
@@ -95,7 +96,7 @@ def _build_project(project_dir: Path, work: Path) -> tuple | None:
     project data without the manual steps.
     """
     settings = project_dir / "settings"
-    segments = project_dir / "original" / "segmenten.json"
+    segments = project_dir / "original" / "segments.json"
     if not (settings / "project.json").exists() or not segments.exists():
         return None
     song = project_dir.name
@@ -105,15 +106,15 @@ def _build_project(project_dir: Path, work: Path) -> tuple | None:
     source_input = project_dir / "input"
     if not source_input.is_dir():
         source_input = project_dir.parents[1] / "input" / song
-    for name in ("songtekst.txt", "karaoketekst.txt"):
+    for name in (song_text.LYRICS_FILENAME, karaoke_text.FILENAME):
         origin = source_input / name
         if origin.exists():
             shutil.copyfile(origin, paths.input_dir / name)
-    if not (paths.input_dir / "songtekst.txt").exists():
+    if not (paths.input_dir / song_text.LYRICS_FILENAME).exists():
         return None
 
     # B348: the app couples on the CACHE, and that holds the segments
-    # AFTER forced alignment; ``original/segmenten.json`` is written by
+    # AFTER forced alignment; ``original/segments.json`` is written by
     # Whisper before that step and therefore holds the raw, contiguous
     # word times. Measured on Lied D: "Lightning" starts at 10.660 raw
     # against 11.201 aligned, and the twenty-millisecond artefacts that

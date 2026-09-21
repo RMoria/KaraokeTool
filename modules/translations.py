@@ -3,7 +3,7 @@
 The default language is Dutch. An extra language is simply an extra
 dictionary. Texts are fetched with :func:`t`; if a key is missing in
 the chosen language, then it falls back to Dutch and otherwise to the
-key itself. The file conventions (``songtekst.txt``, ``[crowd]`` etc.)
+key itself. The file conventions (``lyrics.txt``, ``[crowd]`` etc.)
 are deliberately NOT in here - those stay fixed.
 """
 
@@ -498,7 +498,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                  "eerst '{step_karaoke}'.",
         "err_no_source_properties": "Geen broneigenschappen gevonden; draai "
                                     "eerst '{step_detect}'.",
-        "err_no_text_files": "Geen karaoketekst.txt of songtekst.txt "
+        "err_not_migrated": "Dit project is nog niet omgezet: {names} staat "
+                            "er nog onder de oude naam. Sluit KaraokeTool en "
+                            "draai migrate_texts.bat - eenmalig; vanaf "
+                            "v1.0.6 heten de tekstbestanden lyrics.txt "
+                            "en karaoke_text.txt. Er is met opzet niets "
+                            "aangepast: doorgaan zou de koppeling en de "
+                            "timing weggooien.",
+        "err_no_text_files": "Geen karaoke_text.txt of lyrics.txt "
                              "gevonden; kies eerst de tekst.",
         "err_no_sung_lines": "De tekst bevat geen zangregels.",
         "err_no_original_audio": "Geen origineel-audio gevonden.",
@@ -682,7 +689,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "heavy_chunk": "Knippen en samenvoegen",
         "heavy_chunk_intro": "Vier manieren om Whisper dezelfde zangstem te laten horen, op {name}: zoals nu, twee keer met een verschoven start, en geknipt in {pieces} stukken op de stiltes met een eigen prompt per stuk. Er is {seconds} s gemeten zang. Waar het om gaat is de kolom \"niet gehoord\": seconden waar wel gezongen wordt maar geen woord staat.",
         "heavy_chunk_advice": "Het samenvoegen mag alleen gaten vullen, nooit overrulen: twee draaien delen dezelfde beginprompt, dus dat ze het eens zijn bewijst niets. Alleen de zangstem weet niets van de tekst en heeft daarom het laatste woord. Wint een variant duidelijk, dan is dat een instelling waard; scheelt het niets, dan weten we dat de vensterranden niet de oorzaak zijn.",
-        "heavy_chunk_words": "De gehoorde woorden per variant staan in {path}; leg ze naast songtekst.txt voordat 'meer woorden' als winst telt.",
+        "heavy_chunk_words": "De gehoorde woorden per variant staan in {path}; leg ze naast lyrics.txt voordat 'meer woorden' als winst telt.",
         "heavy_chunk_tail": "Let op: er wordt na de laatste tekstregel nog {seconds} s gezongen. Dat is ontbrekende tekst, geen gemiste zang - die seconden staan hieronder wel in 'niet gehoord'.",
         "log_measure_failed": "Meting van een project mislukt; de rest loopt door",
         "log_pool_unavailable": "Meten over losse processen lukt niet; terug naar één proces",
@@ -1518,7 +1525,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                  "'{step_karaoke}' first.",
         "err_no_source_properties": "No source properties found; run "
                                     "'{step_detect}' first.",
-        "err_no_text_files": "No karaoketekst.txt or songtekst.txt found; "
+        "err_not_migrated": "This project has not been converted yet: "
+                            "{names} is still there under its old name. "
+                            "Close KaraokeTool and run migrate_texts.bat "
+                            "- once; from v1.0.6 the text files are "
+                            "called lyrics.txt and karaoke_text.txt. "
+                            "Nothing has been touched on purpose: going "
+                            "on would throw away the coupling and the "
+                            "timing.",
+        "err_no_text_files": "No karaoke_text.txt or lyrics.txt found; "
                              "pick the text first.",
         "err_no_sung_lines": "The text contains no sung lines.",
         "err_no_original_audio": "No original audio found.",
@@ -1697,7 +1712,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "heavy_chunk": "Chunking and merging",
         "heavy_chunk_intro": "Four ways of showing Whisper the same vocal stem, on {name}: as it is now, twice with a shifted start, and cut into {pieces} pieces on the silences with its own prompt per piece. There is {seconds} s of measured singing. What counts is the \"unheard\" column: seconds where there is singing but no word.",
         "heavy_chunk_advice": "The merge may only fill holes, never overrule: two runs share the same initial prompt, so their agreeing proves nothing. Only the vocal stem knows nothing of the lyrics, which is why it has the last word. If a variant wins clearly it is worth a setting; if nothing changes, we know the window edges are not the cause.",
-        "heavy_chunk_words": "The words heard per variant are in {path}; put them beside songtekst.txt before counting 'more words' as a gain.",
+        "heavy_chunk_words": "The words heard per variant are in {path}; put them beside lyrics.txt before counting 'more words' as a gain.",
         "heavy_chunk_tail": "Note: {seconds} s is still sung after the last line of the text. That is missing lyrics, not missed singing - those seconds do count in 'not heard' below.",
         "log_measure_failed": "Measuring a project failed; the rest carries on",
         "log_pool_unavailable": "Measuring over separate processes failed; back to one process",

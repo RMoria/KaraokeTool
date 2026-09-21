@@ -9,7 +9,7 @@ from modules.karaoke_text import (PAUSE_TOKEN, apply_pause, is_pause,
 
 
 def test_parse_lines_with_crowd_block(tmp_path: Path) -> None:
-    path = tmp_path / "karaoketekst.txt"
+    path = tmp_path / "karaoke_text.txt"
     path.write_text(
         "Rood Witte Zangers, vooraan in de polonaise\n"
         "\n"
@@ -30,7 +30,7 @@ def test_parse_lines_with_crowd_block(tmp_path: Path) -> None:
 def test_inline_pause_stays_in_the_same_line(tmp_path: Path) -> None:
     """B107: [pause]/[pauze] becomes a loose pause sign inside the
     sentence."""
-    path = tmp_path / "karaoketekst.txt"
+    path = tmp_path / "karaoke_text.txt"
     path.write_text(
         "Want as de zangers [pause] weer gaan hossen\n"
         "[crowd]\n"
@@ -58,7 +58,7 @@ def test_apply_pause_and_is_pause() -> None:
 
 
 def test_comment_lines_are_skipped(tmp_path: Path) -> None:
-    path = tmp_path / "karaoketekst.txt"
+    path = tmp_path / "karaoke_text.txt"
     path.write_text("# Intro\nEcht zingen\n# Couplet 2\n",
                     encoding="utf-8")
     lines = parse_lines(path)
@@ -66,7 +66,7 @@ def test_comment_lines_are_skipped(tmp_path: Path) -> None:
 
 
 def test_parse_lines_case_insensitive_and_unclosed(tmp_path: Path) -> None:
-    path = tmp_path / "karaoketekst.txt"
+    path = tmp_path / "karaoke_text.txt"
     path.write_text("[CROWD]\nHo...\n", encoding="utf-8")
     lines = parse_lines(path)
     assert lines[0].crowd is True  # unclosed block: warning in the log
@@ -76,7 +76,7 @@ def test_inline_crowd_stays_in_the_sentence(tmp_path: Path) -> None:
     """B179a: inline crowd stays in the logical sentence; the crowd words
     are marked (red in the render), the sentence is not crowd at line
     level."""
-    path = tmp_path / "karaoketekst.txt"
+    path = tmp_path / "karaoke_text.txt"
     path.write_text("G Z R, G Z R [crowd]Waertje![/crowd]\n",
                     encoding="utf-8")
     lines = parse_lines(path)
@@ -89,7 +89,7 @@ def test_inline_crowd_stays_in_the_sentence(tmp_path: Path) -> None:
 
 def test_a_whole_crowd_line_is_crowd_at_line_level(tmp_path: Path) -> None:
     """B179b: a line that is entirely [crowd] is crowd at line level."""
-    path = tmp_path / "karaoketekst.txt"
+    path = tmp_path / "karaoke_text.txt"
     path.write_text("Zang hier\n[crowd]Oeh![/crowd]\n", encoding="utf-8")
     lines = parse_lines(path)
     assert [(line.text, line.crowd) for line in lines] == [
@@ -100,7 +100,7 @@ def test_a_whole_crowd_line_is_crowd_at_line_level(tmp_path: Path) -> None:
 def test_glued_crowd_markers_open_and_close_block(tmp_path: Path) -> None:
     """B74: [crowd] at the start and [/crowd] at the end (glued to the
     text) cover the whole block."""
-    path = tmp_path / "karaoketekst.txt"
+    path = tmp_path / "karaoke_text.txt"
     path.write_text(
         "[crowd]La-la 1\n"
         "La-la 2\n"

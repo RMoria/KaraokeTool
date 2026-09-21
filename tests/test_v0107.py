@@ -159,7 +159,7 @@ def test_the_ruler_prefers_the_cache_over_the_raw_copy(tmp_path) -> None:
     (project / "settings").mkdir(parents=True)
     (project / "original").mkdir(parents=True)
     (tmp_path / "input" / song).mkdir(parents=True)
-    (tmp_path / "input" / song / "songtekst.txt").write_text(
+    (tmp_path / "input" / song / "lyrics.txt").write_text(
         "een twee\n", encoding="utf-8")
     (project / "settings" / "project.json").write_text(
         json.dumps({"steps": {}}), encoding="utf-8")
@@ -170,7 +170,7 @@ def test_the_ruler_prefers_the_cache_over_the_raw_copy(tmp_path) -> None:
                             "words": [{"text": "een", "start": start,
                                        "end": start + 1.0, "conf": 0.9}]}])
 
-    (project / "original" / "segmenten.json").write_text(
+    (project / "original" / "segments.json").write_text(
         segments(10.660), encoding="utf-8")
 
     # Without a cache it falls back on the raw copy ...

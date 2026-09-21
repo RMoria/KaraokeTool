@@ -175,7 +175,7 @@ def test_a_multiple_coupling_ignores_a_crowd_noise(tmp_path) -> None:
     segment = Segment(index=0, text=" ".join(w.text for w in words),
                       start=words[0].start, end=words[-1].end, words=words)
 
-    path = tmp_path / "songtekst.txt"
+    path = tmp_path / "lyrics.txt"
     path.write_text("Than the law will allow\n", encoding="utf-8")
     lyrics = load_lyrics(path)
 
@@ -202,7 +202,7 @@ def test_the_multiple_coupling_of_kedeng_keeps_working(tmp_path) -> None:
         start=ws[0].start, end=ws[-1].end, words=ws)
     segments = (make(0, words0), make(1, words1))
 
-    path = tmp_path / "songtekst.txt"
+    path = tmp_path / "lyrics.txt"
     path.write_text("Kedeng Kedeng, Kedeng Kedeng\n", encoding="utf-8")
     lyrics = load_lyrics(path)
 
@@ -224,7 +224,7 @@ def test_min_multi_half_sim_only_judges_multiple_couplings(tmp_path) -> None:
     words = (_word("niet", 5.0, 0.3),)
     segment = Segment(index=0, text="niet", start=words[0].start,
                       end=words[-1].end, words=words)
-    path = tmp_path / "songtekst.txt"
+    path = tmp_path / "lyrics.txt"
     path.write_text("nu\n", encoding="utf-8")
     lyrics = load_lyrics(path)
     aligned = align_lyrics(lyrics, (segment,))

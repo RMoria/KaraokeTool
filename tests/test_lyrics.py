@@ -36,7 +36,7 @@ def _segments() -> tuple[Segment, ...]:
 
 def _lyrics(tmp_path: Path) -> Path:
     """Eight kedengs; the transcription can account for only six of them."""
-    path = tmp_path / "songtekst.txt"
+    path = tmp_path / "lyrics.txt"
     path.write_text(
         "Kedeng Kedeng, Kedeng Kedeng\n"
         "Kedeng Kedeng\n"

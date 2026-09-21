@@ -119,8 +119,8 @@ def _context(tmp_path):
 
     paths = ProjectPaths(root=tmp_path, song="Proef")
     ensure_directories(paths)
-    (paths.input_dir / "songtekst.txt").write_text("Regel een\n",
-                                                   encoding="utf-8")
+    (paths.input_dir / "lyrics.txt").write_text("Regel een\n",
+                                                encoding="utf-8")
     config = default_config()
     config = replace(config, song=replace(config.song, title="Proef"))
     return pipeline.AppContext(paths=paths, config=config,

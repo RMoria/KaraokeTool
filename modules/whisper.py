@@ -1,8 +1,8 @@
 """Speech recognition with Faster Whisper (model ``large-v3``, not turbo).
 
 Transcribes the original with word timestamps and confidence and writes
-the results to ``transcript.txt``, ``woorden.csv``, ``woorden.json``,
-``segmenten.json`` and ``run_info.json``. The segments can be kept in
+the results to ``transcript.txt``, ``woorden.csv``, ``words.json``,
+``segments.json`` and ``run_info.json``. The segments can be kept in
 the cache via :func:`save_segments`/:func:`load_segments`, so that
 Whisper does not have to run again.
 
@@ -283,8 +283,14 @@ def write_outputs(
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_transcript(segments, output_dir / "transcript.txt")
     _write_words_csv(segments, output_dir / "words.csv")
-    _write_words_json(segments, output_dir / "woorden.json")
-    _write_json(segments_to_dicts(segments), output_dir / "segmenten.json")
+    # B558: ``woorden.json``/``segmenten.json`` until v1.0.5. These are
+    # written into ``output/<song>/<track>/``, which is made anew on
+    # every run, so unlike the input files of B555 there is nothing to
+    # migrate - the old two simply stop being written. A stale pair from
+    # before this version stays behind until the folder is cleared, and
+    # is read by nothing.
+    _write_words_json(segments, output_dir / "words.json")
+    _write_json(segments_to_dicts(segments), output_dir / "segments.json")
     _write_json(run_info, output_dir / "run_info.json")
     logger.info(t("log_whisper_output"), output_dir)
 

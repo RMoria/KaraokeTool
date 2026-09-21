@@ -55,10 +55,10 @@ itself depends on.
 
 Two couplings are not obvious and explain a lot:
 
-- `karaoketekst.txt` also steers the **word coupling of the lyrics**,
+- `karaoke_text.txt` also steers the **word coupling of the lyrics**,
   through the filler-word priority, and therefore the line times. Your
   parody text helps decide which original words get coupled.
-- `songtekst.txt` sits in the cache key of Whisper (as the initial
+- `lyrics.txt` sits in the cache key of Whisper (as the initial
   prompt). Changing the lyrics can force a full re-transcription.
 
 What deliberately does NOT carry through matters just as much, because

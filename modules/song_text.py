@@ -26,7 +26,13 @@ from .translations import t
 
 logger = logging.getLogger(__name__)
 
-LYRICS_FILENAME = "songtekst.txt"
+#: B555: ``songtekst.txt`` until v1.0.5. The name is what the program
+#: calls this input everywhere else - ``input:lyrics``,
+#: ``source_lyrics``, the ``lyrics`` key in ``input_names`` - so it is
+#: the last Dutch name in the tree that the user also sees in Explorer.
+#: There is deliberately no fallback on the old name: two truths for one
+#: file is how a rename stays half done for years.
+LYRICS_FILENAME = "lyrics.txt"
 
 _MATCH_BASE = 0.45      # similarity level that scores neutrally
 _GAP_PENALTY = 0.15     # penalty for an unexplained word
@@ -74,7 +80,7 @@ class LyricWord:
     text: str
     line: int
     #: True = simultaneous background vocals (B264, ``[bg]...[/bg]`` in
-    #: songtekst.txt): sounds at the same time as the surrounding line
+    #: lyrics.txt): sounds at the same time as the surrounding line
     #: instead of after it. Such words are not counted in the sentence
     #: coupling (just like crowd in B260) but do count for Whisper's
     #: initial_prompt (B263) and the hallucination detection (B258).

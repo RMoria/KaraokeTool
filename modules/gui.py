@@ -1334,13 +1334,20 @@ class MainWindow(QMainWindow):
             row.addWidget(button)
             layout.addLayout(row)
 
-        for name, tkey, handler in (
-                ("Songtekst", "lyrics", self._choose_lyrics),
-                ("Karaoketekst", "karaoke_text", self._choose_karaoke_text),
-                ("Logo", "logo", self._choose_logo)):
+        # B557: keyed on the id the program uses everywhere else, not
+        # on a word. These were "Songtekst" and "Karaoketekst" - Dutch
+        # literals that were never shown (the visible text has always
+        # come from ``t(tkey)``) but WERE the key of ``_extra_labels``.
+        # Reading that dictionary back under a translated name would
+        # have raised a KeyError the moment the interface was set to
+        # English.
+        for tkey, handler in (
+                ("lyrics", self._choose_lyrics),
+                ("karaoke_text", self._choose_karaoke_text),
+                ("logo", self._choose_logo)):
             row = QHBoxLayout()
             label = QLabel()
-            self._extra_labels[name] = label
+            self._extra_labels[tkey] = label
             button = QPushButton(t("choose_file"))
             button.clicked.connect(handler)
             row.addWidget(QLabel(f"{t(tkey)}:"))
@@ -1385,7 +1392,7 @@ class MainWindow(QMainWindow):
         old_path = self._context.paths.input_dir / karaoke_text.FILENAME
         old_lines = (karaoke_text.parse_lines(old_path)
                      if old_path.exists() else ())
-        self._copy_into_input(chosen, "karaoketekst.txt", "karaoke_text",
+        self._copy_into_input(chosen, karaoke_text.FILENAME, "karaoke_text",
                               t("karaoke_text_note"))
         if old_lines:
             try:
@@ -1462,13 +1469,15 @@ class MainWindow(QMainWindow):
 
     def _choose_lyrics(self) -> None:
         """Choose the official lyrics (txt) and copy them to input."""
+        from . import song_text
+
         chosen, _ = QFileDialog.getOpenFileName(
             self, t("choose_lyrics_title"),
             pipeline.input_start_dir(self._context, "lyrics"),
             t("filter_text"))
         if chosen:
-            self._copy_into_input(chosen, "songtekst.txt", "lyrics",
-                                  t("lyrics_note"))
+            self._copy_into_input(chosen, song_text.LYRICS_FILENAME,
+                                  "lyrics", t("lyrics_note"))
             # New lyrics -> everything derived from them lapses (B113/B311).
             pipeline.invalidate(self._context, ["input:lyrics"])
             pipeline.remember_sources(self._context)
@@ -2814,19 +2823,24 @@ class MainWindow(QMainWindow):
                 label.setText(pipeline.input_display_name(
                     self._context, stem, found.name))
                 label.setStyleSheet("color: #1b7f3b;")
+        from . import karaoke_text, song_text
+
         input_dir = self._context.paths.input_dir
         logos = sorted(input_dir.glob("logo.*"))
+        # B555: the file names come from the modules that own them.
+        # They were typed out here, which is why renaming one file meant
+        # touching seventeen of them.
         statuses = {
-            "Songtekst": (input_dir / "songtekst.txt").exists()
+            "lyrics": (input_dir / song_text.LYRICS_FILENAME).exists()
             and pipeline.input_display_name(
-                self._context, "lyrics", "songtekst.txt"),
-            "Karaoketekst": (input_dir / "karaoketekst.txt").exists()
+                self._context, "lyrics", song_text.LYRICS_FILENAME),
+            "karaoke_text": (input_dir / karaoke_text.FILENAME).exists()
             and pipeline.input_display_name(
-                self._context, "karaoke_text", "karaoketekst.txt"),
-            "Logo": bool(logos) and pipeline.input_display_name(
+                self._context, "karaoke_text", karaoke_text.FILENAME),
+            "logo": bool(logos) and pipeline.input_display_name(
                 self._context, "logo", logos[0].name if logos else ""),
         }
-        required = {"Songtekst", "Karaoketekst"}
+        required = {"lyrics", "karaoke_text"}
         for name, value in statuses.items():
             label = self._extra_labels[name]
             if value:

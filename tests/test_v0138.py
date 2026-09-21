@@ -1129,7 +1129,7 @@ def test_the_chunked_run_end_to_end(tmp_path, monkeypatch) -> None:
     assert [s.text for s in segments] == ["een twee", "drie"]
     assert [s.index for s in segments] == [0, 1]
     assert [s.start for s in segments] == sorted(s.start for s in segments)
-    assert (output / "segmenten.json").exists()
+    assert (output / "segments.json").exists()
     assert (output / "run_info.json").exists()
 
 

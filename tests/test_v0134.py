@@ -92,7 +92,7 @@ def test_carrying_over_always_yields_as_many_lines_as_the_new_text() -> None:
 def test_a_number_stays_in_the_lyrics(tmp_path) -> None:
     """"Another 45 miles" became "Another miles": eleven words missing
     from one song, invisible in every display."""
-    path = tmp_path / "songtekst.txt"
+    path = tmp_path / song_text.LYRICS_FILENAME
     path.write_text("Another 45 miles to go\nBut I would walk 500 miles\n",
                     encoding="utf-8")
     words = [w.text for w in song_text.load_lyrics(path)]
@@ -114,7 +114,7 @@ def test_the_key_of_the_digits_matches_the_key_of_the_words() -> None:
 
 
 def test_punctuation_still_goes(tmp_path) -> None:
-    path = tmp_path / "songtekst.txt"
+    path = tmp_path / song_text.LYRICS_FILENAME
     path.write_text("Hello, world! 45.\n", encoding="utf-8")
     assert [w.text for w in song_text.load_lyrics(path)] == [
         "Hello", "world", "45"]
@@ -156,7 +156,8 @@ def test_a_kind_that_has_its_own_folder_keeps_it(tmp_path) -> None:
     text = tmp_path / "teksten"
     music.mkdir()
     text.mkdir()
-    pipeline.set_input_origin(context, "lyrics", text / "songtekst.txt")
+    pipeline.set_input_origin(context, "lyrics",
+                              text / song_text.LYRICS_FILENAME)
     pipeline.set_input_origin(context, "original", music / "origineel.mp3")
     assert pipeline.input_start_dir(context, "lyrics") == str(text)
 
