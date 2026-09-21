@@ -128,7 +128,7 @@ def test_filter_hallucinations_broad_check_spares_partial_match() -> None:
 
 
 def test_filter_hallucinations_broad_check_needs_min_core_words() -> None:
-    """Below ``_SEGMENT_HALLUCINATION_MIN_KERNWOORDEN`` core words the
+    """Below ``_SEGMENT_HALLUCINATION_MIN_CORE_WORDS`` core words the
     song-wide check is skipped - too little phonetic material to establish
     "belongs nowhere" reliably."""
     segs = (Segment(0, "Xyzzy", 10.0, 10.5, (Word("Xyzzy", 10.0, 10.5, 0.2),)),)

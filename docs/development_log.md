@@ -5242,6 +5242,197 @@ What of the list is NOT in it, and why:
   pause lasts about two. Changing either without measuring is guessing;
   the yardstick (1.5.5/1.5.10) can say what it does.
 
+Included in v1.0.5:
+
+- **B549 - emptying the cache quietly cost the hand-made coupling.**
+  "Nu legen" removes the transcription from the cache. The cache hit in
+  `detect_track` needs exactly that file, so after emptying there is
+  never a hit, and every detection after it ran
+  `invalidate_after_fresh_transcript`: the word coupling of step 2,
+  `timing.json` and `timing_auto.json` went. Even when the
+  transcription that came back was word for word the one they were
+  made on, which after an emptied cache it usually is - the audio, the
+  model, the language and the prompt are all unchanged, only the file
+  is gone. Hours of hand work for a button that promises to free up
+  disk space.
+
+  Missing the cache is not the same as a different answer. A
+  fingerprint of the transcript - a sha1 over the serialised segments,
+  so the words AND their times count - now stands in the step beside
+  the cache key. The step lives in `project.json` and survives an
+  emptied cache, so after a new transcription the two can be compared:
+  the same text means the coupling still fits and stays. B265 is
+  untouched for the case it was written for - another text still
+  clears it, because the pins point at positions in the transcript and
+  on another text they point at nothing.
+
+  Found during the review of B545 and demonstrated there; it is a
+  different defect from the one that release was about, which is why
+  it waited for its own number.
+
+- **B550 - the rule said English, the guard said nothing, and the
+  README said it was done.** v1.0.1 claimed the whole tree was English
+  and all three TODO lists were empty. Both true, and the conclusion
+  wrong: the lists were empty because the guard could not see what was
+  left.
+
+  Four holes, all four of them in the guard itself. The prose check
+  gives no verdict below twenty-five countable words, and fifteen test
+  files sat under that floor with Dutch function words and NO English
+  ones at all - `tests/test_v077.py` had twenty-two against nought.
+  The floor was meant to stop a one-line comment turning the suite
+  red; it was forgiving whole files. Below the floor a second question
+  is asked now: at least three Dutch words and at least twice as many
+  as English. That is not a one-line comment any more, that is a file.
+
+  Then the verdict was per FILE, which is a majority vote, and a
+  majority hides a minority. `modules/test_history.py` has forty Dutch
+  function words against two hundred and thirty-six English ones and
+  passed - while three of its docstrings are Dutch from the first word
+  to the last. Twenty-one such pieces stood in ten files. Every
+  comment run and every docstring is now weighed on its own, and there
+  is nothing left for them to hide behind.
+
+  The identifier check anchored its Dutch stems at the START of a
+  name. Every test name starts with `test_`, so the check was nearly
+  powerless over the file type with the most Dutch in it -
+  `test_woorduitlijning_fallback` walked straight past. Every piece
+  between the underscores is weighed now, and a stem counts when the
+  piece begins OR ends with it. Both ends, because Dutch glues its
+  compounds together and puts the head LAST: `woorduitlijning` is
+  `woord` plus `uitlijning`, and `kernwoorden` ends on the very stem
+  that gives it away. Looking only at the beginning, as the first
+  version of this did, misses that whole half.
+
+  And the guard read only `.py` and `.md`. `requirements.txt` - the
+  first file anyone who installs this project reads - was Dutch from
+  top to bottom, and so were the comments in `install.bat` and
+  `KaraokeToolGUI.bat` and the two notes in `assets/fonts/`. Those are
+  read now, with the same division a module gets: in a `.bat` the
+  `rem` lines are this project talking to whoever reads the script and
+  are English, while the `echo` lines are the program talking to the
+  user and stay Dutch, for the same reason the manual keeps the Dutch
+  button names.
+
+  Then the work the holes exposed. Twenty-one files by the widened
+  file rule - fifteen test files, `tools/timing_eval.py`,
+  `requirements.txt`, both `.bat` files and the two notes in
+  `assets/fonts/` - then twenty-one single pieces in ten more files by
+  the per-block rule, in six passes that ran side by side. Comments
+  and docstrings carried over with their reasoning and their build
+  numbers intact, and twenty-six Dutch identifiers that the guard can
+  see renamed with their references, plus a row of locals beside them
+  that it cannot. Content stayed content: the lyrics the tests are
+  built on, the markup the user types, the `nl` translations, the
+  Dutch the interface shows him.
+
+  Two files were converted that the guard still cannot see:
+  `tests/test_audio.py` and `tests/test_ffmpeg.py` each had exactly
+  two Dutch function words and no English ones - one under the new
+  threshold. Leaving them would have meant a threshold tuned to keep
+  the last two files green, which is how a guard becomes decoration.
+  Lowering it to two is not the answer either: a single two-word Dutch
+  comment would then turn the suite red. They were done by hand and
+  this paragraph is the record that the hole is real.
+
+  One real bug fell out of it. `tools/timing_eval.py` called
+  `timing_eval.compare_paths` under its old Dutch name
+  `vergelijk_paden`, which was renamed at B379 - the command-line tool
+  had been dead since then and nobody had run it.
+
+  What is NOT done, named rather than glossed over. The deny-list is
+  still a deny-list and not a dictionary, and it always will be: a
+  word list of Dutch would also flag "over", "index" and "single", and
+  a guard with false alarms is a guard that gets switched off. Seventy
+  stems now, and Dutch locals remain that none of them catch -
+  `modules/timing_editor.py` (`uit`, `cel`, `raak`, `ingang`),
+  `modules/gui.py`, `tools/rename_identifiers.py` (`bron`, `punten`),
+  `modules/timing_eval.py` (`per_blok_on`, `maten`, and the report
+  keys `gem` and `med`).
+
+  And the larger one: fifty-two `raise SomeError("...")` texts in
+  `modules/` carry their message literally, nearly all of them Dutch,
+  and several reach the user through the log window without following
+  his language choice. The guard against literal texts (B356) covers
+  `logger.x(...)` and stops there. Moving all fifty-two into the
+  translation layer is a job of its own - fifty-two texts, two
+  languages, each one something he reads - so it gets its own number.
+  What is here is a ratchet:
+  `test_the_literal_exception_texts_do_not_grow` counts them and
+  refuses both a higher number and a stale lower one, so the hole
+  cannot quietly widen while it waits.
+
+- **B554 - three error messages named settings that do not exist.**
+  Found while reading `modules/config.py` for the language work.
+  Reject a configuration file and it would say `'marge_ms'` may not be
+  negative, or `'analyse.min_confidence'`, or that one of
+  `'tracks.origineel'` has to be on. Those keys were renamed long ago:
+  the fields are `margin_ms`, `analysis.min_confidence` and
+  `tracks.original`. So the user was sent to a setting that
+  `_dataclass_from_mapping` would have reported as unknown if he had
+  gone and made it. The names in the messages match the fields again.
+
+- **B551 - two tests that asserted nothing on the machine they had to
+  work on.** `test_separation_unavailable_raises` had its whole body
+  under `if not separation.is_available():`, with "In this environment
+  Demucs is not installed" beside it; `test_woorduitlijning_fallback`
+  hid the second of its two assertions the same way. On a machine with
+  Demucs and WhisperX - which is the machine this is built for, and
+  which `install.bat` makes certain of - both passed while asking
+  nothing. The absence is arranged with a monkeypatch now, so the
+  question is about the code instead of about the machine. The second
+  one also had a Dutch name and is `test_word_alignment_falls_back`.
+
+- **B552 - the suite ran on a machine that did not meet
+  requirements.txt.** This is the test that would have prevented the
+  whole of B545. Three tests were green here and red there, and the
+  reason underneath was not those three tests: `faster-whisper` and
+  `langdetect` are declared as required and were not installed in the
+  reference environment. A suite that runs with half the requirements
+  missing is not testing the program, it is testing a program that
+  happens to be there. `tests/test_requirements.py` imports every line
+  of the file, and the two that were missing have been installed - the
+  suite reports 1763 passed and, for the first time, nothing skipped.
+
+  Installing them found something immediately.
+  `test_language_for_uses_the_lyrics_file` had been skipping for years
+  and now ran - and it ran red in the PUBLIC copy while passing here.
+  Its karaoke sentence opened with the name of the user's own
+  association, which langdetect read as Dutch at 0.72 against
+  Afrikaans at 0.28, and the publication tool replaces that name by a
+  neutral one, which tipped it to Afrikaans. Fragile twice over: a
+  test whose material is the owner's private data only works on one
+  machine, and a 0.72 margin is decided by langdetect's own random
+  sampling as much as by the text. The sentence is longer and carries
+  no names now, at 0.99999.
+
+  The optional models are deliberately outside it. `requirements.txt`
+  puts Demucs and WhisperX under a heading of their own with a `pip
+  install` line beside them, and the code asks `is_available` before
+  it uses them. A third test keeps that difference visible, because
+  the day one of them moves into the list proper, a machine without it
+  is broken rather than merely limited. Worth knowing: `install.bat`
+  installs both of them always (B195), so on the machine this is built
+  for they are there - which is exactly why the two tests of B551
+  asserted nothing.
+
+  "Nothing skipped" is about this tree. The published copy still
+  reports sixteen skips, and rightly: fifteen of them are
+  `tests/test_export_tool.py`, which tests a tool that deliberately
+  does not travel, and one is the font test on a checkout where
+  `install.bat` has not run yet.
+
+- **B553 - the Demucs simulation is a fixture instead of a throwaway.**
+  It was built twice now to prove something (B545, and again to check
+  the fix), and thrown away twice. It stubs the only two places
+  `modules/separation.py` touches the outside world - whether the
+  package is there and the subprocess that would run it - and lets
+  everything else run for real. As `demucs_installed` in
+  `tests/conftest.py`, asked for by name and never automatic, it gives
+  `separate_cached` its first test across two calls: the marker, the
+  staleness check of B311, the copying into the fixed place, and B548
+  end to end with two different models.
+
 Included in v1.0.4:
 
 - **B547 - the download message stayed away in exactly the two cases

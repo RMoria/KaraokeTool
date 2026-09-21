@@ -42,8 +42,8 @@ def test_the_original_block_turns_blue() -> None:
     # And the karaoke sentence keeps its text and colour, but it does
     # get a border - otherwise a line without a block in the original
     # lane (a whole [bg] line) can be marked with nothing to show for it.
-    assert "else _RESTORE_BORDER if haalt \\\n" in source
-    assert "else _BG_BORDER if achtergrond else QColor(40, 40, 40)" in source
+    assert "else _RESTORE_BORDER if restores \\\n" in source
+    assert "else _BG_BORDER if background else QColor(40, 40, 40)" in source
 
 
 def test_a_moved_piece_gets_a_dotted_border() -> None:
@@ -348,4 +348,4 @@ def test_the_karaoke_sentence_shows_that_it_is_marked() -> None:
     from modules import timing_editor
 
     source = _source_of(timing_editor)
-    assert "haalt = bool(rows) and all(" in source
+    assert "restores = bool(rows) and all(" in source

@@ -1,4 +1,4 @@
-"""Tests voor modules.audio."""
+"""Tests for modules.audio."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def test_wav_roundtrip(tmp_path: Path) -> None:
 
     assert loaded_rate == sample_rate
     assert loaded.shape == data.shape
-    # 16-bit kwantisatie geeft een kleine afwijking.
+    # 16-bit quantisation gives a small deviation.
     assert np.max(np.abs(loaded - data)) < 1e-3
 
 

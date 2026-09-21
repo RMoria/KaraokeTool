@@ -320,8 +320,8 @@ class TimingCanvas(QWidget):
         # the minimum. Only the direct neighbours in the ordering (index),
         # so that the order does not change and the line stays in its own
         # place (B199b).
-        def neighbour(vooraf: bool):
-            search_range = range(r - 1, -1, -1) if vooraf else range(r + 1,
+        def neighbour(before: bool):
+            search_range = range(r - 1, -1, -1) if before else range(r + 1,
                                                               len(self._lines))
             for i in search_range:
                 o = self._lines[i]
@@ -428,13 +428,13 @@ class TimingCanvas(QWidget):
             painter.setPen(QPen(QColor(120, 120, 120) if uit
                                 else QColor(90, 30, 30) if is_crowd
                                 else QColor(60, 50, 30)))
-            voorvoegsel = "[uit] " if uit else ("[crowd] " if is_crowd else "")
+            prefix = "[uit] " if uit else ("[crowd] " if is_crowd else "")
             # B485: the background piece belongs to this sentence and is
             # shown with it, between brackets so that it is clear it is
             # not sung along with.
-            achtergrond = str(cel.get("bg") or "")
-            text_value = voorvoegsel + cel["text"] + (
-                f"  [{achtergrond}]" if achtergrond else "")
+            background = str(cel.get("bg") or "")
+            text_value = prefix + cel["text"] + (
+                f"  [{background}]" if background else "")
             painter.drawText(int(ox1) + 4, y + 18,
                              text_value[:int((ox2 - ox1) / 7) or 1])
         self._draw_wave(painter, self._karaoke_peaks, _KARAOKE_WAVE_TOP,
@@ -467,10 +467,10 @@ class TimingCanvas(QWidget):
             # to the ORIGINAL that is fetched back, so it is shown there;
             # colouring the karaoke sentence blue as well hid the very
             # text the user is working on.
-            achtergrond = bool(cel.get("bg"))       # B507
+            background = bool(cel.get("bg"))       # B507
             if uit:
                 fill = QColor(200, 200, 200, 120)   # disabled = grey
-            elif achtergrond:
+            elif background:
                 fill = _BG_BLOCK
             else:
                 fill = _RED if cel["crowd"] else _GREEN
@@ -480,24 +480,25 @@ class TimingCanvas(QWidget):
             # - otherwise a line that has no block in the original lane
             # (a whole [bg] line) can be marked without anything at all
             # showing for it.
-            haalt = bool(rows) and all(
+            restores = bool(rows) and all(
                 self._lines[r].get("restore")
                 for r in rows if 0 <= r < len(self._lines))
             # B508: a sentence with a problem between the lines gets an
             # orange border, so it is visible here and not only in the
             # report three steps later.
-            fout = bool(set(rows) & self._problem_rows)
+            error = bool(set(rows) & self._problem_rows)
             border = QColor(150, 30, 30) if row == self._sel_cell \
-                else _PROBLEM_BORDER if fout \
-                else _RESTORE_BORDER if haalt \
-                else _BG_BORDER if achtergrond else QColor(40, 40, 40)
+                else _PROBLEM_BORDER if error \
+                else _RESTORE_BORDER if restores \
+                else _BG_BORDER if background else QColor(40, 40, 40)
             painter.setPen(QPen(border,
-                                2 if (row == self._sel_cell or haalt or fout)
+                                2 if (row == self._sel_cell
+                                      or restores or error)
                                 else 1,
-                                Qt.DotLine if achtergrond else Qt.SolidLine))
+                                Qt.DotLine if background else Qt.SolidLine))
             painter.drawRect(int(x1), y, max(3, int(x2 - x1)), 28)
             painter.setPen(QPen(QColor(120, 120, 120) if uit
-                                else QColor(70, 110, 75) if achtergrond
+                                else QColor(70, 110, 75) if background
                                 else QColor(40, 40, 40)))
             label = ("[uit] " + cel["text"]) if uit else cel["text"]
             painter.drawText(int(x1) + 4, y + 19,
@@ -624,7 +625,7 @@ class TimingCanvas(QWidget):
                 if mode is not None:
                     self._drag = ("original", index, mode, moment)
                     return
-        in_zangbaan = (_VOCAL_WAVE_TOP <= position.y()
+        in_vocal_lane = (_VOCAL_WAVE_TOP <= position.y()
                        <= _VOCAL_WAVE_TOP + _VOCAL_HEIGHT)
         # B414: an empty spot in the text lane counts too. Clicking
         # beside a block did literally nothing there - no selection, no
@@ -632,8 +633,8 @@ class TimingCanvas(QWidget):
         # screen and the place you are looking anyway when you are
         # timing a line. Only the empty spots: hitting a block still
         # means grabbing that block, and that is caught above.
-        in_tekstbaan = position.y() >= _LANES_TOP and not op_een_cel
-        if position.y() <= _AXIS_TOP + 20 or in_zangbaan or in_tekstbaan:
+        in_text_lane = position.y() >= _LANES_TOP and not op_een_cel
+        if position.y() <= _AXIS_TOP + 20 or in_vocal_lane or in_text_lane:
             # Click (on the waveforms/time bar, the vocal stem lane
             # (B230) or an empty spot in the text lane): playhead +
             # persistent marker move there (paused; playback starts with

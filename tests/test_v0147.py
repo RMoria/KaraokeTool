@@ -252,7 +252,7 @@ def test_the_new_texts_are_in_both_languages() -> None:
 
 
 # --------------------------------------------------------------------------
-# De kritische herlezing: wat er vóór de oplevering nog uit kwam
+# The critical re-reading: what still came out before the delivery
 # --------------------------------------------------------------------------
 
 def test_a_whole_missed_line_is_one_stretch() -> None:

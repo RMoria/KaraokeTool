@@ -180,7 +180,7 @@ def test_an_empty_spot_in_the_text_lane_moves_the_playhead() -> None:
     from modules import timing_editor
 
     source = inspect.getsource(timing_editor.TimingCanvas.mousePressEvent)
-    assert "in_tekstbaan" in source
+    assert "in_text_lane" in source
     assert "op_een_cel" in source
 
 

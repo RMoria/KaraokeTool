@@ -64,8 +64,8 @@ def separate(audio_path: Path, work_dir: Path,
                "vocals", "-n", model, "-o", str(work_dir), str(audio_path)]
     logger.info(t("log_demucs_separating"), audio_path.name)
     try:
-        # B356: via proc.run, zodat een afbreken Demucs echt stopt in
-        # plaats van drie minuten uit te zitten.
+        # B356: through proc.run, so that a cancel really stops Demucs
+        # instead of sitting out three more minutes.
         proc.run(command, check=True)
     except (subprocess.CalledProcessError, OSError) as exc:
         detail = getattr(exc, "stderr", "") or str(exc)

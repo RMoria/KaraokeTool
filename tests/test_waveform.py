@@ -1,4 +1,4 @@
-"""Tests voor modules.waveform."""
+"""Tests for modules.waveform."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from modules.waveform import compute_peaks, resample_peaks
 
 def test_compute_peaks_basic() -> None:
     samples = np.zeros(1000, dtype=np.float32)
-    samples[250] = 0.5   # piek in het tweede kwart
-    samples[750] = -1.0  # negatieve piek in het laatste kwart
+    samples[250] = 0.5   # peak in the second quarter
+    samples[750] = -1.0  # negative peak in the last quarter
     peaks = compute_peaks(samples, 4)
     assert peaks.shape == (4,)
     assert peaks[0] == 0.0
     assert peaks[1] == pytest.approx(0.5)
-    assert peaks[3] == pytest.approx(1.0)  # genormaliseerd
+    assert peaks[3] == pytest.approx(1.0)  # normalised
 
 
 def test_compute_peaks_stereo_and_empty() -> None:

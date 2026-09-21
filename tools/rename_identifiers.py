@@ -12,11 +12,11 @@ def punten_voor(bron, mapping):
     off = offsets(bron)
     punten = []
     for node in ast.walk(boom):
-        naam = col = lineno = None
+        name = col = lineno = None
         if isinstance(node, ast.Name):
-            naam, lineno, col = node.id, node.lineno, node.col_offset
+            name, lineno, col = node.id, node.lineno, node.col_offset
         elif isinstance(node, ast.arg):
-            naam, lineno, col = node.arg, node.lineno, node.col_offset
+            name, lineno, col = node.arg, node.lineno, node.col_offset
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if node.name in mapping:
                 # the name follows 'def '/'class ' on the def line
@@ -27,18 +27,21 @@ def punten_voor(bron, mapping):
                                    off[node.lineno-1]+idx+len(node.name), node.name))
             continue
         elif isinstance(node, ast.Attribute):
-            # attribuutnaam staat na de laatste punt binnen deze node
+            # the attribute name follows the last dot within this node
             if node.attr in mapping:
-                start_zoek = off[node.value.end_lineno-1] + node.value.end_col_offset
-                eind_zoek = off[node.end_lineno-1] + node.end_col_offset
-                stuk = bron[start_zoek:eind_zoek]
+                start_search = (off[node.value.end_lineno-1]
+                                + node.value.end_col_offset)
+                end_search = off[node.end_lineno-1] + node.end_col_offset
+                stuk = bron[start_search:end_search]
                 idx = stuk.rfind(node.attr)
                 if idx >= 0:
-                    punten.append((start_zoek+idx, start_zoek+idx+len(node.attr), node.attr))
+                    punten.append((start_search+idx,
+                                   start_search+idx+len(node.attr),
+                                   node.attr))
             continue
-        if naam and naam in mapping:
+        if name and name in mapping:
             s = off[lineno-1] + col
-            punten.append((s, s+len(naam), naam))
+            punten.append((s, s+len(name), name))
     return sorted(set(punten), reverse=True)
 
 def main():

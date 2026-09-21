@@ -367,7 +367,7 @@ def apply_phonetic_timing(lines: Sequence[TimedLine], language: str = "nl",
                 # B485: without this the mark was lost in the phonetic
                 # step - and that runs on EVERY freshly generated timing,
                 # so no file had it.
-                achtergrond = any(s.bg for s in group)
+                background = any(s.bg for s in group)
                 had_nadruk = any(s.stress for s in group)
                 held = group[0].held
                 if "_" in kaal:
@@ -375,7 +375,7 @@ def apply_phonetic_timing(lines: Sequence[TimedLine], language: str = "nl",
                     # one syllable; do not split it phonetically.
                     new.append(Syllable(text=leading + kaal, start=ws,
                                           end=we, held=held, stress=had_nadruk,
-                                          crowd=crowd, bg=achtergrond))
+                                          crowd=crowd, bg=background))
                     continue
                 segs = phonetics.distribute_word(kaal, ws, we, language, config)
                 # stress -> heaviest vowel segment
@@ -392,7 +392,7 @@ def apply_phonetic_timing(lines: Sequence[TimedLine], language: str = "nl",
                     txt = (leading + seg) if k == 0 else seg
                     new.append(Syllable(text=txt, start=s0, end=e0,
                                           held=held, stress=(k == stress),
-                                          crowd=crowd, bg=achtergrond))
+                                          crowd=crowd, bg=background))
             out.append(replace(line, syllables=tuple(new)))
         except Exception:  # noqa: BLE001 - segmentation must never break
             logger.exception(t("log_phonetic_segmentation_skipped"))
@@ -1007,13 +1007,13 @@ def editor_view_cells(lines: Sequence[dict],
             groups = piece_groups(line["syllables"])
             spans = word_spans(line["syllables"])
             for (text_value, start, end), group in zip(spans, groups):
-                achtergrond = all(
+                background = all(
                     line["syllables"][i].get("bg") for i in group)
                 cellen.append({"text": text_value, "start": start, "end": end,
                                "crowd": bool(line["crowd"]),
-                               "rows": [] if achtergrond else [pos],
+                               "rows": [] if background else [pos],
                                "uit": bool(line.get("disabled")),
-                               "bg": achtergrond})
+                               "bg": background})
         return cellen
     if mode == "blocks":
         cellen = []

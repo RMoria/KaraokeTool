@@ -526,9 +526,9 @@ def render_video(
     # only way to find out why a render came out wrong was to guess at
     # it afterwards from the file.
     logger.debug(t("log_render_command"), " ".join(command))
-    # Deze kan niet door proc.run: de render pompt zelf beelden in de
-    # stdin van ffmpeg. Wel aanmelden, zodat Stop hem kan afschieten
-    # (B356).
+    # This one cannot go through proc.run: the render pumps pictures
+    # into ffmpeg's stdin itself. It is registered all the same, so that
+    # Stop can shoot it down (B356).
     process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                stderr=subprocess.PIPE,
                                **proc.no_window_kwargs())
@@ -957,13 +957,13 @@ def _text_frame(moment, vocal, width, height, font, title_font, palette,
             # sentence ran straight through the sentence under it.
             previous_tops = _stack(active_index - 1)
     # During the gap slot 0 makes way for the countdown at the moment it
-    # appears (B474) and slot -1 drops out entirely; outside the gap slot -1 stays visible for
-    # the smooth B242 transition.
-    # B474: buiten het gat wordt slot -1 meegetekend voor de vloeiende
-    # verschuiving (B242). Kwam de huidige regel NA een instrumentaal gat,
-    # dan is de regel op slot -1 er tijdens dat gat uit gehaald om plaats
-    # te maken voor de teller; die mag niet terugspringen op precies de
-    # plek waar het cijfer stond.
+    # appears (B474) and slot -1 drops out entirely; outside the gap
+    # slot -1 stays visible for the smooth B242 transition.
+    # B474: outside the gap slot -1 is drawn along for the smooth shift
+    # (B242). Did the current line come AFTER an instrumental gap, then
+    # the line on slot -1 was taken out during that gap to make room for
+    # the countdown; it may not jump back in at exactly the place where
+    # the digit stood.
     after_gap = (active_index > 0
                  and (vocal[active_index].start
                       - vocal[active_index - 1].end) >= GAP_MIN_S)

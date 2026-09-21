@@ -1,4 +1,4 @@
-"""Tests voor v0.79.0-functies (B222, B228, B234)."""
+"""Tests for v0.79.0 features (B222, B228, B234)."""
 
 from __future__ import annotations
 
@@ -6,25 +6,25 @@ from modules import song_text, timing
 from modules.timing import Syllable, TimedLine
 
 
-# -- B228: creatieve auto-koppeling ----------------------------------------
+# -- B228: creative auto-coupling ------------------------------------------
 
 def _tr(words):
     return [(w, 0.0, 0.0) for w in words]
 
 
-def test_creative_2op1():
-    # 'fort' gekoppeld aan 'formidable'; 'minable' moet er ook aan.
+def test_creative_2_to_1():
+    # 'fort' coupled to 'formidable'; 'minable' has to join it.
     lyr = ["fort", "minable", "weg"]
     tr = _tr(["formidable", "weg"])
     targets = [[0], [], [1]]
     out = song_text.creative_couplings(lyr, tr, targets)
     assert out[0] == [0]
-    assert out[1] == [0]          # minable erbij (2-op-1)
+    assert out[1] == [0]          # minable joins in (2-to-1)
     assert out[2] == [1]
 
 
-def test_creative_gap_fill_binnen_venster():
-    # 'b' ongekoppeld tussen ankers a->0 en c->2; vrij woord 1 matcht 'b'.
+def test_creative_gap_fill_within_window():
+    # 'b' uncoupled between anchors a->0 and c->2; free word 1 matches 'b'.
     lyr = ["alpha", "bravo", "charlie"]
     tr = _tr(["alpha", "bravo", "charlie"])
     targets = [[0], [], [2]]
@@ -32,16 +32,17 @@ def test_creative_gap_fill_binnen_venster():
     assert out[1] == [1]
 
 
-def test_creative_geen_verre_duplicaten():
-    # 'et' ongekoppeld; identieke 'et' bestaat maar buiten het ankervenster.
+def test_creative_no_distant_duplicates():
+    # 'et' uncoupled; an identical 'et' exists but outside the anchor
+    # window.
     lyr = ["hallo", "et", "wereld"]
-    tr = _tr(["hallo", "wereld", "et"])   # 'et' op index 2, buiten venster 0..1
+    tr = _tr(["hallo", "wereld", "et"])  # 'et' at index 2, outside 0..1
     targets = [[0], [], [1]]
     out = song_text.creative_couplings(lyr, tr, targets)
-    assert out[1] == []           # niet gekoppeld aan de verre 'et'
+    assert out[1] == []           # not coupled to the distant 'et'
 
 
-# -- B234: woorden over zang-actieve vensters verdelen ---------------------
+# -- B234: distribute words over vocal-active windows ----------------------
 
 def _line(words_syls):
     syls = []
@@ -51,7 +52,7 @@ def _line(words_syls):
             if wi > 0 and si == 0:
                 txt = " " + txt
             syls.append(Syllable(text=txt, start=0.0, end=0.0, held="nl"))
-    # even verdeeld over 0..N
+    # evenly spread over 0..N
     n = len(syls)
     out = []
     for i, s in enumerate(syls):
@@ -61,29 +62,29 @@ def _line(words_syls):
                      crowd=False, syllables=tuple(out))
 
 
-def test_distribute_over_windows_pauze():
-    # 4 woorden (elk 1 lettergreep), span 0..4, twee vensters met een gat.
+def test_distribute_over_windows_pause():
+    # 4 words (1 syllable each), span 0..4, two windows with a gap.
     line = _line([1, 1, 1, 1])
     line = timing.replace(line, syllables=tuple(
         timing.replace(s, start=float(i), end=float(i + 1))
         for i, s in enumerate(line.syllables)))
-    windows = [(0.0, 1.8), (2.6, 4.0)]     # gat 1.8-2.6
+    windows = [(0.0, 1.8), (2.6, 4.0)]     # gap 1.8-2.6
     out = timing.distribute_over_windows(line, windows)
-    # regelbegin/eind behouden
+    # start/end of the line are preserved
     assert out.syllables[0].start == 0.0
     assert abs(out.syllables[-1].end - 4.0) < 1e-6
-    # er zit nu een gat tussen twee woorden (ergens rond 1.8-2.6)
+    # there is a gap between two words now (somewhere around 1.8-2.6)
     gaps = [out.syllables[i + 1].start - out.syllables[i].end
             for i in range(len(out.syllables) - 1)]
     assert max(gaps) > 0.5
 
 
-def test_distribute_over_windows_zonder_vensters():
+def test_distribute_over_windows_without_windows():
     line = _line([1, 1])
     assert timing.distribute_over_windows(line, []) is line
 
 
-# -- B222: overlappende onderrij-groep (grafiek) ---------------------------
+# -- B222: overlapping bottom-row group (graph) ----------------------------
 
 def test_bottom_overlap_merge(qapp_or_skip=None):
     import os
@@ -94,7 +95,7 @@ def test_bottom_overlap_merge(qapp_or_skip=None):
     QApplication.instance() or QApplication([])
     from modules.coupling_editor import CouplingCanvas
     transcript = [("Oh", 0.0, 0.3), ("bebe", 0.3, 0.6), ("x", 0.6, 0.9)]
-    # Eh -> [0]; l'bebe -> [0,1] (overlap op 0) -> groep {0,1}
+    # Eh -> [0]; l'bebe -> [0,1] (overlap at 0) -> group {0,1}
     words = [
         {"index": 0, "text": "Eh", "line": 0, "transcript_indices": [0],
          "found": "Oh", "sim": 0.6, "pinned": True},
@@ -106,4 +107,4 @@ def test_bottom_overlap_merge(qapp_or_skip=None):
     spans = canvas._merged_bottom_spans()
     assert spans.get(0)[:2] == (0, 1)
     assert spans.get(1)[:2] == (0, 1)
-    assert set(spans[0][2]) == {0, 1}      # union van doelen
+    assert set(spans[0][2]) == {0, 1}      # union of targets

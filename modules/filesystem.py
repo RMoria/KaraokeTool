@@ -201,8 +201,15 @@ def clean_cache(cache_dir: Path, keep: tuple[str, ...] = ()) -> int:
     """Empty the cache completely.
 
     Is called at start-up and shutdown: all intermediate results
-    (conversions, project.json, transcriptie.json) are removed. Every
-    session thus starts clean; Whisper runs again per session.
+    (conversions, the Demucs stems, the transcription) are removed.
+    Every session thus starts clean; Whisper runs again per session.
+
+    B549: ``project.json`` was named here and does not live in the
+    cache at all - it sits under ``output/<song>/settings/`` and
+    survives this. That is not a detail: the administration surviving
+    is precisely what lets a run after an emptied cache see that the
+    transcription it just made is the same text as the one the user's
+    coupling was built on.
 
     Returns:
         The number of removed files.

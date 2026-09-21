@@ -1,4 +1,4 @@
-"""Tests voor modules.analyse."""
+"""Tests for modules.analysis."""
 
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ def test_run_analysis_files_and_stats(tmp_path: Path) -> None:
     assert stats.segments == 2
     assert stats.words == 5
     assert stats.unique_words == 3  # kedeng, oe, koffie
-    assert stats.short_words == 1   # alleen 'oe' (<= 4 letters)
-    assert stats.lage_confidence == 1  # oe met 0.40
+    assert stats.short_words == 1   # only 'oe' (<= 4 letters)
+    assert stats.lage_confidence == 1  # oe with 0.40
     assert stats.average_confidence == pytest.approx(0.818, abs=1e-3)
 
     for name in ("frequency.csv", "short_words.csv",
@@ -56,7 +56,7 @@ def test_frequency_csv_sorted(tmp_path: Path) -> None:
     with (tmp_path / "frequency.csv").open(encoding="utf-8", newline="") as handle:
         rows = list(csv.reader(handle, delimiter=CSV_DELIMITER))
     assert rows[0] == ["word", "count"]
-    # 'kedeng' en 'oe' komen beide 2x voor en staan bovenaan.
+    # 'kedeng' and 'oe' both turn up twice and stand at the top.
     assert {rows[1][0], rows[2][0]} == {"kedeng", "oe"}
     assert rows[3] == ["koffie", "1"]
 
@@ -65,7 +65,7 @@ def test_low_confidence_csv(tmp_path: Path) -> None:
     run_analysis(_segments(), AnalysisSettings(min_confidence=0.92), tmp_path)
     with (tmp_path / "low_confidence.csv").open(encoding="utf-8", newline="") as handle:
         rows = list(csv.reader(handle, delimiter=CSV_DELIMITER))
-    # Gesorteerd op oplopende confidence: oe (0.40), oe (0.85), kedeng (0.90)
+    # Sorted by rising confidence: oe (0.40), oe (0.85), kedeng (0.90)
     assert [row[0] for row in rows[1:]] == ["oe", "oe", "kedeng,"]
 
 

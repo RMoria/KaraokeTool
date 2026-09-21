@@ -516,7 +516,7 @@ def _validate(config: AppConfig) -> None:
     if config.karaoke.fade_in_ms < 0 or config.karaoke.fade_out_ms < 0:
         raise ConfigError("Fadetijden mogen niet negatief zijn")
     if config.karaoke.margin_ms < 0:
-        raise ConfigError("'marge_ms' mag niet negatief zijn")
+        raise ConfigError("'margin_ms' mag niet negatief zijn")
     if config.align.max_offsets < 1:
         raise ConfigError("'align.max_offsets' moet minimaal 1 zijn")
     if config.align.window_s <= 0 or config.align.step_s <= 0:
@@ -532,9 +532,9 @@ def _validate(config: AppConfig) -> None:
                           "(0 zelf niet: dan blijft er geen enkel betrouwbaar "
                           "uitlijnvenster over)")
     if not 0.0 <= config.analysis.min_confidence <= 1.0:
-        raise ConfigError("'analyse.min_confidence' moet tussen 0 en 1 liggen")
+        raise ConfigError("'analysis.min_confidence' moet tussen 0 en 1 liggen")
     if config.analysis.short_word_max_letters < 1:
-        raise ConfigError("'analyse.short_word_max_letters' moet minimaal 1 zijn")
+        raise ConfigError("'analysis.short_word_max_letters' moet minimaal 1 zijn")
     if not 0.0 < config.cluster.similarity_threshold <= 1.0:
         raise ConfigError("'cluster.similarity_threshold' moet tussen 0 en 1 liggen")
     if config.cluster.merge_gap_ms < 0 or config.cluster.max_ngram < 1:
@@ -545,5 +545,5 @@ def _validate(config: AppConfig) -> None:
             or config.video.fps < 1:
         raise ConfigError("'video'-instellingen zijn ongeldig")
     if not (config.tracks.original or config.tracks.karaoke):
-        raise ConfigError("Minstens één van 'tracks.origineel'/"
+        raise ConfigError("Minstens één van 'tracks.original'/"
                           "'tracks.karaoke' moet aan staan")

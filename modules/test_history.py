@@ -86,7 +86,8 @@ def project_fingerprint(context, song: str) -> str:
         parts.append(f"cache:{stat.st_size}:{int(stat.st_mtime)}")
     except OSError:
         parts.append("cache:-")
-    # B361: dezelfde code met een ander model uit is een andere meting.
+    # B361: the same code with a different model off is a different
+    # measurement.
     parts.append("uit:" + ",".join(model_register.disabled_now()))
     return _digest("|".join(parts))
 
@@ -138,8 +139,8 @@ def lookup(code: str, song: str, version: str, fingerprint: str):
     return None
 
 
-#: Onder deze "projectnaam" staat de duur van de HELE actie, tegenover
-#: de duur per project bij de gewone ingangen (B370).
+#: Under this "project name" stands the duration of the WHOLE action,
+#: as against the duration per project at the ordinary entries (B370).
 TOTAL = "*"
 
 
@@ -160,7 +161,7 @@ def remember(code: str, song: str, version: str, fingerprint: str,
         if seconds is not None:
             ingang["seconds"] = round(float(seconds), 1)
         entries.append(ingang)
-        # Nieuwste achteraan; ouder dan KEEP_VERSIONS gaat eruit.
+        # Newest at the back; older than KEEP_VERSIONS drops out.
         data[_key(code, song)] = entries[-KEEP_VERSIONS:]
         _save(data)
 
@@ -231,7 +232,7 @@ def remember_duration(code: str, version: str, seconds: float) -> None:
 
 
 def durations(code: str) -> list[tuple[str, float]]:
-    """(versie, seconden) van de bewaarde draaien, oudste eerst."""
+    """(version, seconds) of the kept runs, oldest first."""
     uit = []
     for entry in history(code, TOTAL):
         seconden = entry.get("seconds")
@@ -241,8 +242,11 @@ def durations(code: str) -> list[tuple[str, float]]:
 
 
 def version_number(version: str) -> int:
-    """Het middelste getal van "0.116.0"; een reparatierelease als
-    0.110.1 telt dus niet als een eigen versie (B371)."""
+    """The middle number of "0.116.0".
+
+    A repair release such as 0.110.1 therefore does not count as a
+    version of its own (B371).
+    """
     delen = str(version).split(".")
     try:
         return int(delen[1]) if len(delen) > 1 else int(delen[0])
@@ -251,10 +255,10 @@ def version_number(version: str) -> int:
 
 
 def versions_ago(code: str, version: str) -> int | None:
-    """Hoeveel versies geleden deze actie voor het laatst draaide.
+    """How many versions ago this action last ran.
 
-    ``None`` als hij nog nooit heeft gedraaid - dan is er niets om over
-    te slaan en moet hij gewoon.
+    ``None`` if it has never run yet - then there is nothing to skip
+    and it simply has to.
     """
     gedraaid = [version_number(v) for v, _s in durations(code)]
     gedraaid += [version_number(e.get("version", ""))

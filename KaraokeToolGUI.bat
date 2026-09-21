@@ -1,13 +1,13 @@
 @echo off
 cd /d "%~dp0"
 
-rem De venv staat in de app-map, of - als die alleen-lezen is (bv. Program
-rem Files) - in %LOCALAPPDATA%\KaraokeTool (B221). Kies de juiste.
+rem The venv is in the app folder, or - if that is read-only (Program
+rem Files, say) - in %LOCALAPPDATA%\KaraokeTool (B221). Pick the right one.
 set "VENV=venv"
 if not exist "%VENV%\Scripts\python.exe" (
     if exist "%LOCALAPPDATA%\KaraokeTool\venv\Scripts\python.exe" (
         set "VENV=%LOCALAPPDATA%\KaraokeTool\venv"
-        rem Data (input/output/cache) staat dan ook daar; geef dat door.
+        rem The data (input/output/cache) is then there too; pass that on.
         set "KARAOKETOOL_DATA=%LOCALAPPDATA%\KaraokeTool"
     )
 )
@@ -19,20 +19,20 @@ if not exist "%VENV%\Scripts\python.exe" (
     exit /b 1
 )
 
-rem Kijken of er updates zijn (B444). Op de ACHTERGROND en zonder venster:
-rem pip moet het netwerk op en dat mag het starten nooit ophouden. Het
-rem script bepaalt zelf of het al aan de beurt is (hooguit eens per dag) en
-rem schrijft zijn uitkomst naar docs\updates.json; de app leest dat bij de
-rem VOLGENDE start en zet het in het logvenster. Het nieuws is dus altijd
-rem een start te laat, en dat is beter dan een start die hangt op een trage
-rem spiegelserver. Mislukt het, dan is er simpelweg geen nieuws.
+rem Look for updates (B444). In the BACKGROUND and without a window:
+rem pip has to go onto the network and that may never hold up the start.
+rem The script decides for itself whether its turn has come (once a day at
+rem most) and writes its answer to docs\updates.json; the app reads that on
+rem the NEXT start and puts it in the log window. So the news is always one
+rem start late, which is better than a start that hangs on a slow mirror.
+rem If it fails, there is simply no news.
 if exist "%VENV%\Scripts\pythonw.exe" (
     start "" /b "%VENV%\Scripts\pythonw.exe" tools\check_updates.py
 )
 
-rem Start vensterloos via pythonw zodat dit cmd-venster meteen sluit; de
-rem activiteit is zichtbaar in de GUI (paneel "Activiteit") en in logs\.
-rem Terugval op python.exe als pythonw ontbreekt.
+rem Start windowless through pythonw so this cmd window closes at once;
+rem the activity is visible in the GUI (the "Activiteit" panel) and in logs\.
+rem Falls back to python.exe when pythonw is missing.
 if exist "%VENV%\Scripts\pythonw.exe" (
     start "" "%VENV%\Scripts\pythonw.exe" KaraokeTool.py
 ) else (

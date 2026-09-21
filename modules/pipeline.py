@@ -2022,6 +2022,8 @@ def detect_track(context: AppContext, track: str,
     second_code = (_second_language_code(context, language_code, track)
                    if in_pieces else "")
     step = context.store.get_step(f"whisper_{track}")
+    # B549: kept before the step is overwritten below.
+    earlier_fingerprint = str((step or {}).get("transcript_sha1", ""))
     if (step is not None
             and step.get("wav_sha1") == checksum
             and step.get("model") == settings.model
@@ -2032,7 +2034,17 @@ def detect_track(context: AppContext, track: str,
             and bool(step.get("chunked", in_pieces)) == in_pieces
             and str(step.get("second_language", second_code)) == second_code
             and cache_file.exists()):
-        return DetectResult(track, whisper.load_segments(cache_file), True)
+        cached = whisper.load_segments(cache_file)
+        # B549: a project from before this version has no fingerprint in
+        # its step, and a cache hit returns here before the step is
+        # written - so without this it would never get one, and the
+        # first "Nu legen" after the update would still cost the user
+        # his coupling. The hit itself says these segments belong to
+        # this key, so this is the moment to note it down.
+        if not earlier_fingerprint:
+            step["transcript_sha1"] = transcript_fingerprint(cached)
+            context.store.set_step(f"whisper_{track}", step)
+        return DetectResult(track, cached, True)
 
     filled = 0
     if in_pieces:
@@ -2059,6 +2071,7 @@ def detect_track(context: AppContext, track: str,
             logger.info(t("log_forced_alignment_skipped"))
         segments = word_alignment.refine(wav_path, segments, language_code)
     whisper.save_segments(segments, cache_file)
+    fingerprint = transcript_fingerprint(segments)  # B549
     context.store.set_step(f"whisper_{track}", {
         "wav_sha1": checksum,
         "model": settings.model,
@@ -2071,13 +2084,26 @@ def detect_track(context: AppContext, track: str,
         "chunked": in_pieces,  # B442
         "filled_from_pieces": filled,  # B442
         "second_language": second_code,  # B538
+        "transcript_sha1": fingerprint,  # B549
     })
     # B265: this is a real new transcription (not a cache hit from the
     # check above) - any manual word coupling and the alignment/timing
     # built on it refer to the OLD text and must therefore lapse,
     # otherwise old coupling data keeps hanging around and is later
     # unleashed on the new transcription.
-    invalidate_after_fresh_transcript(context, track)
+    #
+    # B549: unless the text is word for word the one the handiwork was
+    # made on. "Nu legen" removes the transcription from the cache, and
+    # the cache hit above needs that file, so after emptying there is
+    # never a hit and the coupling, timing.json and timing_auto.json
+    # went every single time - even though the transcription that came
+    # back was identical. Missing the cache is not the same as a new
+    # answer. The fingerprint stands in the step, which lives in
+    # project.json and therefore survives an emptied cache.
+    if fingerprint and fingerprint == earlier_fingerprint:
+        logger.info(t("log_transcript_unchanged"), track)
+    else:
+        invalidate_after_fresh_transcript(context, track)
     return DetectResult(track, segments, False)
 
 
@@ -2644,6 +2670,40 @@ def invalidate_timing(context: AppContext) -> None:
     invalidate(context, ["timing"], include_changed=True)
 
 
+def transcript_fingerprint(segments) -> str:
+    """One value that says whether two transcriptions are the same text.
+
+    B549: written into the step beside the cache key, so that a run
+    after an emptied cache can tell "I had to transcribe again" apart
+    from "the answer is different". Only the first of those is a reason
+    to throw away the user's coupling and timing.
+
+    Over the serialised segments, so the words and their times count -
+    a text that reads the same but sits at other moments is another
+    transcription and the coupling on it is worth nothing.
+    """
+    import hashlib
+    import json as _json
+
+    try:
+        # Sorted, because chunked transcription fills its result in the
+        # order the threads finish and equal starts then land either way
+        # round. Sorting takes that out; what it cannot take out is a
+        # run that picks a DIFFERENT word on a tie, and then the answer
+        # really is another text. That fails towards throwing the
+        # coupling away, which is what happened before this at every
+        # single run.
+        payload = _json.dumps(
+            sorted(whisper.segments_to_dicts(segments),
+                   key=lambda item: _json.dumps(item, sort_keys=True,
+                                                ensure_ascii=False)),
+            sort_keys=True, ensure_ascii=False)
+    except (TypeError, ValueError):  # never let a fingerprint break a run
+        logger.exception(t("log_transcript_fingerprint_failed"))
+        return ""
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
 def invalidate_after_fresh_transcript(context: AppContext,
                                       track: str) -> None:
     """Clear what is based on the OLD transcription of ``track`` (B265).
@@ -2743,7 +2803,7 @@ def _config_signature(config: AppConfig) -> dict[str, str]:
 
 
 def _model_states(config: AppConfig) -> dict[str, bool]:
-    """De effectieve aan/uit-stand van elk model (B361)."""
+    """The effective on/off state of every model (B361)."""
     from . import model_register
 
     overrides = dict(getattr(config, "models", {}) or {})
@@ -3170,26 +3230,26 @@ _SPLIT_MAX_GAP_S = 0.35
 
 
 def _doubled_lyric_keys(lyrics) -> frozenset:
-    """Woorden die in de songtekst DIRECT achter elkaar staan (B373).
+    """Words that stand DIRECTLY after each other in the lyrics (B373).
 
-    Dat is de enige informatie die je nodig hebt om een doorgeknipt
-    woord van een echte herhaling te onderscheiden, en we hadden hem al
-    liggen. Staat "sunday sunday" nergens in de tekst, dan zijn twee
-    "sunday" naast elkaar in de transcriptie geen herhaling maar één
-    woord dat op de vensterrand is gesneden.
+    That is the only information needed to tell a word cut in two from
+    a real repetition, and we already had it lying around. Does "sunday
+    sunday" stand nowhere in the lyrics, then two "sunday" next to each
+    other in the transcription are not a repetition but one word that
+    was cut at the window edge.
     """
     keys = [cluster_module.phonetic_key(w.text) for w in (lyrics or ())]
     return frozenset(a for a, b in zip(keys, keys[1:]) if a and a == b)
 
 
 def _boundary_split(stub: Word, whole: Word, doubled: frozenset) -> bool:
-    """Is dit één doorgeknipt woord, volgens de songtekst? (B373)"""
+    """Is this one word cut in two, according to the lyrics? (B373)"""
     left = cluster_module.phonetic_key(stub.text)
     right = cluster_module.phonetic_key(whole.text)
     if not left or not right or left != right:
         return False
     if left in doubled:
-        return False           # de tekst zingt het echt twee keer
+        return False           # the lyrics really do sing it twice
     gap = whole.start - stub.end
     return -0.05 <= gap <= _SPLIT_MAX_GAP_S
 
@@ -3204,14 +3264,15 @@ def _merge_boundary_duplicates(segments: tuple, lyrics=None) -> tuple:
     (that is the one Whisper heard with the most confidence) and its
     confidence.
 
-    B373: met ``lyrics`` erbij beslist de SONGTEKST. Het slotwoord van
-    een segment is gemeten half zo betrouwbaar als elk ander woord (0.42
-    tegen 0.70 over 347 overgangen), en daarop vier drempels stapelen
-    liet de echte gevallen er net buiten vallen: "so"/"so" struikelde
-    over een zekerheid van 0.36 tegen een grens van 0.30. Staat het
-    woord niet dubbel in de tekst, dan is het één woord dat is
-    doorgesneden - hoe zeker of hoe lang het stuk ook is. Zonder
-    ``lyrics`` blijft de oude, voorzichtige toets gelden.
+    B373: with ``lyrics`` alongside, the LYRICS decide. The closing
+    word of a segment was measured to be half as reliable as any other
+    word (0.42 against 0.70 over 347 boundaries), and stacking four
+    thresholds on top of that let the real cases fall just outside:
+    "so"/"so" tripped over a confidence of 0.36 against a limit of
+    0.30. Does the word not stand twice in the lyrics, then it is one
+    word that has been cut through - however certain or however long
+    the piece is. Without ``lyrics`` the old, cautious test keeps
+    applying.
     """
     doubled = _doubled_lyric_keys(lyrics) if lyrics else None
     result = list(segments)
@@ -3221,9 +3282,9 @@ def _merge_boundary_duplicates(segments: tuple, lyrics=None) -> tuple:
         if not left.words or not right.words:
             continue
         stub, whole = left.words[-1], right.words[0]
-        volgens_tekst = (doubled is not None
+        by_the_lyrics = (doubled is not None
                          and _boundary_split(stub, whole, doubled))
-        if not volgens_tekst and not _boundary_stub(stub, whole):
+        if not by_the_lyrics and not _boundary_stub(stub, whole):
             continue
         kept = left.words[:-1]
         if not kept:      # the stub was the whole segment: leave it be
@@ -3312,13 +3373,13 @@ def load_segments(context: AppContext, track: str) -> tuple[Segment, ...]:
 
 
 def _lyrics_for_boundaries(context: AppContext):
-    """De songtekstwoorden, of ``None`` als er geen songtekst is."""
+    """The lyrics words, or ``None`` if there are no lyrics."""
     path = context.paths.input_dir / song_text.LYRICS_FILENAME
     if not path.exists():
         return None
     try:
         return _effective_lyrics(context, path)
-    except Exception:  # noqa: BLE001 - het leespad mag hier nooit op vallen
+    except Exception:  # noqa: BLE001 - the read path may never trip here
         logger.exception(t("log_lyrics_alignment_failed"))
         return None
 
@@ -3655,7 +3716,7 @@ _SEGMENT_HALLUCINATION_MATCH_FLOOR = 0.65
 #: one short core word there is too little phonetic material to establish
 #: reliably "belongs nowhere with the lyrics", so then only the
 #: fixed-word-list check (above) remains.
-_SEGMENT_HALLUCINATION_MIN_KERNWOORDEN = 2
+_SEGMENT_HALLUCINATION_MIN_CORE_WORDS = 2
 
 #: B514: a runaway loop. Whisper sometimes gets stuck on a repetition
 #: and does not come out of it: at "Lied_R2" (Korean) it produced ONE
@@ -3872,7 +3933,7 @@ def _filter_hallucinations(
     Whisper sometimes hallucinates a plausible sounding but completely
     invented sentence ("Heerlijke Heer, Heerlijke Heer."). Such a
     segment is dropped if (a) there are at least
-    ``_SEGMENT_HALLUCINATION_MIN_KERNWOORDEN`` core words, (b) none of
+    ``_SEGMENT_HALLUCINATION_MIN_CORE_WORDS`` core words, (b) none of
     them matches the lyrics even reasonably
     (``_SEGMENT_HALLUCINATION_MATCH_FLOOR``), and (c) Whisper's own
     lowest word confidence in the segment stays below
@@ -3929,7 +3990,7 @@ def _filter_hallucinations(
         core_pairs = [(w, c) for w, c in paren if w not in skip]
         core_words = [w for w, _c in core_pairs]
 
-        def _is_hallucinatiewoord(w: str) -> bool:
+        def _is_a_hallucination_word(w: str) -> bool:
             # B337: only the unconditional list here. Whether a word from
             # a language list counts depends on the PLACE in the lyrics,
             # and that needs a first alignment - so it happens one round
@@ -3942,8 +4003,8 @@ def _filter_hallucinations(
                 return not _word_in_lyrics(w, lyric_keys)
             return False
 
-        segment_hallucinatie = bool(core_words) and all(
-            _is_hallucinatiewoord(w) for w in core_words)
+        segment_is_hallucination = bool(core_words) and all(
+            _is_a_hallucination_word(w) for w in core_words)
 
         # B464: a row of the same short syllable is only singing when
         # the TEXT chants it too. Without that condition this exempted
@@ -3955,7 +4016,7 @@ def _filter_hallucinations(
         chant = _is_chant(core_words) and any(
             _word_in_lyrics(w, chant_keys) for w in core_words)
         if chant:
-            segment_hallucinatie = False
+            segment_is_hallucination = False
 
         # B514: deliberately AFTER the chant exemption. A chant of
         # twenty-seven seconds in one word is still one word of
@@ -3972,12 +4033,12 @@ def _filter_hallucinations(
                 (float(longest.end) - float(longest.start))
                 if longest is not None else 0.0,
                 max(len(str(w.text or "").strip()) for w in loop))
-            segment_hallucinatie = True
+            segment_is_hallucination = True
 
         best_match = 0.0
-        if song_wide and not segment_hallucinatie and lyric_keys \
+        if song_wide and not segment_is_hallucination and lyric_keys \
                 and not chant \
-                and len(core_words) >= _SEGMENT_HALLUCINATION_MIN_KERNWOORDEN:
+                and len(core_words) >= _SEGMENT_HALLUCINATION_MIN_CORE_WORDS:
             best_match = max(
                 (_best_lyrics_match(w, lyric_keys) for w in core_words),
                 default=0.0)
@@ -3986,9 +4047,9 @@ def _filter_hallucinations(
                 lowest_conf = min(confidences) if confidences else None
                 if lowest_conf is None \
                         or lowest_conf < _SEGMENT_HALLUCINATION_CONF_CEILING:
-                    segment_hallucinatie = True
+                    segment_is_hallucination = True
 
-        if segment_hallucinatie:
+        if segment_is_hallucination:
             dropped += 1
             if dropped_out is not None:
                 dropped_out.append(seg)
@@ -4143,7 +4204,7 @@ def _filter_hallucinations_in_position(
             logger.info(t("log_artifact_in_position"), seg.text,
                         seg.start, seg.end, language or "?")
             continue
-        if len(core_words) < _SEGMENT_HALLUCINATION_MIN_KERNWOORDEN:
+        if len(core_words) < _SEGMENT_HALLUCINATION_MIN_CORE_WORDS:
             kept.append(seg)
             continue
         best_match = max((_best_lyrics_match(w, window_keys)
@@ -4175,28 +4236,28 @@ _SUNG_MIN_SHARE = 0.34
 
 def _drop_unsung_segments(context: AppContext, segments: tuple,
                           dropped_out: list | None = None) -> tuple:
-    """Gooi weg wat op geen enkele gemeten zang staat (B377).
+    """Throw away whatever sits on no measured singing at all (B377).
 
-    De drie soorten rommel die we kennen - verzonnen tekst ("MUZIEK",
-    "Thank you"), verkeerd verstane zang, en de PROMPT-ECHO waarbij
-    Whisper de meegegeven songtekst tijdens een instrumentale intro
-    gewoon uitspreekt - zijn met tekstregels niet uit elkaar te houden.
-    De prompt-echo is zelfs woordelijk echte songtekst, dus elke toets
-    van de vorm "lijkt dit op de tekst?" zegt volmondig ja.
+    The three kinds of rubbish we know of - invented text ("MUZIEK",
+    "Thank you"), misheard singing, and the PROMPT ECHO where Whisper
+    simply pronounces the lyrics it was handed during an instrumental
+    intro - cannot be told apart by their text lines. The prompt echo
+    is even word for word the real lyrics, so every test of the form
+    "does this look like the lyrics?" says yes without hesitation.
 
-    De zangstem weet het wel. Die meting lag er al (``_vocal_windows``,
-    gebouwd voor de timing) en is nooit gebruikt om te filteren. Staat
-    een segment niet op gemeten zang, dan wordt er niet gezongen - wat
-    de tekst ook beweert.
+    The singing voice does know. That measurement was already there
+    (``_vocal_windows``, built for the timing) and has never been used
+    to filter with. Does a segment not sit on measured singing, then
+    nothing is being sung there - whatever the text claims.
 
-    Bewust op WOORD-niveau: Whisper rekt het einde van een segment
-    regelmatig ver over de laatste noot heen, en dan zakt een echt
-    segment op segmentniveau door de drempel. Op woordniveau haalde de
-    ijkset 50 tot 100 procent voor elk echt segment.
+    Deliberately at WORD level: Whisper regularly stretches the end of
+    a segment far past the last note, and then a real segment drops
+    through the threshold at segment level. At word level the
+    reference set reached 50 to 100 percent for every real segment.
     """
     try:
         windows = _vocal_windows(context)
-    except Exception:  # noqa: BLE001 - zonder meting geen oordeel
+    except Exception:  # noqa: BLE001 - no measurement, no verdict
         return segments
     if not windows:
         return segments
@@ -4615,15 +4676,15 @@ def _place_skipped_on_energy(context: AppContext, aligned: tuple) -> tuple:
     placed = 0
     for run in runs:
         start_index, end_index, low, high = run
-        aantal = end_index - start_index
-        if high - low < _ESTIMATE_MIN_WINDOW_S or aantal < 1:
+        run_count = end_index - start_index
+        if high - low < _ESTIMATE_MIN_WINDOW_S or run_count < 1:
             continue
         within = [(max(s, low), min(e, high)) for s, e in active
                   if e > low + 0.02 and s < high - 0.02]
         # B318: weigh by syllable count, so "Espagna" gets more time than
         # "e" instead of exactly as much.
         gewichten = [max(1, len(timing_module.split_syllables(
-            result[start_index + k].lyric.text))) for k in range(aantal)]
+            result[start_index + k].lyric.text))) for k in range(run_count)]
         # B319: a run at the END of the song has no anchor after it, so
         # its window runs on to where the singing stops. Does that window
         # offer far more sung time than these words need, then counting
@@ -4634,9 +4695,9 @@ def _place_skipped_on_energy(context: AppContext, aligned: tuple) -> tuple:
             if beschikbaar > needed * _TAIL_BACKWARD_SLACK:
                 within = _fit_from_the_back(within, needed)
                 logger.info(t("log_tail_from_the_back"),
-                            aantal, beschikbaar, needed)
+                            run_count, beschikbaar, needed)
         for offset, (start, stop) in enumerate(
-                timing_module.spread_over_active(aantal, within,
+                timing_module.spread_over_active(run_count, within,
                                                  weights=gewichten)):
             word = result[start_index + offset]
             if untouchable(word):
@@ -5853,11 +5914,11 @@ def _apply_energy_word_timing(context: AppContext, timed):
 
 
 def _bg_only_lines(context: AppContext) -> frozenset[int]:
-    """Regelnummers die volledig uit [bg]-woorden bestaan (B375).
+    """Line numbers that consist entirely of [bg] words (B375).
 
-    Die regels klinken tegelijk met hun buurregel en krijgen dus geen
-    eigen plek in de zin-koppeling - maar ze mogen ook geen blokgrens
-    maken.
+    Those lines sound at the same time as their neighbouring line and
+    therefore get no place of their own in the sentence coupling - but
+    they may not make a block boundary either.
     """
     lyrics = _lyrics_for_boundaries(context)
     if not lyrics:

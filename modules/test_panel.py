@@ -949,8 +949,8 @@ def big_trial(context, report: Reporter, cancelled) -> str:
                f"- gewogen fout: **{base:.2f} s**",
                f"- schade op ongemoeide regels: {base_damage:.2f} s", ""]
     lines += ["| project | fout |", "| --- | ---: |"]
-    lines += [f"| {name} | {waarde:.2f} s |"
-               for name, waarde in sorted(per_project.items())]
+    lines += [f"| {name} | {value:.2f} s |"
+               for name, value in sorted(per_project.items())]
     lines += ["", "## Elk model apart anders", "",
                t("test_matrix_symmetry"), "",
                "| niveau | model | stand | fout | verschil | schade |",

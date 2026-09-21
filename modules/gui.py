@@ -2329,10 +2329,10 @@ class MainWindow(QMainWindow):
         above them instead of a track name.
         """
         for index, bar in enumerate(self._progress_bars):
-            actief = index < max(1, len(labels))
-            self._progress_rows[index].setVisible(actief)
-            self._progress_labels[index].setVisible(actief)
-            if actief:
+            active = index < max(1, len(labels))
+            self._progress_rows[index].setVisible(active)
+            self._progress_labels[index].setVisible(active)
+            if active:
                 self._progress_labels[index].setText(
                     labels[index] if index < len(labels) else "")
                 bar.setRange(0, 0)

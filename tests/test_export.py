@@ -1,4 +1,4 @@
-"""Tests voor modules.export."""
+"""Tests for modules.export."""
 
 from __future__ import annotations
 
@@ -53,18 +53,18 @@ def test_export_missing_input(tmp_path: Path) -> None:
 
 
 def test_export_unknown_format(tmp_path: Path) -> None:
-    # .flac/.m4a/.ogg/.aac zijn sinds B280 ondersteunde INVOER-formaten
-    # (exporteren als mp3, net als mp3 zelf) - een écht onbekende extensie
-    # moet nog steeds falen.
+    # .flac/.m4a/.ogg/.aac have been supported INPUT formats since B280
+    # (they export as mp3, just like mp3 itself) - a genuinely unknown
+    # extension must still fail.
     source = tmp_path / "bewerkt.wav"
     _make_wav(source)
     with pytest.raises(ExportError):
         export_result(source, _properties(), ".xyz", tmp_path)
 
 
-def test_export_m4a_bron_levert_mp3(tmp_path: Path) -> None:
-    """B280: een m4a/flac/ogg/aac-bron exporteert (net als mp3) naar mp3;
-    er is geen los "m4a-uitvoerformaat" - de uitvoer blijft mp3/wav."""
+def test_export_m4a_source_yields_mp3(tmp_path: Path) -> None:
+    """B280: an m4a/flac/ogg/aac source exports (just like mp3) to mp3;
+    there is no separate "m4a output format" - the output stays mp3/wav."""
     source = tmp_path / "bewerkt.wav"
     _make_wav(source)
     for ext in (".m4a", ".flac", ".ogg", ".aac"):
@@ -83,9 +83,9 @@ def test_export_wav_copies(tmp_path: Path) -> None:
 
 
 def test_export_mp3_matches_source_properties(tmp_path: Path) -> None:
-    """Integratietest: mp3-export behoudt sample rate en kanalen."""
+    """Integration test: mp3 export preserves sample rate and channels."""
     if not ffmpeg.is_available():
-        pytest.skip("ffmpeg niet beschikbaar")
+        pytest.skip("ffmpeg not available")
     source = tmp_path / "bewerkt.wav"
     _make_wav(source, sample_rate=48_000)
     result = export_result(source, _properties(), ".mp3", tmp_path / "uit")

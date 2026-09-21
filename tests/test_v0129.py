@@ -60,9 +60,9 @@ def test_the_bar_shows_the_letter() -> None:
 
 def test_the_report_headings_carry_the_letter() -> None:
     source = inspect.getsource(test_panel.heavy_trial)
-    # B452: de kop wordt nu één keer gebouwd (``head``) en door beide
-    # wegen gebruikt - overgeslagen én gedraaid. Dat legt deze test vast,
-    # alleen niet meer als twee keer dezelfde f-string.
+    # B452: the heading is now built once (``head``) and used by both
+    # routes - skipped as well as run. That is what this test pins down,
+    # only no longer as the same f-string twice.
     assert source.count('f"## {trial.code} ') == 1
     assert source.count("lines += head") >= 2, \
         "zowel de overgeslagen als de gedraaide kop"

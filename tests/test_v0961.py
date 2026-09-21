@@ -54,7 +54,7 @@ def test_rename_vocabulary_holds_no_python_builtin_as_source() -> None:
     namespace: dict = {}
     exec(compile(vocabulary.read_text(encoding="utf-8"),
                  str(vocabulary), "exec"), namespace)
-    words = namespace["NL_WOORD"]
+    words = namespace["NL_WORD"]
     sources = set(words) & BUILTINS
     assert not sources, f"Dutch source word is a builtin: {sorted(sources)}"
 

@@ -210,8 +210,8 @@ def test_it_picks_the_project_with_the_most_unheard_singing() -> None:
 
     source = (inspect.getsource(test_panel.chunk_trial)
               + inspect.getsource(test_panel._chunk_one_song))
-    # B416: sinds de nachtproef zijn het de vier grootste gaten, en de
-    # rangschikking is dezelfde als die van de losse keuze.
+    # B416: since the overnight trial these are the four biggest gaps,
+    # and the ranking is the same as that of the separate choice.
     assert "_projects_by_gap" in source
 
 
@@ -237,7 +237,7 @@ def test_the_merge_is_reported_beside_the_variants_not_instead() -> None:
 
     source = (inspect.getsource(test_panel.chunk_trial)
               + inspect.getsource(test_panel._chunk_one_song))
-    # De aanroepen, niet de docstring die merge_runs ook noemt.
+    # The calls, not the docstring that also mentions merge_runs.
     assert source.index("wc.merge_runs(") > source.index("probe.run_chunked(")
 
 

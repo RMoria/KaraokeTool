@@ -1095,6 +1095,16 @@ def test_language_for_uses_the_lyrics_file(tmp_path: Path) -> None:
     while it was not a bug but a missing optional dependency. It now
     skips cleanly instead of standing red, so that a real regression in
     this behaviour does get noticed.
+
+    B552: the karaoke sentence used to open with the name of the user's
+    own association, and langdetect gave it Dutch at 0.72 against
+    Afrikaans at 0.28 - close enough that the publication tool, which
+    replaces that name by a neutral one, tipped it over: the public
+    copy of this suite failed on Afrikaans. Twice fragile, then. The
+    sentence is longer and free of names now (0.99999 Dutch), so
+    neither the replacement nor langdetect's own sampling can decide
+    the outcome. A test whose material is the owner's private data is
+    a test that only works on one machine.
     """
     pytest.importorskip("langdetect")
     context = _context(tmp_path)
@@ -1102,7 +1112,8 @@ def test_language_for_uses_the_lyrics_file(tmp_path: Path) -> None:
         "Tu étais formidable, nous étions formidables, formidable",
         encoding="utf-8")
     (context.paths.input_dir / "karaoketekst.txt").write_text(
-        "Rood Witte Zangers vooraan in de polonaise, frikandel met mayonaise",
+        "Wij lopen vooraan in de polonaise met een frikandel "
+        "en een glas bier in de hand",
         encoding="utf-8")
     assert pipeline._language_for(context, "original") == "fr"
     # Karaoke detects on the (Dutch) karaoke text, not on the French
@@ -1148,10 +1159,18 @@ def test_demucs_disabled_behaves_as_before(tmp_path: Path) -> None:
         pipeline.prepare_track(context, "karaoke")
 
 
-def test_separation_unavailable_raises() -> None:
+def test_separation_unavailable_raises(monkeypatch) -> None:
+    """B551: without Demucs, separating says so and does not go on.
+
+    The whole body of this test used to sit under ``if not
+    separation.is_available():``, with "In this environment Demucs is
+    not installed" beside it. On a machine where it IS installed - the
+    one this is built for - the test asserted nothing at all and
+    passed. What it is about is the message, not the machine, so the
+    absence is arranged here.
+    """
     from modules import separation
-    # In this environment Demucs is not installed.
-    if not separation.is_available():
-        import pytest as _pytest
-        with _pytest.raises(separation.SeparationError):
-            separation.separate(Path("x.wav"), Path("/tmp/none"))
+
+    monkeypatch.setattr(separation, "is_available", lambda: False)
+    with pytest.raises(separation.SeparationError, match="Demucs"):
+        separation.separate(Path("x.wav"), Path("/tmp/none"))

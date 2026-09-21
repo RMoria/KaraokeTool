@@ -126,3 +126,61 @@ def test_language_on_the_go(tmp_path) -> None:
     phonetics._EXTRA_LANGUAGES.clear()
     assert phonetics.load_language_dir(coll) == 1
     assert "it" in phonetics._EXTRA_LANGUAGES
+
+
+def test_separate_cached_runs_demucs_for_real_once(
+        tmp_path, demucs_installed) -> None:
+    """B553: the whole of separate_cached, with Demucs only pretended.
+
+    Everything above this stubbed ``separate`` itself, so the marker,
+    its staleness check and the copying into the fixed place were never
+    run across two calls by anything. ``demucs_installed`` stubs one
+    level lower - whether the package is there, and the subprocess -
+    so the code under test is the real one.
+    """
+    from modules import separation
+
+    source = tmp_path / "original.wav"
+    source.write_bytes(b"audio one")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+
+    first = separation.separate_cached(source, cache, "original")
+    assert len(demucs_installed["runs"]) == 1
+    assert first["vocals"] == cache / "demucs_stems_original" / "vocals.wav"
+    assert first["instrumental"].exists()
+    marker = cache / "demucs_stems_original" / "source.sha1"
+    assert marker.read_text(encoding="utf-8").count("\n") == 2  # B548
+
+    # Same source: the stems come straight back, Demucs is not asked.
+    again = separation.separate_cached(source, cache, "original")
+    assert len(demucs_installed["runs"]) == 1
+    assert again == first
+
+    # Other audio under the same key: the stems are stale (B311), and
+    # the ones that come back are really the new ones - the fixed place
+    # is the same file path, so only its content can say so.
+    size_before = first["vocals"].stat().st_size
+    source.write_bytes(b"a completely different song")
+    demucs_installed["frames"] = 8000
+    third = separation.separate_cached(source, cache, "original")
+    assert len(demucs_installed["runs"]) == 2
+    assert third == first                      # the same fixed place
+    assert third["vocals"].stat().st_size < size_before
+
+
+def test_separate_cached_sees_another_model(tmp_path, demucs_installed) -> None:
+    """B548 end to end: htdemucs_ft may not get htdemucs stems back."""
+    from modules import separation
+
+    source = tmp_path / "original.wav"
+    source.write_bytes(b"audio one")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+
+    separation.separate_cached(source, cache, "original")
+    assert len(demucs_installed["runs"]) == 1
+    separation.separate_cached(source, cache, "original", model="htdemucs_ft")
+    assert len(demucs_installed["runs"]) == 2
+    assert demucs_installed["runs"][1][
+        demucs_installed["runs"][1].index("-n") + 1] == "htdemucs_ft"

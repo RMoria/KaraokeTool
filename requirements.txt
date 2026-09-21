@@ -1,33 +1,33 @@
 # KaraokeTool - Python 3.12
-# Kern (nu al gebruikt)
+# Core (already in use)
 numpy>=1.26
 soundfile>=0.12
 
-# Spraakherkenning (vanaf versie 0.2)
+# Speech recognition (from version 0.2)
 faster-whisper>=1.0
 
-# Taaldetectie op de songtekst
+# Language detection on the lyrics
 langdetect>=1.0
 
-# Fonetische clustering (snelle stringafstanden)
+# Phonetic clustering (fast string distances)
 rapidfuzz>=3.0
 
-# Uitlijning: MFCC, chroma, onsets, cross-correlatie (vanaf versie 0.4)
+# Alignment: MFCC, chroma, onsets, cross-correlation (from version 0.4)
 librosa>=0.10
 scipy>=1.11
 
-# Lettergreepmodel (Nederlandse woordafbreking voor de timing; B150)
+# Syllable model (Dutch hyphenation for the timing; B150)
 pyphen>=0.14
 
-# Karaokevideo-render
+# Karaoke video render
 pillow>=10.0
 
-# Grafische interface
+# Graphical interface
 PySide6>=6.6
 
-# Ontwikkeling en tests
+# Development and tests
 pytest>=8.0
 
-# Optioneel (slimme modellen; groot). Installeer handmatig als gewenst:
-#   pip install demucs        (zang scheiden / karaoke maken)
-#   pip install whisperx      (preciezere woordtijden)
+# Optional (the large models; big). Install by hand if wanted:
+#   pip install demucs        (separate the vocals / make karaoke)
+#   pip install whisperx      (more precise word times)

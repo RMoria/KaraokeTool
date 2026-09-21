@@ -49,7 +49,8 @@ DUTCH = re.compile(
     r"uitkomst|bestand|bestanden|drempel|sleutel|lijst|niveau|venster|"
     r"vensters|lettergreep|instelling|verslag|historie|overgeslagen|"
     r"varianten|huidig|ruimer|terugval|nulmeting|opnieuw|gekozen|"
-    r"zichtbare|acties|actie|vinkjes|knop)(_|$)", re.I)
+    r"zichtbare|acties|actie|vinkjes|knop|achtergrond|voorvoegsel|"
+    r"vooraf|haalt|fout|aantal|waarde|naam|zoek)(_|$)", re.I)
 
 #: Words that exist in Dutch and not in English. Function words only:
 #: they are what prose is made of, they are too common to avoid, and
@@ -73,10 +74,19 @@ ENGLISH_WORDS = re.compile(
     r"against|through|after|before|while|about|again|still|never|"
     r"always|already|enough|instead|rather)\b", re.I)
 
-#: Below this many countable words a file gets no verdict. A one-line
-#: comment is not evidence of anything, and a guard that fires on it is
-#: a guard that gets switched off.
+#: Below this many countable words the weighing gets no verdict. A
+#: one-line comment is not evidence of anything, and a guard that fires
+#: on it is a guard that gets switched off.
 PROSE_FLOOR = 25
+
+#: But a file can be short AND unmistakable, and B550 is the bill for
+#: not seeing that: fifteen files sat under the floor with Dutch
+#: function words and no English ones at all - ``tests/test_v077.py``
+#: had twenty-two against nought - while the README said the whole tree
+#: was English and all three lists were empty. The floor was doing the
+#: forgiving. So below it a second question is asked: enough Dutch to
+#: be no accident, and at least twice as much Dutch as English.
+CLEARLY_DUTCH = 3
 
 #: Dutch words that turn up in file names here. A deny-list again, for
 #: the same reason as :data:`DUTCH`.
@@ -125,14 +135,42 @@ def _dutch_identifiers(path: Path) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
                              ast.ClassDef)):
-            if DUTCH.match(node.name):
+            if _dutch_name_part(node.name):
                 found.append(node.name)
-        elif isinstance(node, ast.arg) and DUTCH.match(node.arg):
+        elif isinstance(node, ast.arg) and _dutch_name_part(node.arg):
             found.append(node.arg)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) \
-                and DUTCH.match(node.id):
+                and _dutch_name_part(node.id):
             found.append(node.id)
     return sorted(set(found))
+
+
+#: The stems of :data:`DUTCH`, on their own, for the check below.
+DUTCH_STEMS = tuple(part for part in
+                    DUTCH.pattern.split("(", 1)[1].rsplit(")", 1)[0].split("|")
+                    if part)
+
+
+def _dutch_name_part(name: str) -> str:
+    """The Dutch piece of an identifier, wherever in the name it sits.
+
+    B550: :data:`DUTCH` is anchored at the start of the name, which is
+    fine for ``woord_index`` and blind to ``test_woorduitlijning`` -
+    and every test name starts with ``test_``, so the anchor made the
+    identifier guard nearly powerless over the file type that had the
+    most Dutch in it. Every piece between the underscores is weighed
+    now, and a stem counts when the piece begins OR ends with it,
+    because Dutch glues its compounds together and the head of such a
+    compound is the LAST part: ``woorduitlijning`` is ``woord`` plus
+    ``uitlijning``, and ``kernwoorden`` ends on the very stem that
+    gives it away. The first version only looked at the beginning and
+    walked past that whole half.
+    """
+    for part in name.lower().lstrip("_").split("_"):
+        for stem in DUTCH_STEMS:
+            if part.startswith(stem) or part.endswith(stem):
+                return part
+    return ""
 
 
 def _prose(path: Path) -> str:
@@ -145,6 +183,14 @@ def _prose(path: Path) -> str:
     which are supposed to be Dutch.
     """
     text = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix.lower() == ".bat":
+        # B550: the same division as for a module. The ``rem`` lines are
+        # this project talking to whoever reads the script; the ``echo``
+        # lines are the program talking to the user, and his interface
+        # is Dutch on purpose - the same reason the manual keeps the
+        # Dutch button names.
+        return "\n".join(line for line in text.splitlines()
+                          if line.strip().lower().startswith(("rem ", "::")))
     if path.suffix != ".py":
         return text
     pieces = re.findall(r"#.*", text)
@@ -162,9 +208,56 @@ def _verdict(text: str) -> str:
     """``"nl"``, ``"en"``, or ``""`` when there is too little to judge."""
     dutch = len(DUTCH_WORDS.findall(text))
     english = len(ENGLISH_WORDS.findall(text))
-    if dutch + english < PROSE_FLOOR:
-        return ""
-    return "nl" if dutch > english else "en"
+    if dutch + english >= PROSE_FLOOR:
+        return "nl" if dutch > english else "en"
+    if dutch >= CLEARLY_DUTCH and dutch > 2 * english:  # B550
+        return "nl"
+    return ""
+
+
+def _blocks(path: Path) -> list[str]:
+    """The prose of a file, cut into the pieces someone wrote (B550).
+
+    A run of comment lines is one piece, and so is every docstring. The
+    file as a whole is not, and that is the point: weighing a whole
+    file lets a Dutch docstring hide behind the English around it.
+    ``modules/test_history.py`` had forty Dutch function words against
+    two hundred and thirty-six English ones - three of its docstrings
+    are Dutch from the first word to the last, and the file passed.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix != ".py":
+        return [text]
+    pieces: list[str] = []
+    run: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            run.append(stripped.lstrip("#").strip())
+            continue
+        if run:
+            pieces.append(" ".join(run))
+            run = []
+    if run:
+        pieces.append(" ".join(run))
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, (ast.Module, ast.FunctionDef,
+                             ast.AsyncFunctionDef, ast.ClassDef)):
+            document = ast.get_docstring(node)
+            if document:
+                pieces.append(document)
+    return pieces
+
+
+def _dutch_blocks(path: Path) -> list[str]:
+    """Every piece of this file that is Dutch on its own."""
+    found = []
+    for piece in _blocks(path):
+        dutch = len(DUTCH_WORDS.findall(piece))
+        english = len(ENGLISH_WORDS.findall(piece))
+        if dutch >= CLEARLY_DUTCH and dutch > 2 * english:
+            found.append(" ".join(piece.split())[:60])
+    return found
 
 
 def _dutch_name(path: Path) -> str:
@@ -209,9 +302,18 @@ def _sources() -> list[Path]:
 
 
 def _documents() -> list[Path]:
-    """Every document that is meant to be read."""
+    """Every document that is meant to be read.
+
+    B550: the ``.txt`` and ``.bat`` files are in here now. They were
+    read by nothing, and ``requirements.txt`` - which anyone who
+    installs this project reads first - was Dutch from top to bottom
+    while the README said the whole tree was English.
+    """
     return sorted(p for p in [ROOT / "README.md"]
-                  + list((ROOT / "docs").glob("*.md")) if _inside(p))
+                  + list((ROOT / "docs").glob("*.md"))
+                  + list(ROOT.glob("*.txt")) + list(ROOT.glob("*.bat"))
+                  + list((ROOT / "assets" / "fonts").glob("*.txt"))
+                  if _inside(p))
 
 
 def _named() -> list[Path]:
@@ -266,6 +368,28 @@ def test_the_prose_is_english() -> None:
             offenders.append(relative)
     assert not offenders, ("Dutch prose in files that should be English: "
                            + ", ".join(offenders))
+
+
+def test_no_single_block_is_dutch() -> None:
+    """Per comment and per docstring, not per file (B550).
+
+    The file-wide weighing is a majority vote, and a majority hides a
+    minority: three Dutch docstrings in a file of two hundred English
+    ones never showed up. Twenty-one such pieces stood in ten files
+    while the README said the tree was English. Judged one by one
+    there is nothing for them to hide behind.
+    """
+    offenders = {}
+    for path in _sources() + _documents():
+        relative = path.relative_to(ROOT).as_posix()
+        if relative in PROSE_TODO:
+            continue
+        pieces = _dutch_blocks(path)
+        if pieces:
+            offenders[relative] = pieces
+    assert not offenders, (
+        "Dutch comments or docstrings: "
+        + "; ".join(f"{k} ({len(v)}): {v[0]}" for k, v in offenders.items()))
 
 
 def test_the_prose_todo_can_only_shrink() -> None:

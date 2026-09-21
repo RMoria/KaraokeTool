@@ -199,9 +199,9 @@ def test_the_letters_open_the_way_the_number_opens(panel) -> None:
 def test_ticking_a_letter_starts_the_number(panel) -> None:
     """The exact case the user reported: a and e ticked, b not, and
     pressing start did nothing at all."""
-    # B491: 1.5.11e staat inmiddels uit, dus die staat niet meer in de
-    # lijst met letters; het gedrag dat deze test vastlegt is dat een
-    # aangevinkte letter het nummer meeneemt.
+    # B491: 1.5.11e is off by now, so it no longer stands in the list
+    # of letters; the behaviour this test pins down is that a ticked
+    # letter brings the number along with it.
     aan = [trial.code for box, trial in panel._letters
            if trial.code in ("1.5.11a", "1.5.11b")]
     for box, trial in panel._letters:

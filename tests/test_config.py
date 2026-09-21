@@ -1,4 +1,4 @@
-"""Tests voor modules.config."""
+"""Tests for modules.config."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def test_default_config_has_expected_values() -> None:
 
 
 def test_video_meta_roundtrip(tmp_path: Path) -> None:
-    """B122/B126: nieuwe video-velden overleven opslaan en laden."""
+    """B122/B126: new video fields survive saving and loading."""
     from dataclasses import replace
     config = config_module.default_config()
     config = replace(config, video=replace(
@@ -27,15 +27,15 @@ def test_video_meta_roundtrip(tmp_path: Path) -> None:
         karaoke_title="Zangers Hard", background_image="bg.png"))
     path = tmp_path / "config.json"
     config_module.save_config(config, path)
-    geladen = config_module.load_config(path)
-    assert geladen.video.orig_artist == "Normaal"
-    assert geladen.video.orig_title == "Oerend Hard"
-    assert geladen.video.karaoke_title == "Zangers Hard"
-    assert geladen.video.background_image == "bg.png"
+    loaded = config_module.load_config(path)
+    assert loaded.video.orig_artist == "Normaal"
+    assert loaded.video.orig_title == "Oerend Hard"
+    assert loaded.video.karaoke_title == "Zangers Hard"
+    assert loaded.video.background_image == "bg.png"
 
 
 def test_load_flat_config(tmp_path: Path) -> None:
-    """Het platte voorbeeldformaat uit de projectbeschrijving werkt."""
+    """The flat example format from the project description works."""
     path = tmp_path / "config.json"
     path.write_text(json.dumps({
         "search_words": ["oe", "Koffie"],
@@ -47,7 +47,7 @@ def test_load_flat_config(tmp_path: Path) -> None:
     assert config.karaoke.search_words == ("oe", "koffie")
     assert config.karaoke.gain_db == -20.0
     assert config.karaoke.fade_in_ms == 50
-    # Ontbrekende secties vallen terug op standaardwaarden.
+    # Missing sections fall back on default values.
     assert config.whisper.model == "large-v3"
 
 
@@ -59,8 +59,8 @@ def test_save_and_reload_roundtrip(tmp_path: Path) -> None:
     assert reloaded == original
 
 
-def test_parallelle_detectie_default_en_roundtrip(tmp_path: Path) -> None:
-    """B90: de parallelle-detectie-optie staat standaard aan en bewaart."""
+def test_parallel_detection_default_and_roundtrip(tmp_path: Path) -> None:
+    """B90: the parallel detection option is on by default and is saved."""
     from dataclasses import replace
     assert config_module.default_config().advanced.parallel_detection
     path = tmp_path / "config.json"
@@ -103,7 +103,7 @@ def test_tracks_and_cache_defaults() -> None:
     config = config_module.default_config()
     assert config.tracks.original is True
     assert config.tracks.karaoke is True
-    assert config.cache.clear is False   # standaard UIT (B236)
+    assert config.cache.clear is False   # off by default (B236)
 
 
 def test_both_tracks_disabled_raises(tmp_path: Path) -> None:
@@ -128,13 +128,13 @@ def test_interface_language_roundtrip(tmp_path: Path) -> None:
     assert config_module.load_config(path).interface.language == "en"
 
 
-def test_geavanceerd_defaults_and_roundtrip(tmp_path: Path) -> None:
+def test_advanced_defaults_and_roundtrip(tmp_path: Path) -> None:
     from dataclasses import replace
 
     config = config_module.default_config()
     assert config.advanced.demucs is True
     assert config.advanced.forced_alignment is True
-    # 'ritme' is geen optie meer: librosa-ritme zit vast in de kern.
+    # 'ritme' is no longer an option: librosa rhythm is fixed in the core.
     assert not hasattr(config.advanced, "ritme")
     path = tmp_path / "config.json"
     config_module.save_config(

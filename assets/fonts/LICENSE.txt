@@ -1,20 +1,20 @@
-Lettertypen in deze map
+Typefaces in this folder
 ========================
 
-DejaVuSans-Bold.ttf - DejaVu Fonts (vrij te distribueren).
-Zie https://dejavu-fonts.github.io/ voor de licentie.
+DejaVuSans-Bold.ttf - DejaVu Fonts (free to distribute).
+See https://dejavu-fonts.github.io/ for the licence.
 
-De overige lettertypen komen van Google Fonts (github.com/google/fonts)
-en staan onder de SIL Open Font License 1.1 (OFL), tenzij anders vermeld.
-Ze mogen vrij worden gebruikt en gebundeld. Bron per familie:
-https://fonts.google.com/ (zoek op de naam).
+The other typefaces come from Google Fonts (github.com/google/fonts)
+and are under the SIL Open Font License 1.1 (OFL), unless stated
+otherwise. They may be used and bundled freely. Source per family:
+https://fonts.google.com/ (search for the name).
 
-Meegeleverd (of eenmalig opgehaald door install.bat):
+Shipped (or fetched once by install.bat):
   Anton, Archivo Black, Audiowide, Barlow Condensed, Bebas Neue, Bungee,
   Concert One, Kanit, Lilita One, Luckiest Guy, Passion One, Righteous,
   Russo One, Saira Condensed, Titan One
-  (en optioneel de variabele fonts Oswald, Montserrat, Fredoka, Baloo 2,
-   Rubik wanneer install.bat ze ophaalt).
+  (and optionally the variable fonts Oswald, Montserrat, Fredoka,
+   Baloo 2, Rubik when install.bat fetches them).
 
-install.bat controleert deze map bij installatie en haalt alleen
-ontbrekende lettertypen op; wat er al staat wordt niet opnieuw gedownload.
+install.bat checks this folder during installation and fetches only the
+missing typefaces; what is already there is not downloaded again.

@@ -43,16 +43,16 @@ def test_the_placeholders_match_in_both_languages(monkeypatch) -> None:
     """
     nl = translations.TRANSLATIONS["nl"]
     en = translations.TRANSLATIONS["en"]
-    fouten = []
+    errors = []
     for key in sorted(nl):
         dutch, english = str(nl[key]), str(en.get(key, ""))
         if _PERCENT.findall(dutch) != _PERCENT.findall(english):
-            fouten.append(f"{key}: % nl={_PERCENT.findall(dutch)} "
+            errors.append(f"{key}: % nl={_PERCENT.findall(dutch)} "
                           f"en={_PERCENT.findall(english)}")
         if sorted(_FIELD.findall(dutch)) != sorted(_FIELD.findall(english)):
-            fouten.append(f"{key}: velden nl={_FIELD.findall(dutch)} "
+            errors.append(f"{key}: velden nl={_FIELD.findall(dutch)} "
                           f"en={_FIELD.findall(english)}")
-    assert not fouten, "\n".join(fouten)
+    assert not errors, "\n".join(errors)
 
 
 def test_both_languages_have_the_same_keys() -> None:
@@ -88,8 +88,53 @@ def test_no_literal_log_texts_left_in_the_modules() -> None:
                     and isinstance(first.value, str):
                 offenders.append(f"{path.name}:{node.lineno} "
                                  f"{first.value[:50]!r}")
-    assert not offenders, ("logregels met een letterlijke tekst in plaats "
-                           "van t(...):\n" + "\n".join(offenders))
+    assert not offenders, ("log lines with a literal text instead of "
+                           "t(...):\n" + "\n".join(offenders))
+
+
+def test_the_literal_exception_texts_do_not_grow() -> None:
+    """The other half of the door, counted rather than closed (B550).
+
+    The test above covers ``logger.x(...)``. It does not cover
+    ``raise SomeError("...")``, and that is where the language rule
+    still leaks: fifty-two of those stand in ``modules/``, nearly all
+    of them Dutch, and several reach the user through the log window
+    without following his language choice. Moving them all to the
+    translation layer is a job of its own - fifty-two texts, two
+    languages, and every one of them is something he reads - so it has
+    its own build number and is written down in the log rather than
+    half done here.
+
+    What this test does is stop it growing. A ratchet, like the TODO
+    lists of the language guard: the number may fall, and the moment it
+    does the number here has to fall with it. It may not rise.
+    """
+    import ast
+
+    modules_dir = Path(__file__).resolve().parents[1] / "modules"
+    literal = []
+    for path in sorted(modules_dir.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Raise)
+                    and isinstance(node.exc, ast.Call) and node.exc.args):
+                continue
+            first = node.exc.args[0]
+            text = None
+            if isinstance(first, ast.Constant) \
+                    and isinstance(first.value, str):
+                text = first.value
+            elif isinstance(first, ast.JoinedStr):
+                text = "".join(piece.value for piece in first.values
+                               if isinstance(piece, ast.Constant))
+            if text and text.strip():
+                literal.append(f"{path.name}:{node.lineno}")
+    assert len(literal) <= 52, (
+        "more raise() texts outside the translation layer than there "
+        "were: " + ", ".join(literal))
+    assert len(literal) >= 52, (
+        f"only {len(literal)} left - lower the number in this test, "
+        "otherwise it stops being a ratchet")
 
 
 def test_the_log_keys_really_exist() -> None:

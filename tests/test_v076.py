@@ -1,4 +1,4 @@
-"""Tests voor v0.76.0-functies (B210, B212, B213)."""
+"""Tests for v0.76.0 features (B210, B212, B213)."""
 
 from __future__ import annotations
 
@@ -21,14 +21,14 @@ def _context(tmp_path: Path, title: str = "Test") -> AppContext:
                       store=ProjectStore(paths.project_file))
 
 
-# -- B210: titels per project ----------------------------------------------
+# -- B210: titles per project ----------------------------------------------
 
-def test_apply_project_titles_migreert_globaal(tmp_path):
+def test_apply_project_titles_migrates_global(tmp_path):
     ctx = _context(tmp_path)
     ctx = replace(ctx, config=replace(ctx.config, video=replace(
         ctx.config.video, orig_artist="Gala",
         orig_title="Freed from desire")))
-    # Eerste keer: geen opgeslagen titels -> globale waarden worden vastgelegd.
+    # First time: no saved titles -> the global values are recorded.
     ctx2 = pipeline.apply_project_titles(ctx)
     assert ctx2.config.video.orig_artist == "Gala"
     saved = ctx2.store.get_meta("video_titles")
@@ -36,11 +36,11 @@ def test_apply_project_titles_migreert_globaal(tmp_path):
     assert saved["orig_title"] == "Freed from desire"
 
 
-def test_apply_project_titles_laadt_uit_project(tmp_path):
+def test_apply_project_titles_loads_from_project(tmp_path):
     ctx = _context(tmp_path)
     pipeline.set_project_title(ctx, "orig_artist", "Gala")
     pipeline.set_project_title(ctx, "orig_title", "Freed from desire")
-    # Config leeg, project.json gevuld -> config wordt gevuld vanuit project.
+    # Config empty, project.json filled -> config is filled from the project.
     ctx = replace(ctx, config=replace(ctx.config, video=replace(
         ctx.config.video, orig_artist="", orig_title="")))
     ctx = pipeline.apply_project_titles(ctx)
@@ -48,7 +48,7 @@ def test_apply_project_titles_laadt_uit_project(tmp_path):
     assert ctx.config.video.orig_title == "Freed from desire"
 
 
-def test_project_titles_gescheiden_per_project(tmp_path):
+def test_project_titles_are_separate_per_project(tmp_path):
     a = _context(tmp_path, "SongA")
     pipeline.set_project_title(a, "orig_artist", "Artiest A")
     b = _context(tmp_path, "SongB")
@@ -63,14 +63,14 @@ def test_project_titles_gescheiden_per_project(tmp_path):
 
 # -- B212: stem-export helper ----------------------------------------------
 
-def test_export_demucs_stems_slaat_ontbrekende_over(tmp_path):
+def test_export_demucs_stems_skips_missing_files(tmp_path):
     ctx = _context(tmp_path)
-    # Geen bestaande bestanden -> geen crash, niets geschreven.
+    # No existing files -> no crash, nothing written.
     pipeline.export_demucs_stems(ctx, {"instrumental": tmp_path / "nope.wav"})
     assert not (ctx.paths.output_dir / "karaoke_demucs.mp3").exists()
 
 
-# -- B213: vulwoorden overslaan in de uitlijning ---------------------------
+# -- B213: skipping filler words in the alignment --------------------------
 
 def test_is_filler_word():
     assert song_text.is_filler_word("na")
@@ -88,27 +88,27 @@ def _seg(words):
                    text=" ".join(w.text for w in ws), words=tuple(ws))
 
 
-def test_align_lyrics_skip_filler_houdt_echte_lijnen_recht():
-    # Songtekst: freed from desire <na-na x3> want more
+def test_align_lyrics_skip_filler_keeps_real_lines_straight():
+    # Lyrics: freed from desire <na-na x3> want more
     lyrics = tuple(song_text.LyricWord(i, t, 0) for i, t in enumerate(
         ["freed", "from", "desire", "na-na-na", "na-na-na", "na-na-na",
          "want", "more"]))
-    # Transcript heeft alleen de echte woorden (geen na-na).
+    # The transcript has only the real words (no na-na).
     segs = [_seg([("freed", 0.0, 0.5), ("from", 0.5, 1.0),
                   ("desire", 1.0, 1.5), ("want", 5.0, 5.5),
                   ("more", 5.5, 6.0)])]
     aligned = song_text.align_lyrics(lyrics, segs, skip_filler=True)
     by_index = {a.lyric.text: a for a in aligned}
-    # echte woorden gekoppeld
+    # real words coupled
     assert by_index["freed"].start is not None
     assert by_index["want"].start is not None
     assert by_index["more"].start is not None
-    # vulwoorden ongekoppeld (geen scheve lijnen)
-    na = [a for a in aligned if a.lyric.text == "na-na-na"]
-    assert all(a.start is None for a in na)
+    # filler words uncoupled (no skewed lines)
+    na_words = [a for a in aligned if a.lyric.text == "na-na-na"]
+    assert all(a.start is None for a in na_words)
 
 
-def test_align_lyrics_zonder_skip_ongewijzigd():
+def test_align_lyrics_without_skip_unchanged():
     lyrics = tuple(song_text.LyricWord(i, t, 0)
                    for i, t in enumerate(["freed", "from", "desire"]))
     segs = [_seg([("freed", 0.0, 0.5), ("from", 0.5, 1.0),

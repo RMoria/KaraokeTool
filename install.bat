@@ -7,14 +7,14 @@ echo  KaraokeTool - installatie
 echo ============================================
 echo.
 
-rem ---- Waarschuwing bij een tijdelijke/geblokkeerde map --------------
-rem Windows-beveiligingsbeleid (AppLocker/Smart App Control/WDAC) blokkeert
-rem vaak het laden van DLL's vanuit Temp- of Downloads-mappen ("DLL load
-rem failed ... geblokkeerd door een beleid voor toepassingsbeheer", o.a. bij
-rem PyAV/faster-whisper). We VERPLAATSEN niets: de app blijft staan waar
-rem install.bat staat (B182). We waarschuwen alleen, zodat je zelf de map
-rem eventueel naar bv. %USERPROFILE%\KaraokeTool kunt zetten en daar opnieuw
-rem install.bat kunt draaien.
+rem ---- Warning for a temporary or blocked folder --------------------
+rem Windows security policy (AppLocker/Smart App Control/WDAC) often
+rem blocks the loading of DLLs from Temp or Downloads folders ("DLL load
+rem failed ... blocked by an application control policy", among others
+rem with PyAV/faster-whisper). We MOVE nothing: the app stays where
+rem install.bat is (B182). We only warn, so that you can put the folder
+rem somewhere like %USERPROFILE%\KaraokeTool yourself and run install.bat
+rem again from there.
 echo %~dp0 | findstr /I "\\Temp\\ \\Tmp\\ \\Downloads\\" >nul
 if errorlevel 1 goto :after_relocate
 echo LET OP: je draait vanuit een tijdelijke map:
@@ -28,7 +28,7 @@ echo.
 
 :after_relocate
 
-rem ---- Python 3.12 zoeken ----------------------------------------
+rem ---- Look for Python 3.12 --------------------------------------
 set "PYCMD="
 py -3.12 -c "import sys" >nul 2>nul && set "PYCMD=py -3.12"
 if not defined PYCMD python -c "import sys; raise SystemExit(0 if sys.version_info[:2]==(3,12) else 1)" >nul 2>nul && set "PYCMD=python"
@@ -53,7 +53,7 @@ exit /b 0
 :python_ok
 echo [OK] Python 3.12 gevonden.
 
-rem ---- ffmpeg zoeken (PATH of projectmap bin) --------------------
+rem ---- Look for ffmpeg (PATH or the project's bin folder) --------
 set "FFOK="
 where ffmpeg >nul 2>nul && where ffprobe >nul 2>nul && set "FFOK=1"
 if exist "bin\ffmpeg.exe" if exist "bin\ffprobe.exe" set "FFOK=1"
@@ -79,10 +79,10 @@ goto :ffmpeg_done
 echo [OK] ffmpeg gevonden.
 :ffmpeg_done
 
-rem ---- Schrijfbare locatie voor venv + data (B221) ----------------
-rem Is de app-map alleen-lezen (bv. Program Files), dan komen de venv en de
-rem data (input/output/cache) in %LOCALAPPDATA%\KaraokeTool. De launcher
-rem detecteert dat en geeft de datamap door aan het programma.
+rem ---- A writable place for the venv and the data (B221) ---------
+rem If the app folder is read-only (Program Files, say), the venv and the
+rem data (input/output/cache) go to %LOCALAPPDATA%\KaraokeTool. The
+rem launcher sees that and passes the data folder to the program.
 set "VENV=venv"
 echo schrijftest> ".karaoketool_write_test" 2>nul
 if exist ".karaoketool_write_test" (
@@ -94,7 +94,7 @@ if exist ".karaoketool_write_test" (
     if not exist "%LOCALAPPDATA%\KaraokeTool" mkdir "%LOCALAPPDATA%\KaraokeTool"
 )
 
-rem ---- Virtuele omgeving ------------------------------------------
+rem ---- Virtual environment ----------------------------------------
 if exist "%VENV%\Scripts\python.exe" goto :venv_ok
 echo Virtuele omgeving maken...
 %PYCMD% -m venv "%VENV%"
@@ -102,18 +102,18 @@ if not exist "%VENV%\Scripts\python.exe" goto :error
 :venv_ok
 echo [OK] Virtuele omgeving aanwezig (%VENV%).
 
-rem ---- Packages installeren ---------------------------------------
+rem ---- Install the packages ---------------------------------------
 echo Packages installeren (dit kan even duren)...
 "%VENV%\Scripts\python.exe" -m pip install --upgrade pip
 if errorlevel 1 goto :error
 "%VENV%\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 goto :error
 
-rem ---- Grote modellen (verplicht) ----------------------------------
-rem De app leunt inmiddels sterk op Demucs (zang scheiden) en WhisperX
-rem (forced alignment + energie-analyse van de zangstem). Ze worden daarom
-rem altijd geinstalleerd (B195). We tonen vooraf de download-omvang en
-rem geven de kans om te stoppen (Ctrl+C) voordat de grote download begint.
+rem ---- The large models (always) -----------------------------------
+rem The app leans heavily on Demucs (separating the vocals) and WhisperX
+rem (forced alignment plus the energy analysis of the vocal stem), so
+rem they are always installed (B195). The download size is shown first
+rem and there is a chance to stop (Ctrl+C) before it starts.
 echo.
 echo ============================================
 echo  Grote modellen worden nu geinstalleerd
@@ -135,10 +135,10 @@ echo [1/2] Demucs (grote download via PyTorch)...
 echo.
 echo [2/2] WhisperX (grote download via PyTorch)...
 "%VENV%\Scripts\python.exe" -m pip install whisperx || echo Let op: WhisperX installeren mislukte; forced alignment valt terug op de Whisper-timing.
-rem (Het ritme-anker gebruikt librosa - dat zit al in de kerninstallatie,
-rem  geen aparte download of compiler nodig.)
+rem (The rhythm anchor uses librosa - that is in the core install
+rem  already, no separate download and no compiler needed.)
 
-rem ---- Extra fonts (alleen ontbrekende ophalen) --------------------
+rem ---- Extra fonts (fetch only the missing ones) ------------------
 echo.
 echo Fonts controleren (alleen ontbrekende worden opgehaald)...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -160,7 +160,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
  "}" ^
  "Write-Host '[OK] Fonts gecontroleerd.'"
 
-rem ---- Controle ----------------------------------------------------
+rem ---- Check -------------------------------------------------------
 echo.
 echo Installatie controleren...
 "%VENV%\Scripts\python.exe" -c "import numpy, soundfile, faster_whisper, librosa, scipy, rapidfuzz, PySide6, PIL, langdetect; print('[OK] Kernpakketten aanwezig (faster-whisper ' + __import__('importlib.metadata', fromlist=['version']).version('faster-whisper') + ')')"

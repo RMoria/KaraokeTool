@@ -1,4 +1,4 @@
-"""Tests voor modules.ffmpeg (pure parsing, geen echte ffmpeg nodig)."""
+"""Tests for modules.ffmpeg (pure parsing, no real ffmpeg needed)."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def test_parse_probe_output_without_stream_bitrate() -> None:
     data = _probe_data()
     del data["streams"][0]["bit_rate"]
     properties = _parse_probe_output(data)
-    assert properties.bit_rate == 192000  # valt terug op format
+    assert properties.bit_rate == 192000  # falls back on format
 
 
 def test_parse_probe_output_no_audio_stream() -> None:

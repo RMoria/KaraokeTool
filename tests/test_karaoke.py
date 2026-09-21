@@ -1,4 +1,4 @@
-"""Tests voor modules.karaoke."""
+"""Tests for modules.karaoke."""
 
 from __future__ import annotations
 
@@ -58,10 +58,11 @@ def test_build_envelope_shape_and_fades() -> None:
     envelope = build_envelope(3 * sample_rate, sample_rate, intervals, settings)
     gain = db_to_amplitude(-25.0)
 
-    assert envelope[5_000] == pytest.approx(1.0)          # ver vóór fragment
-    assert envelope[12_000] == pytest.approx(gain, abs=1e-4)  # in fragment
-    assert envelope[25_000] == pytest.approx(1.0)         # ver erna
-    # Halverwege de fade-in (50 ms vóór de start): tussen gain en 1.
+    assert envelope[5_000] == pytest.approx(1.0)          # well before it
+    assert envelope[12_000] == pytest.approx(gain, abs=1e-4)  # inside it
+    assert envelope[25_000] == pytest.approx(1.0)         # well after it
+    # Halfway through the fade-in (50 ms before the start): between
+    # gain and 1.
     halfway = envelope[10_000 - 500]
     assert gain < halfway < 1.0
 

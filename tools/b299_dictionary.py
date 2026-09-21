@@ -1,14 +1,14 @@
 """Dictionary for B299 phase 2: Dutch identifiers into English.
 
 How it works: an identifier is renamed only when it falls apart
-COMPLETELY into known parts (NL_WOORD or EN_BEHOUD) and at least one
+COMPLETELY into known parts (NL_WORD or EN_BEHOUD) and at least one
 Dutch part is in it. Unknown parts -> leave alone and report
 separately. That way nothing can ever be renamed halfway or wrongly.
 """
 
 #: Dutch -> English. Unambiguous words only; doubtful cases are
 #: deliberately NOT in this table and end up in the report.
-NL_WOORD = {
+NL_WORD = {
     "woord": "word", "words": "words", "woordje": "word",
     "text": "text", "teksten": "texts",
     "line": "line", "lines": "lines",

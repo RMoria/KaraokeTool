@@ -319,7 +319,7 @@ def test_filter_hallucinations_without_lyrics_still_filters() -> None:
     assert len(kept) == 0
 
 
-def test_filter_hallucinations_spares_zang_when_in_lyrics() -> None:
+def test_filter_hallucinations_spares_the_signal_word_in_the_lyrics() -> None:
     """The heart of B258: if "zang" IS in the lyrics of this song
     (phonetically), the segment may NOT be thrown away as a
     hallucination - it can be a word genuinely sung at that moment."""

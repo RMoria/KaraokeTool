@@ -418,8 +418,8 @@ def test_the_phonetic_step_keeps_the_mark() -> None:
     """That step runs on EVERY fresh timing, so without this there was
     no marking in any file at all."""
     source = Path(timing.__file__).read_text(encoding="utf-8")
-    assert "achtergrond = any(s.bg for s in group)" in source
-    assert source.count("crowd=crowd, bg=achtergrond)") == 2
+    assert "background = any(s.bg for s in group)" in source
+    assert source.count("crowd=crowd, bg=background)") == 2
 
 
 def test_the_held_notes_are_weighed_again_after_the_mark_is_back() -> None:

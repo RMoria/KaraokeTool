@@ -272,7 +272,7 @@ def test_the_chips_are_cleared_when_the_action_is_done() -> None:
 
     source = inspect.getsource(gui.MainWindow._reset_track_progress)
     assert "_clear_slot_chips()" in source
-    # B435: en dezelfde opruiming ook TUSSEN de rondes door.
+    # B435: and the same tidying up BETWEEN the rounds as well.
     assert "_clear_slot_chips" in inspect.getsource(gui.MainWindow._do_fill_cache)
 
 

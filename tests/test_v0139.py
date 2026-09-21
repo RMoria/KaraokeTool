@@ -364,8 +364,9 @@ def test_the_new_gain_trial_is_on_and_can_go_off_again() -> None:
     from modules import test_panel
 
     codes = {trial.code: trial for trial in test_panel.HEAVY_TRIALS}
-    # B491: de vraag is beantwoord, dus hij staat nu uit - en dat is
-    # precies wat deze test wilde vastleggen: uit kunnen, niet weg.
+    # B491: the question has been answered, so it is off now - and that
+    # is exactly what this test set out to pin down: being able to go
+    # off, not being gone.
     assert "1.5.11e" in codes and codes["1.5.11e"].off
     assert codes["1.5.11e"].reason == "gain_answered"
     assert "GAIN_LEVELS" in dir(test_panel)
