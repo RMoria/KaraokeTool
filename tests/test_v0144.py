@@ -27,9 +27,9 @@ def _source_of(module) -> str:
 # --------------------------------------------------------------------------
 
 def test_a_line_that_is_not_active_gets_an_outline_too() -> None:
-    """Bij B477 las ik "een zin die al geweest is hoeft niet meer af te
-    steken" als "geen rand", en juist die regels vallen weg tegen een
-    achtergrondfoto."""
+    """At B477 I read "a sentence that is done need not stand out any
+    more" as "no outline", and those are exactly the lines that vanish
+    against a background photo."""
     source = inspect.getsource(video._draw_line)
     assert "before_edge = after_edge = None" not in source
     assert 'before_edge = after_edge = palette.get("outline_" + past_key)' \
@@ -44,8 +44,8 @@ def test_the_pause_dots_and_the_titles_get_one_as_well() -> None:
 
 
 def test_the_rows_of_a_broken_sentence_keep_room_for_the_outline() -> None:
-    """De rijen van een afgebroken zin staan met opzet krap; een rand
-    groeit aan twee kanten en zou ze tegen elkaar duwen."""
+    """The rows of a broken sentence sit tight on purpose; an outline
+    grows on both sides and would push them together."""
     from PIL import ImageFont
 
     for name in ("Anton-Regular.ttf", "DejaVuSans-Bold.ttf"):
@@ -74,12 +74,12 @@ def test_every_line_really_has_a_border_in_the_picture() -> None:
                                  font, logo, "T", video._DEFAULT_COLORS,
                                  "", None, background)
     array = np.asarray(frame).astype(int)
-    # De contrakleur van wit en van grijs is zwart; zonder rand komt er
-    # nergens zwart in beeld (de achtergrond is groen).
+    # The counter colour of white and of grey is black; without an
+    # outline no black shows up at all (the background is green).
     black = (np.abs(array - np.array([0, 0, 0])).sum(axis=2) < 40)
     rows = np.nonzero(black.any(axis=1))[0]
-    assert len(rows) > 0, "geen enkele omlijning in beeld"
-    assert rows.max() - rows.min() > 200, "de rand staat maar bij één regel"
+    assert len(rows) > 0, "not a single outline in the picture"
+    assert rows.max() - rows.min() > 200, "outline on one line only"
 
 
 # --------------------------------------------------------------------------
@@ -87,8 +87,8 @@ def test_every_line_really_has_a_border_in_the_picture() -> None:
 # --------------------------------------------------------------------------
 
 def test_an_empty_block_still_counts_as_a_block() -> None:
-    """Een blok dat alleen uit hele [bg]-regels bestaat viel weg, en dan
-    verschoven alle blokken erna."""
+    """A block made up of nothing but whole [bg] lines dropped out, and
+    then every block after it shifted."""
     source = _source_of(pipeline)
     assert "blocks_in_text = (max((line.block for line in karaoke_lines)" \
         in source
@@ -146,18 +146,18 @@ def test_overwrite_takes_the_last_video_not_the_first() -> None:
 
 
 def test_overwrite_stays_within_its_own_family(tmp_path) -> None:
-    """``Titel_voc_ori.mp4`` is een andere render (B271); die mag niet
-    als "nieuwste" van ``Titel.mp4`` gelden."""
+    """``Titel_voc_ori.mp4`` is a different render (B271); it must not
+    count as the "newest" of ``Titel.mp4``."""
     context = _context(tmp_path)
     for name in ("Titel.mp4", "Titel_2.mp4", "Titel_3.mp4",
                  "Titel_voc_ori.mp4", "Ander Lied.mp4"):
         (context.paths.output_dir / name).write_bytes(b"x")
-    familie = pipeline.existing_videos(
+    family = pipeline.existing_videos(
         context, like=context.paths.output_dir / "Titel.mp4")
-    assert [p.name for p in familie] == ["Titel.mp4", "Titel_2.mp4",
-                                         "Titel_3.mp4"]
-    # Zonder filter blijft het de hele map, want dat is wat "Open video"
-    # moet aanbieden.
+    assert [p.name for p in family] == ["Titel.mp4", "Titel_2.mp4",
+                                        "Titel_3.mp4"]
+    # Without a filter it stays the whole folder, because that is what
+    # "Open video" has to offer.
     assert len(pipeline.existing_videos(context)) == 5
 
 
@@ -173,8 +173,8 @@ def test_the_gain_trial_is_off() -> None:
 # --------------------------------------------------------------------------
 
 def test_the_trim_measures_the_last_singing_not_the_first() -> None:
-    """``active_end`` stopt bij het stiltegat vóór de laatste zangepisode,
-    en dat knipt een zin met een eigen pauze doormidden."""
+    """``active_end`` stops at the silent gap before the last singing
+    episode, and that cuts a sentence with a pause of its own in two."""
     source = _source_of(pipeline)
     assert "ae = rhythm.last_energy(vocals, start, end)" in source
     assert "def last_energy(" in _source_of(
@@ -192,16 +192,16 @@ def test_the_pause_decides_where_the_sentence_splits() -> None:
                    timing.Syllable(" maar", 2.5, 3.0)))
     out = timing.distribute_over_windows(line, [(0.0, 1.2), (2.4, 3.0)])
     words = timing.word_spans(out.syllables)
-    # "zanger" en "rock" in het eerste venster, "kom" en "maar" in het
-    # tweede; de pauze ligt ertussen.
+    # "zanger" and "rock" in the first window, "kom" and "maar" in the
+    # second; the pause lies between them.
     assert words[0][1] >= 0.0 and words[1][2] <= 1.2 + 1e-6
     assert words[4][1] >= 2.4 - 1e-6
 
 
 def test_stretching_a_line_keeps_the_proportions() -> None:
-    """Alle lettergrepen even breed maken gooit de gemeten pauze weg -
-    precies de klacht dat een opgerekte regel geen goede fonetische
-    timing meer heeft."""
+    """Making every syllable the same width throws away the measured
+    pause - exactly the complaint that a stretched line no longer has
+    good phonetic timing."""
     line = timing.TimedLine(
         index=0, text="a b", crowd=False,
         syllables=(timing.Syllable("a", 0.0, 0.2),
@@ -209,7 +209,7 @@ def test_stretching_a_line_keeps_the_proportions() -> None:
     out = timing._reflow_line(line, 0.0, 4.0)
     widths = [round(s.end - s.start, 3) for s in out.syllables]
     assert widths[0] == widths[1] == 0.4, widths
-    assert out.syllables[1].start > 3.0, "het gat blijft een gat"
+    assert out.syllables[1].start > 3.0, "the gap stays a gap"
 
 
 # --------------------------------------------------------------------------
@@ -228,8 +228,8 @@ def test_one_foreign_word_is_not_a_second_language() -> None:
 
 
 def test_a_phonetic_transliteration_is_not_recognised() -> None:
-    """Bij "Lied R" staat het Koreaans in Latijnse letters; daar valt
-    niets aan te zien en dat hoort ook zo."""
+    """In "Lied R" the Korean is written in Latin letters; there is
+    nothing to see there, and that is as it should be."""
     assert pipeline.second_language(
         "Chak-kak ha-ji ma\nNoo-ga noo-goon-ji\n") is None
 
@@ -274,8 +274,8 @@ def test_the_marking_survives_and_becomes_a_fragment(tmp_path) -> None:
 
 
 def test_the_window_follows_the_sentence(tmp_path) -> None:
-    """Bewust afgeleid en niet vastgezet: verschuif je de zin, dan
-    verschuift het stuk origineel mee."""
+    """Derived on purpose and not pinned down: move the sentence and
+    the piece of the original moves with it."""
     context = _context(tmp_path)
     line = timing.TimedLine(
         index=0, text="zin", crowd=False,
@@ -298,7 +298,7 @@ def test_a_hand_drawn_block_is_not_thrown_away(tmp_path) -> None:
 
 
 def test_it_replaces_the_karaoke_there_and_does_not_mix() -> None:
-    """De gebruiker was er duidelijk over: 1-op-1 vervangen, geen mengen."""
+    """The user was clear about it: replace one to one, no mixing."""
     from modules import karaoke
 
     doc = inspect.getdoc(karaoke.apply_restore) or ""
@@ -311,8 +311,8 @@ def test_the_marked_sentence_has_its_own_colour_in_both_editors() -> None:
     assert "_LINE_BLOCK" in _source_of(damping_editor)
     assert damping_editor._LINE_PREFIX == pipeline.LINE_RESTORE_PREFIX
     editor = _source_of(timing_editor)
-    # B499: de markering hoort bij het ORIGINEEL dat wordt teruggehaald,
-    # dus die baan kleurt blauw; de karaoketekst blijft zoals hij is.
+    # B499: the marking belongs to the ORIGINAL that is fetched back,
+    # so that lane turns blue; the karaoke text stays as it is.
     assert "_ORIG_RESTORE" in editor
     assert 'self._lines[r].get("restore")' in editor
     assert "def toggle_selected_restore" in editor
@@ -323,8 +323,8 @@ def test_the_chain_knows_about_it() -> None:
 
     assert "restore_lines" in dependencies.ARTEFACTS
     assert "restore_lines" in dependencies.ARTEFACTS["karaoke"].sources
-    # Bewust niet aan de timing gehangen: dan zou elke timingwijziging de
-    # bewerkte karaoke ongeldig maken, en dat is met opzet niet zo.
+    # Deliberately not hung on the timing: every timing change would
+    # then invalidate the edited karaoke, and that is on purpose not so.
     assert "output:timing" not in dependencies.ARTEFACTS[
         "restore_lines"].sources
 

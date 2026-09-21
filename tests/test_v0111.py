@@ -1,8 +1,8 @@
-"""Tests voor v0.111.0: het testpaneel achter 1.5 en de publicatielijst.
+"""Tests for v0.111.0: the test panel behind 1.5 and the publication list.
 
-De knop 1.5 heet nu "Test" en opent een aanvinklijst met tien genummerde
-acties. Verder: "Lied-project" zonder de uitleg tussen haakjes, en een
-bewaking die eist dat tijdelijke code op de publicatielijst staat.
+Button 1.5 is called "Test" now and opens a tick list with ten numbered
+actions. Further: "Lied-project" without the explanation in brackets, and
+a guard that demands temporary code be on the publication list.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from modules import test_panel  # noqa: E402
 from modules.translations import TRANSLATIONS, t  # noqa: E402
 
-WORTEL = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
@@ -27,150 +27,151 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-def _context(tmp_path: Path, naam: str = "Proef"):
+def _context(tmp_path: Path, name: str = "Proef"):
     from modules import pipeline
     from modules.config import default_config
     from modules.filesystem import (ProjectPaths, ProjectStore,
                                     ensure_directories)
 
-    paths = ProjectPaths(root=tmp_path, song=naam)
+    paths = ProjectPaths(root=tmp_path, song=name)
     ensure_directories(paths)
     return pipeline.AppContext(paths=paths, config=default_config(),
                                store=ProjectStore(paths.project_file))
 
 
 # --------------------------------------------------------------------------
-# De nummering
+# The numbering
 # --------------------------------------------------------------------------
 
-def test_de_acties_zijn_oplopend_genummerd() -> None:
-    """"Draai 1.5.3" moet eenduidig zijn.
+def test_the_actions_are_numbered_upwards() -> None:
+    """"Run 1.5.3" has to mean one thing.
 
-    B526: 1.5.8 is weggehaald en het nummer blijft leeg. Doorschuiven zou
-    elk nummer in het logboek, in de testhistorie en in het gesprek een
-    andere betekenis geven - en juist dat moet een nummer nooit doen. Een
-    gat is eerlijker dan een hernummering; het volgende onderzoek dat
-    erbij komt neemt 1.5.8 weer in.
+    B526: 1.5.8 has been taken out and its number stays empty. Shifting
+    the rest up would give every number in the log, in the test history
+    and in conversation a different meaning - and that is exactly what a
+    number must never do. A gap is more honest than a renumbering; the
+    next investigation that comes along takes 1.5.8 again.
     """
-    nummers = [int(actie.code.rsplit(".", 1)[1])
-               for actie in test_panel.ACTIONS]
-    assert nummers == sorted(nummers)
-    assert len(nummers) == len(set(nummers))
-    assert nummers[0] == 1
+    numbers = [int(action.code.rsplit(".", 1)[1])
+               for action in test_panel.ACTIONS]
+    assert numbers == sorted(numbers)
+    assert len(numbers) == len(set(numbers))
+    assert numbers[0] == 1
 
 
-def test_elke_actie_heeft_een_naam_en_uitleg_in_beide_talen() -> None:
-    for actie in test_panel.ACTIONS:
-        for sleutel in (actie.name_key, actie.explanation_key):
-            for taal in ("nl", "en"):
-                assert sleutel in TRANSLATIONS[taal], f"{sleutel} ({taal})"
-                assert TRANSLATIONS[taal][sleutel].strip()
+def test_every_action_has_a_name_and_explanation_in_both_languages() -> None:
+    for action in test_panel.ACTIONS:
+        for key in (action.name_key, action.explanation_key):
+            for language in ("nl", "en"):
+                assert key in TRANSLATIONS[language], f"{key} ({language})"
+                assert TRANSLATIONS[language][key].strip()
 
 
-def test_cache_vullen_is_actie_een() -> None:
-    """Die bestond eerst als losse knop; hij houdt zijn plek vooraan."""
+def test_filling_the_cache_is_action_one() -> None:
+    """That one existed as a button of its own; it keeps its place at the
+    front."""
     assert test_panel.ACTIONS[0].code == "1.5.1"
     assert test_panel.ACTIONS[0].function is test_panel.fill_cache
 
 
 # --------------------------------------------------------------------------
-# Het venster
+# The window
 # --------------------------------------------------------------------------
 
-def test_vinkjes_staan_altijd_uit_bij_openen(qapp) -> None:
-    """Een vergeten vinkje op 1.5.10 kost een half uur."""
-    paneel = test_panel.TestPanel()
-    assert not any(v.isChecked() for v in paneel._ticks)
-    assert paneel.chosen() == []
+def test_the_ticks_are_always_off_when_it_opens(qapp) -> None:
+    """A forgotten tick on 1.5.10 costs half an hour."""
+    panel = test_panel.TestPanel()
+    assert not any(v.isChecked() for v in panel._ticks)
+    assert panel.chosen() == []
 
 
-def test_aanvinken_levert_de_acties_in_nummervolgorde(qapp) -> None:
-    paneel = test_panel.TestPanel()
-    paneel._ticks[4].setChecked(True)
-    paneel._ticks[1].setChecked(True)
-    assert [a.code for a in paneel.chosen()] == ["1.5.2", "1.5.5"]
+def test_ticking_gives_the_actions_in_number_order(qapp) -> None:
+    panel = test_panel.TestPanel()
+    panel._ticks[4].setChecked(True)
+    panel._ticks[1].setChecked(True)
+    assert [a.code for a in panel.chosen()] == ["1.5.2", "1.5.5"]
 
 
-def test_knop_15_heet_test(qapp, tmp_path) -> None:
+def test_button_15_is_called_test(qapp, tmp_path) -> None:
     from modules import gui
 
     window = gui.MainWindow(_context(tmp_path))
-    namen = [b.text() for b in window._step_buttons]
-    assert namen[-1] == t("step_fill_cache") == "1.5. Test"
+    names = [b.text() for b in window._step_buttons]
+    assert names[-1] == t("step_fill_cache") == "1.5. Test"
 
 
 # --------------------------------------------------------------------------
-# De acties zelf
+# The actions themselves
 # --------------------------------------------------------------------------
 
-def test_elke_actie_kijkt_naar_de_stopknop() -> None:
-    """Stop moet ook tijdens een test werken."""
+def test_every_action_watches_the_stop_button() -> None:
+    """Stop has to work during a test as well."""
     import inspect
 
-    for actie in test_panel.ACTIONS:
-        bron = inspect.getsource(actie.function)
-        assert "cancelled" in bron, actie.code
+    for action in test_panel.ACTIONS:
+        source = inspect.getsource(action.function)
+        assert "cancelled" in source, action.code
 
 
-def test_rapporten_draaien_op_een_leeg_project(tmp_path) -> None:
-    """Ze mogen niet stuklopen als er niets te melden valt.
+def test_the_reports_run_on_an_empty_project(tmp_path) -> None:
+    """They must not break when there is nothing to report.
 
-    B360: de melder hier was ``lambda _t: None`` - de vorm van vóór
-    B357. Daarmee legde deze test het OUDE contract vast en kon hij een
-    actie die zich niet aan het nieuwe hield nooit betrappen. Hij komt
-    nu uit ``test_v0115``, waar hij aan de loper is vastgelegd; de volle
-    ronde over alle elf acties staat daar ook.
+    B360: the reporter here was ``lambda _t: None`` - the shape from
+    before B357. With that, this test recorded the OLD contract and
+    could never catch an action that did not keep to the new one. It
+    comes from ``test_v0115`` now, where it is pinned to the runner; the
+    full round over all eleven actions is there too.
     """
-    from test_v0115 import melder
+    from test_v0115 import reporter
 
     context = _context(tmp_path)
     for code in ("1.5.2", "1.5.3", "1.5.4", "1.5.5"):
-        actie = next(a for a in test_panel.ACTIONS if a.code == code)
-        uitkomst = actie.function(context, melder(), lambda: False)
-        assert isinstance(uitkomst, str)
+        action = next(a for a in test_panel.ACTIONS if a.code == code)
+        outcome = action.function(context, reporter(), lambda: False)
+        assert isinstance(outcome, str)
 
 
-def test_een_afgebroken_test_stopt_meteen(tmp_path) -> None:
-    from test_v0115 import melder
+def test_a_cancelled_test_stops_at_once(tmp_path) -> None:
+    from test_v0115 import reporter
 
     context = _context(tmp_path)
-    actie = next(a for a in test_panel.ACTIONS if a.code == "1.5.2")
-    assert isinstance(actie.function(context, melder(), lambda: True), str)
+    action = next(a for a in test_panel.ACTIONS if a.code == "1.5.2")
+    assert isinstance(action.function(context, reporter(), lambda: True), str)
 
 
 # --------------------------------------------------------------------------
-# "Lied-project" zonder de haakjes
+# "Lied-project" without the brackets
 # --------------------------------------------------------------------------
 
-def test_liedproject_heeft_geen_uitleg_meer_in_de_kop() -> None:
+def test_the_song_project_has_no_explanation_in_its_heading() -> None:
     assert TRANSLATIONS["nl"]["song_group"] == "Lied-project"
     assert TRANSLATIONS["en"]["song_group"] == "Song project"
 
 
 # --------------------------------------------------------------------------
-# Tijdelijke code staat op de publicatielijst
+# Temporary code is on the publication list
 # --------------------------------------------------------------------------
 
-def test_tijdelijke_code_staat_op_de_publicatielijst() -> None:
-    """Een TIJDELIJK-markering die nergens genoemd wordt, wordt vergeten.
+def test_temporary_code_is_on_the_publication_list() -> None:
+    """A TEMPORARY mark that is named nowhere gets forgotten.
 
-    B136 was ook zo'n tijdelijke knop; dat die er weer uit ging was meer
-    geluk dan wijsheid.
+    B136 was such a temporary button too; that it went out again was
+    more luck than judgement.
     """
-    document = (WORTEL / "docs" / "doorontwikkeling.md").read_text(
+    document = (ROOT / "docs" / "development_log.md").read_text(
         encoding="utf-8")
-    kop = document.index("## Voor publicatie beslissen")
-    sectie = document[kop:document.index("\n## ", kop + 10)]
-    gemarkeerd = {
-        pad.relative_to(WORTEL).as_posix()
-        for map_ in ("modules", "tools")
-        for pad in (WORTEL / map_).glob("*.py")
-        # B465: het Engelse woord telt ook. De code is bij B438/B446
-        # omgezet, dus een nieuwe tijdelijke aantekening staat er in
-        # het Engels in - en dan keek deze bewaker er straal langs.
+    heading = document.index("## Decide before release")
+    section = document[heading:document.index("\n## ", heading + 10)]
+    marked = {
+        path.relative_to(ROOT).as_posix()
+        for folder in ("modules", "tools")
+        for path in (ROOT / folder).glob("*.py")
+        # B465: the English word counts as well. The code was converted
+        # at B438/B446, so a new temporary note goes in in English - and
+        # then this guard looked straight past it.
         if re.search(r"\b(TIJDELIJK|TEMPORARY)\b",
-                     pad.read_text(encoding="utf-8"))
+                     path.read_text(encoding="utf-8"))
     }
-    assert gemarkeerd, "geen tijdelijke code gevonden - klopt de zoektocht nog?"
-    for pad in sorted(gemarkeerd):
-        assert pad in sectie, f"{pad} is tijdelijk maar staat niet op de lijst"
+    assert marked, "no temporary code found - is the search still right?"
+    for path in sorted(marked):
+        assert path in section, f"{path} is temporary but not on the list"

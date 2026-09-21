@@ -65,7 +65,7 @@ def test_the_big_trial_does_not_measure_the_same_thing_every_round(
     test_panel.big_trial(_context(tmp_path), lambda *a, **k: None,
                          lambda: False)
     states = {state for state, _order in recorded}
-    assert len(states) > 1, "elke ronde vroeg dezelfde stand op"
+    assert len(states) > 1, "every round asked for the same state"
 
 
 def test_every_model_is_measured_with_its_own_code_flipped(
@@ -115,22 +115,22 @@ def test_an_order_travels_as_a_name(
     """
     from modules import test_panel
 
-    verslag = tmp_path / "modelmatrix.md"
-    monkeypatch.setattr(test_panel, "MATRIX_REPORT", verslag)
+    report = tmp_path / "modelmatrix.md"
+    monkeypatch.setattr(test_panel, "MATRIX_REPORT", report)
     test_panel.big_trial(_context(tmp_path), lambda *a, **k: None,
                          lambda: False)
     asked = {order for _state, order in recorded if order}
-    meetbaar = {name for name in model_orders.names()
+    expected = {name for name in model_orders.names()
                 if not model_orders.measurable(name)}
-    assert asked == meetbaar
-    # En wat niet gemeten is staat er als overgeslagen, niet als 0,00.
-    tekst = verslag.read_text(encoding="utf-8")
+    assert asked == expected
+    # And what was not measured stands there as skipped, not as 0.00.
+    text = report.read_text(encoding="utf-8")
     for name in model_orders.names():
-        uit = model_orders.measurable(name)
-        if uit:
-            regel = next(r for r in tekst.splitlines()
-                         if r.startswith(f"| {name} |"))
-            assert "0.00" not in regel and uit[0] in regel
+        why = model_orders.measurable(name)
+        if why:
+            row = next(r for r in text.splitlines()
+                       if r.startswith(f"| {name} |"))
+            assert "0.00" not in row and why[0] in row
 
 
 def test_the_omission_trial_went_the_same_way(
@@ -434,7 +434,7 @@ def test_a_pause_is_not_a_held_note() -> None:
     long_one = [s for s in line.syllables
                 if karaoke_text.is_pause(s.text)]
     assert long_one and long_one[0].end - long_one[0].start > 2, \
-        "de opzet klopt niet: de pauze moet juist het lange stuk zijn"
+        "the set-up is wrong: the pause has to be the long piece here"
     assert not any(s.held for s in timing.mark_held([line])[0].syllables)
 
 
@@ -669,8 +669,8 @@ def test_a_failed_WHOLE_run_is_not_swallowed(monkeypatch) -> None:
 
 
 def test_nothing_to_cut_on_falls_back_to_one_honest_run() -> None:
-    """B538: en die terugval geldt nu alleen als er ook geen tweede taal
-    is - anders is er wél iets te doen in de banen."""
+    """B538: and that fallback only applies now when there is no second
+    language either - otherwise there IS work for the lanes."""
     source = inspect.getsource(pipeline._transcribe_in_pieces)
     assert "if len(pieces) < 2 and not second:" in source
     assert "whisper.transcribe(" in source
@@ -1003,9 +1003,9 @@ def test_the_launcher_starts_the_check_in_the_background() -> None:
     bat = (Path(modules.__file__).resolve().parents[1]
            / "KaraokeToolGUI.bat").read_text(encoding="utf-8")
     line = [n for n in bat.splitlines() if "check_updates.py" in n]
-    assert line, "de bat draait de updatecheck niet"
-    assert "/b" in line[0], "de check moet op de achtergrond"
-    assert "pythonw" in line[0], "en zonder venster"
+    assert line, "the bat file does not run the update check"
+    assert "/b" in line[0], "the check has to run in the background"
+    assert "pythonw" in line[0], "and without a window"
 
 
 # --------------------------------------------------------------------------
@@ -1165,7 +1165,7 @@ def test_the_song_is_decoded_once_and_not_once_per_piece(tmp_path) -> None:
         first = whisper.audio_slice(path, 0.0, 5.0)
         second = whisper.audio_slice(path, 5.0, 10.0)
         third = whisper.audio_slice(path, 10.0, 15.0)
-    assert len(calls) == 1, "elk stuk decodeerde het hele liedje opnieuw"
+    assert len(calls) == 1, "every piece decoded the whole song again"
     assert len(first) == len(second) == len(third) == 5 * whisper.SLICE_RATE
 
 

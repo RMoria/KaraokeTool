@@ -1,23 +1,22 @@
-"""Tests voor v0.94 (B285/B286/B287).
+"""Tests for v0.94 (B285/B286/B287).
 
-Drie samenhangende verbeteringen aan de woord-koppeling, naar aanleiding
-van een echte "Lied_S"-uitlijning die aan het einde in de soep liep:
+Three connected improvements to the word coupling, prompted by a real
+"Lied_S" alignment that fell apart towards the end:
 
-1. **B285** - Liedbrede hallucinatiecheck in
-   ``pipeline._filter_hallucinations``: ook zónder dat een woord op de
-   vaste hallucinatielijst staat, wordt een segment gedropt als geen van
-   de kernwoorden ook maar redelijk op de songtekst matcht én Whisper's
-   eigen laagste woord-confidence laag is (reproduceert de "Heerlijke
-   Heer, Heerlijke Heer."-hallucinatie na een lange transcriptie-stilte).
-2. **B286** - ``songtekst.is_repeated_filler_line``/``repeated_filler_lines``:
-   een songtekstregel die bewust uit herhaalde vulklanken bestaat (bv.
-   "La la la la") wordt niet als incidenteel vulwoord overgeslagen.
-3. **B287** - Statusmarkering in de koppel-editor
-   (``pipeline.word_coupling_view`` en ``modules.koppeleditor``): elk
-   niet-gekoppeld songtekstwoord krijgt een van drie visueel verschillende
-   markeringen ("filler_skipped", "no_match",
-   "hallucination_filtered"), zodat de gebruiker ziet of (en waarom) hij
-   zelf moet koppelen.
+1. **B285** - song-wide hallucination check in
+   ``pipeline._filter_hallucinations``: even when a word is not on the
+   fixed hallucination list, a segment is dropped when none of its core
+   words matches the lyrics even roughly AND Whisper's own lowest word
+   confidence is low (reproduces the "Heerlijke Heer, Heerlijke Heer."
+   hallucination after a long silence in the transcription).
+2. **B286** - ``song_text.is_repeated_filler_line``/``repeated_filler_lines``:
+   a lyrics line that deliberately consists of repeated filler sounds
+   (say "La la la la") is not skipped as an incidental filler word.
+3. **B287** - status marks in the coupling editor
+   (``pipeline.word_coupling_view`` and ``modules.coupling_editor``):
+   every uncoupled lyrics word gets one of three visually distinct marks
+   ("filler_skipped", "no_match", "hallucination_filtered"), so the user
+   sees whether (and why) he has to couple it himself.
 """
 
 from __future__ import annotations
@@ -46,16 +45,16 @@ def _context(tmp_path: Path) -> AppContext:
 
 
 # --------------------------------------------------------------------------
-# B285 (1): liedbrede hallucinatiecheck in _filter_hallucinations
+# B285 (1): song-wide hallucination check in _filter_hallucinations
 # --------------------------------------------------------------------------
 
 def test_filter_hallucinations_broad_check_drops_heerlijke_heer() -> None:
-    """Reproductie van de Lied_S-bug: na een lange transcriptie-stilte
-    hallucineert Whisper "Heerlijke Heer, Heerlijke Heer.", met een
-    inconsistente woord-confidence (0.34/0.48/0.72/0.99, echte cijfers uit
-    het project) en geen enkele songtekst-match. De liedbrede check moet
-    dit segment nu ook droppen, ook al staat geen van de woorden op de
-    vaste hallucinatielijst."""
+    """Reproduction of the Lied_S bug: after a long silence in the
+    transcription Whisper hallucinates "Heerlijke Heer, Heerlijke Heer.",
+    with an inconsistent word confidence (0.34/0.48/0.72/0.99, the real
+    figures from the project) and not one lyrics match. The song-wide
+    check now has to drop this segment as well, even though none of its
+    words is on the fixed hallucination list."""
     segs = (
         Segment(0, "Heerlijke Heer, Heerlijke Heer.", 199.44, 202.84, (
             Word("Heerlijke", 199.440, 200.480, 0.3403),
@@ -78,9 +77,9 @@ def test_filter_hallucinations_broad_check_drops_heerlijke_heer() -> None:
 
 
 def test_filter_hallucinations_broad_check_skipped_without_lyrics() -> None:
-    """Zonder songtekst (``lyrics=None``) slaat de liedbrede check helemaal
-    over - er is dan niets om "matcht nergens mee" tegen af te zetten en de
-    check zou te makkelijk raak schieten."""
+    """Without lyrics (``lyrics=None``) the song-wide check is skipped
+    altogether - there is then nothing to hold "matches nothing" against,
+    and the check would fire far too easily."""
     segs = (
         Segment(0, "Heerlijke Heer, Heerlijke Heer.", 199.44, 202.84, (
             Word("Heerlijke", 199.440, 200.480, 0.3403),
@@ -94,9 +93,9 @@ def test_filter_hallucinations_broad_check_skipped_without_lyrics() -> None:
 
 
 def test_filter_hallucinations_broad_check_spares_high_confidence() -> None:
-    """Een segment waarvan Whisper élk woord met hoge confidence
-    transcribeerde blijft staan, ook als het toevallig niet matcht met de
-    songtekst - dat kan een ad-lib zijn, geen hallucinatie."""
+    """A segment that Whisper transcribed with high confidence on every
+    word stays, even when it happens not to match the lyrics - that can be
+    an ad-lib rather than a hallucination."""
     segs = (
         Segment(0, "Kom op mensen allemaal", 50.0, 52.0, (
             Word("Kom", 50.0, 50.4, 0.95),
@@ -112,9 +111,9 @@ def test_filter_hallucinations_broad_check_spares_high_confidence() -> None:
 
 
 def test_filter_hallucinations_broad_check_spares_partial_match() -> None:
-    """Als minstens één kernwoord redelijk matcht met de songtekst, blijft
-    het hele segment staan - ook al is Whisper's confidence op de rest laag.
-    Eén echt woord tussen ruis is genoeg om het segment te sparen."""
+    """When at least one core word matches the lyrics reasonably, the whole
+    segment stays - even with a low Whisper confidence on the rest. One
+    real word between noise is enough to spare the segment."""
     segs = (
         Segment(0, "Blkjh Espagna Xyzzy", 10.0, 12.0, (
             Word("Blkjh", 10.0, 10.5, 0.2),
@@ -128,10 +127,10 @@ def test_filter_hallucinations_broad_check_spares_partial_match() -> None:
     assert len(kept) == 1
 
 
-def test_filter_hallucinations_broad_check_needs_min_kernwoorden() -> None:
-    """Bij minder dan ``_SEGMENT_HALLUCINATION_MIN_KERNWOORDEN`` kernwoorden
-    slaat de liedbrede check over - te weinig fonetisch materiaal om
-    betrouwbaar "hoort nergens bij" vast te stellen."""
+def test_filter_hallucinations_broad_check_needs_min_core_words() -> None:
+    """Below ``_SEGMENT_HALLUCINATION_MIN_KERNWOORDEN`` core words the
+    song-wide check is skipped - too little phonetic material to establish
+    "belongs nowhere" reliably."""
     segs = (Segment(0, "Xyzzy", 10.0, 10.5, (Word("Xyzzy", 10.0, 10.5, 0.2),)),)
     lyrics = tuple(LyricWord(i, t, 0) for i, t in enumerate(
         "Geef mij maar alle dagen zon".split()))
@@ -140,24 +139,24 @@ def test_filter_hallucinations_broad_check_needs_min_kernwoorden() -> None:
 
 
 def test_best_lyrics_match_ignores_degenerate_short_keys() -> None:
-    """'heer' fonetiseert (h/r vallen weg, ``cluster._DROPPED``) tot het ene
-    teken 'e' - toevallig gelijk aan de sleutel van het songtekstwoordje 'E'
-    (uit "E viva Espagna"). Zonder ondergrens zou zo'n eenmalig teken een
-    valse match van 1.0 geven en de hele liedbrede check onbruikbaar maken;
-    ``_best_lyrics_match`` moet zulke te-korte sleutels negeren."""
+    """'heer' phonetises (h/r drop out, ``cluster._DROPPED``) down to the
+    single character 'e' - by chance the same key as the small lyrics word
+    'E' (from "E viva Espagna"). Without a lower bound such a one-character
+    key would give a false match of 1.0 and make the whole song-wide check
+    useless; ``_best_lyrics_match`` has to ignore keys that short."""
     from modules import cluster
 
     lyrics = tuple(LyricWord(i, t, 0) for i, t in enumerate(
         "E viva Espagna".split()))
     lyric_keys = frozenset(cluster.phonetic_key(w.text) for w in lyrics)
-    assert cluster.phonetic_key("heer") == "e"     # vooronderstelling van de test
+    assert cluster.phonetic_key("heer") == "e"     # the test's premise
     assert pipeline._best_lyrics_match("heer", lyric_keys) == 0.0
 
 
-def test_filter_hallucinations_dropped_out_achterwaarts_compatibel() -> None:
-    """Het optionele ``dropped_out``-argument verzamelt de weggegooide
-    segmenten zonder de return-waarde te wijzigen - alle bestaande
-    aanroepen (zonder dit argument) blijven precies hetzelfde werken."""
+def test_filter_hallucinations_dropped_out_stays_compatible() -> None:
+    """The optional ``dropped_out`` argument collects the discarded
+    segments without changing the return value - every existing call
+    (without this argument) keeps working exactly as before."""
     segs = (Segment(0, "MUZIEK", 28.6, 29.0,
                     (Word("MUZIEK", 28.6, 29.0, 0.5),)),
             Segment(1, "Bertus", 30.0, 30.5,
@@ -171,21 +170,21 @@ def test_filter_hallucinations_dropped_out_achterwaarts_compatibel() -> None:
 
 
 # --------------------------------------------------------------------------
-# B286 (2): herhaalde vulklanken als bewuste songtekst
+# B286 (2): repeated filler sounds as deliberate lyrics
 # --------------------------------------------------------------------------
 
-def test_is_repeated_filler_line_herkent_herhaling() -> None:
+def test_is_repeated_filler_line_spots_a_repetition() -> None:
     assert song_text.is_repeated_filler_line(["la", "la", "la", "la"]) is True
-    assert song_text.is_repeated_filler_line(["la", "la", "la"]) is True  # net genoeg
+    assert song_text.is_repeated_filler_line(["la", "la", "la"]) is True  # just enough
 
 
-def test_is_repeated_filler_line_false_voor_kort_of_echt() -> None:
-    assert song_text.is_repeated_filler_line(["oh", "ja"]) is False   # te kort
+def test_is_repeated_filler_line_false_for_short_or_real() -> None:
+    assert song_text.is_repeated_filler_line(["oh", "ja"]) is False   # too short
     assert song_text.is_repeated_filler_line(
-        ["la", "la", "hallo"]) is False                              # geen vulwoord
+        ["la", "la", "hallo"]) is False                              # no filler word
 
 
-def test_repeated_filler_lines_groepeert_per_regel() -> None:
+def test_repeated_filler_lines_groups_per_line() -> None:
     lyrics = (
         LyricWord(0, "Dit", 0), LyricWord(1, "is", 0), LyricWord(2, "text", 0),
         LyricWord(3, "la", 1), LyricWord(4, "la", 1),
@@ -194,47 +193,47 @@ def test_repeated_filler_lines_groepeert_per_regel() -> None:
     assert song_text.repeated_filler_lines(lyrics) == frozenset({1})
 
 
-def test_align_lyrics_repeated_filler_line_wordt_niet_overgeslagen(
+def test_align_lyrics_repeated_filler_line_is_not_skipped(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Een songtekstregel die bewust uit herhaalde vulklanken bestaat ("la
-    la la la" als één regel) telt niet mee als "vulwoord om over te slaan":
-    ``align_lyrics`` behandelt hem dan identiek aan ``skip_filler=False``
-    (er komt geen woord via ``repeated_filler_lines`` in de skip-set
-    terecht, dus de functie neemt meteen de gewone DP-uitlijning, zonder
-    "overgeslagen"-logregel). Vier LOSSE vulwoord-regels (elk maar 1 woord,
-    dus geen herhaling binnen één regel) worden ter vergelijking wél
-    overgeslagen."""
+    """A lyrics line that deliberately consists of repeated filler sounds
+    ("la la la la" as one line) does not count as "filler to skip":
+    ``align_lyrics`` then treats it exactly like ``skip_filler=False`` (no
+    word reaches the skip set through ``repeated_filler_lines``, so the
+    function goes straight to the ordinary DP alignment, without a
+    skipped-words log line). Four SEPARATE filler lines (one word each, so
+    no repetition within a line) are skipped, for comparison."""
     segments = (
         Segment(0, "la la la la", 10.0, 12.0, (
             Word("la", 10.0, 10.5, 0.9), Word("la", 10.5, 11.0, 0.9),
             Word("la", 11.0, 11.5, 0.9), Word("la", 11.5, 12.0, 0.9),
         )),
     )
-    repeated = tuple(LyricWord(i, "la", 0) for i in range(4))    # 1 regel
-    los = tuple(LyricWord(i, "la", i) for i in range(4))         # 4 regels
+    repeated = tuple(LyricWord(i, "la", 0) for i in range(4))    # 1 line
+    separate = tuple(LyricWord(i, "la", i) for i in range(4))    # 4 lines
 
     with caplog.at_level(logging.INFO, logger="modules.song_text"):
         caplog.clear()
-        met_skip = align_lyrics(repeated, segments, skip_filler=True)
+        with_skip = align_lyrics(repeated, segments, skip_filler=True)
         assert not any("overgeslagen" in r.message for r in caplog.records)
-    zonder_skip = align_lyrics(repeated, segments, skip_filler=False)
-    assert met_skip == zonder_skip
+    without_skip = align_lyrics(repeated, segments, skip_filler=False)
+    assert with_skip == without_skip
 
     with caplog.at_level(logging.INFO, logger="modules.song_text"):
         caplog.clear()
-        align_lyrics(los, segments, skip_filler=True)
+        align_lyrics(separate, segments, skip_filler=True)
         assert any("4 woord(en) overgeslagen" in r.message
                   for r in caplog.records)
 
 
 # --------------------------------------------------------------------------
-# B287 (3): statusmarkering in de koppel-editor
+# B287 (3): status marks in the coupling editor
 # --------------------------------------------------------------------------
 
-def test_word_overlaps_dropped_segment_binnen_ankervenster() -> None:
-    """Een ongekoppeld woord tussen twee gekoppelde buren waarbinnen een
-    weggefilterd hallucinatie-segment valt, telt als 'overlapt'."""
+def test_word_overlaps_dropped_segment_inside_anchor_window() -> None:
+    """An uncoupled word between two coupled neighbours, with a
+    filtered-out hallucination segment falling in between, counts as
+    'overlapping'."""
     from modules.pipeline import _word_overlaps_dropped_segment
     from modules.song_text import AlignedWord
 
@@ -247,9 +246,9 @@ def test_word_overlaps_dropped_segment_binnen_ankervenster() -> None:
     assert _word_overlaps_dropped_segment(aligned, 1, dropped) is True
 
 
-def test_word_overlaps_dropped_segment_buiten_ankervenster() -> None:
-    """Geen overlap als het weggefilterde segment buiten het ankervenster
-    van het ongekoppelde woord valt."""
+def test_word_overlaps_dropped_segment_outside_anchor_window() -> None:
+    """No overlap when the filtered-out segment falls outside the anchor
+    window of the uncoupled word."""
     from modules.pipeline import _word_overlaps_dropped_segment
     from modules.song_text import AlignedWord
 
@@ -263,17 +262,16 @@ def test_word_overlaps_dropped_segment_buiten_ankervenster() -> None:
     assert _word_overlaps_dropped_segment(aligned, 1, []) is False
 
 
-def test_word_coupling_view_status_alle_categorieen(tmp_path: Path) -> None:
-    """Volledige end-to-end-check van de statussen in één songtekst:
-    "Geef"/"mij"/"zon" gewoon gekoppeld, "la" een overgeslagen vulwoord,
-    "Espagna" verdwenen in een weggefilterde hallucinatie, en "Ole" een
-    songtekstwoord waar na het laatste gekoppelde woord helemaal geen
-    transcriptie meer staat.
+def test_word_coupling_view_status_all_categories(tmp_path: Path) -> None:
+    """Full end-to-end check of the statuses in one set of lyrics:
+    "Geef"/"mij"/"zon" plainly coupled, "la" a skipped filler word,
+    "Espagna" lost in a filtered-out hallucination, and "Ole" a lyrics word
+    with no transcription at all after the last coupled word.
 
-    Dat laatste heette tot en met v0.96 "no_match". Sinds B308 heeft
-    "Whisper heeft hier niets geproduceerd" een eigen status: het is een
-    ander probleem met een andere oplossing dan een woord dat wél in een
-    getranscribeerd stuk staat maar nergens op matcht."""
+    That last one was called "no_match" up to and including v0.96. Since
+    B308 "Whisper produced nothing here" has a status of its own: it is a
+    different problem with a different fix than a word that does sit in a
+    transcribed stretch but matches nothing there."""
     context = _context(tmp_path)
     (context.paths.input_dir / song_text.LYRICS_FILENAME).write_text(
         "Geef la mij Espagna zon Ole\n", encoding="utf-8")
@@ -304,9 +302,9 @@ def test_word_coupling_view_status_alle_categorieen(tmp_path: Path) -> None:
     assert status["Ole"] == "transcription_gap"          # B308
 
 
-def test_word_coupling_view_status_ontbreekt_niet(tmp_path: Path) -> None:
-    """Elk woord krijgt altijd een status-sleutel (nooit ontbrekend), ook al
-    is er verder niets bijzonders aan de hand."""
+def test_word_coupling_view_status_is_never_missing(tmp_path: Path) -> None:
+    """Every word always gets a status key (never missing), even when
+    there is nothing special about it."""
     context = _context(tmp_path)
     (context.paths.input_dir / song_text.LYRICS_FILENAME).write_text(
         "Bertus op zijn Norton\n", encoding="utf-8")
@@ -327,7 +325,7 @@ def test_word_coupling_view_status_ontbreekt_niet(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------
-# B287 (3, GUI): drie visueel verschillende markeringen in de koppel-editor
+# B287 (3, GUI): three visually distinct marks in the coupling editor
 # --------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -338,15 +336,15 @@ def qapp():
     yield app
 
 
-def test_status_style_drie_categorieen() -> None:
-    """Elke status heeft een eigen kleurenpaar en een eigen legenda-tekst.
+def test_status_style_three_categories() -> None:
+    """Every status has its own colour pair and its own legend text.
 
-    "coupled" (of een onbekende/ontbrekende status) staat er bewust niet
-    in - dat gebruikt de normale opmaak zonder markering. Sinds B308 is
-    "transcription_gap" erbij gekomen en sinds B313 "energy_placed".
-    Sinds B317 staat er geen label meer VOOR het woord: het derde veld is
-    de sleutel van de legenda-tekst, want een code in het vakje maakte
-    het woord slechter leesbaar en zei zonder uitleg niets."""
+    "coupled" (or an unknown/missing status) is deliberately not in it -
+    that uses the normal formatting, without a mark. Since B308
+    "transcription_gap" has been added, and since B313 "energy_placed".
+    Since B317 there is no label BEFORE the word any more: the third field
+    is the key of the legend text, because a code in the box made the word
+    harder to read and said nothing without an explanation."""
     from modules import translations
     from modules.coupling_editor import _STATUS_STYLE
 
@@ -357,22 +355,23 @@ def test_status_style_drie_categorieen() -> None:
         "manually_uncoupled",                   # B506
         "background",                           # B507
         "repeat_missing"}                       # B521
-    sleutels = [key for _f, _b, key in _STATUS_STYLE.values()]
-    assert len(set(sleutels)) == len(sleutels)   # elke status eigen tekst
-    kleuren = [(fill.name(), border.name())
-               for fill, border, _k in _STATUS_STYLE.values()]
-    assert len(set(kleuren)) == len(kleuren)     # elke markering eigen kleur
+    keys = [key for _f, _b, key in _STATUS_STYLE.values()]
+    assert len(set(keys)) == len(keys)           # each status its own text
+    colors = [(fill.name(), border.name())
+              for fill, border, _k in _STATUS_STYLE.values()]
+    assert len(set(colors)) == len(colors)       # each mark its own colour
     for fill, border, key in _STATUS_STYLE.values():
         assert fill != border
-        # De legenda-tekst moet in beide talen bestaan, anders staat er
-        # straks een sleutelnaam in beeld.
-        for taal in ("nl", "en"):
-            assert key in translations.TRANSLATIONS[taal], f"{taal}/{key}"
+        # The legend text has to exist in both languages, or a key name
+        # ends up on screen.
+        for language in ("nl", "en"):
+            assert key in translations.TRANSLATIONS[language], \
+                f"{language}/{key}"
 
 
-def test_koppel_canvas_paint_met_statusmarkeringen(qapp) -> None:
-    """Regressie: de drie statusmarkeringen (plus een woord zonder status)
-    mogen niet crashen tijdens het tekenen."""
+def test_coupling_canvas_paint_with_status_marks(qapp) -> None:
+    """Regression: the three status marks (plus a word without a status)
+    must not crash while being drawn."""
     from PySide6.QtGui import QImage, QPainter
 
     from modules.coupling_editor import CouplingCanvas
@@ -401,10 +400,10 @@ def test_koppel_canvas_paint_met_statusmarkeringen(qapp) -> None:
     painter.end()
 
 
-def test_koppel_canvas_zonder_status_valt_terug_op_gekoppeld(qapp) -> None:
-    """Woorden zonder ``status``-sleutel (bv. na een knip/samenvoeg-
-    bewerking, die de dict opnieuw opbouwt zonder dit veld) crashen niet en
-    krijgen gewoon de normale (ongemarkeerde) opmaak."""
+def test_coupling_canvas_without_status_falls_back_to_coupled(qapp) -> None:
+    """Words without a ``status`` key (say after a split/merge edit, which
+    rebuilds the dict without this field) do not crash and get the normal
+    (unmarked) formatting."""
     from PySide6.QtGui import QImage, QPainter
 
     from modules.coupling_editor import CouplingCanvas
@@ -412,7 +411,7 @@ def test_koppel_canvas_zonder_status_valt_terug_op_gekoppeld(qapp) -> None:
     transcript = [("HARD", 0.0, 1.0)]
     words = [
         {"index": 0, "text": "hard", "line": 0, "transcript_indices": [],
-         "found": None, "sim": 0.0, "pinned": False},   # geen "status"
+         "found": None, "sim": 0.0, "pinned": False},   # no "status"
     ]
     canvas = CouplingCanvas(transcript, words, lambda p: None)
     canvas.resize(300, 220)

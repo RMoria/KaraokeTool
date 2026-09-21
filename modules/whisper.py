@@ -383,28 +383,126 @@ def _collect_segments(
     return tuple(segments)
 
 
+def hub_cache_dir() -> Path:
+    """The folder huggingface_hub will really download into (B545).
+
+    Copied from ``huggingface_hub.constants``, which resolves
+    ``HF_HUB_CACHE``, then the legacy ``HUGGINGFACE_HUB_CACHE``, then
+    ``HF_HOME/hub``, and only without any of those
+    ``XDG_CACHE_HOME/huggingface/hub`` or ``~/.cache/huggingface/hub``.
+    A ``~`` and an environment variable are expanded on the way, as it
+    expands them.
+
+    A variable that is SET BUT EMPTY counts as set, exactly as it does
+    there - ``os.getenv`` does not care that the value is empty, and a
+    `.bat` that does ``set HF_HUB_CACHE=%MODELDIR%`` with an undefined
+    ``MODELDIR`` leaves precisely that. Treating it as unset would send
+    this answer to another folder than the download.
+
+    Read out rather than imported so that this answer does not depend
+    on huggingface_hub being importable; ``test_whisper.py`` compares
+    the two on a machine where it is, so a change in the library shows
+    up as a red test instead of as a silent wrong answer.
+    """
+    import os
+
+    def _expand(value: str) -> Path:
+        return Path(os.path.expandvars(os.path.expanduser(value)))
+
+    hub = os.environ.get("HF_HUB_CACHE")
+    if hub is not None:
+        return _expand(hub)
+    legacy = os.environ.get("HUGGINGFACE_HUB_CACHE")
+    if legacy is not None:
+        return _expand(legacy)
+    home = os.environ.get("HF_HOME")
+    if home is not None:
+        return _expand(home) / "hub"
+    base = os.environ.get("XDG_CACHE_HOME")
+    if base is None:
+        base = str(Path.home() / ".cache")
+    return _expand(base) / "huggingface" / "hub"
+
+
+def _name_parts(name: str) -> list[str]:
+    """A cache folder name or a model name, cut into its pieces."""
+    return [part for part in name.lower().replace("/", "-").split("-")
+            if part]
+
+
+def _folder_is_the_model(folder: list[str], wanted: list[str]) -> bool:
+    """Does this hub folder hold the model that was asked for? (B547)
+
+    The old rule was "the folder name contains the model name", and
+    that answers yes to the wrong question twice over: with only
+    ``models--Systran--faster-whisper-large-v3-turbo`` in the cache the
+    question about ``large-v3`` came back yes, and three gigabytes came
+    down without a word.
+
+    The rule now is: the pieces of the model appear in the folder in
+    this order, and the folder ENDS on the last of them. That last
+    condition is what keeps ``-turbo`` and ``tiny.en`` out, and the
+    order without adjacency is what lets ``distil-large-v3`` find
+    ``models--Systran--faster-distil-whisper-large-v3``, where the
+    maker put ``whisper`` in the middle of the name.
+
+    It is an estimate and it says so: the folder for a model is not
+    derivable from the name faster-whisper accepts, only guessable.
+    ``large``, which faster-whisper reads as an alias, is not found
+    this way - the app does not offer it, and the cost of a miss is a
+    message too many, not a wrong transcription.
+    """
+    if not wanted or not folder:
+        return False
+    if folder[-1] != wanted[-1]:
+        return False
+    at = 0
+    for part in wanted:
+        while at < len(folder) and folder[at] != part:
+            at += 1
+        if at == len(folder):
+            return False
+        at += 1
+    return True
+
+
 def model_cached(settings: WhisperSettings) -> bool:
     """Estimate whether the Whisper model has already been downloaded.
 
     Looks in the Hugging Face cache for a folder that belongs to the
     model. Is used to show the "model is being downloaded" message only
     when that really happens.
+
+    B545: which cache that is now comes from ``hub_cache_dir``. The old
+    code built the folder out of ``HF_HOME`` and fell back to
+    ``~/.cache/huggingface/hub`` as soon as it did not exist yet -
+    which is exactly the situation the message is for: a fresh
+    ``HF_HOME`` has no ``hub`` precisely because nothing has been
+    downloaded into it. It then answered about a cache that was not
+    going to be used, found the model there, and kept the message away
+    before a multi-gigabyte download.
     """
     import os
 
     model = settings.model
     if os.path.isdir(model):  # explicit path to a model
         return True
-    hub = Path(os.environ.get("HF_HOME", Path.home() / ".cache"
-                              / "huggingface")) / "hub"
-    if not hub.exists():
-        hub = Path.home() / ".cache" / "huggingface" / "hub"
+    hub = hub_cache_dir()
     if not hub.exists():
         return False
-    needle = model.lower()
+    wanted = _name_parts(model)
     for entry in hub.iterdir():
-        if entry.is_dir() and needle in entry.name.lower():
-            return True
+        if not entry.is_dir():
+            continue
+        if not _folder_is_the_model(_name_parts(entry.name), wanted):
+            continue
+        # B547: and a download that was broken off is not a model. The
+        # pieces land as blobs/<sha>.incomplete, so a folder holding
+        # one of those is exactly the case the message is for.
+        if any(entry.glob("blobs/*.incomplete")):
+            logger.info(t("log_model_half_downloaded"), entry.name)
+            continue
+        return True
     return False
 
 

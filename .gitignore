@@ -1,10 +1,10 @@
-# De virtuele omgeving en alles wat daaruit volgt
+# The virtual environment and everything that follows from it
 venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Werkmappen: opnames, projecten, tussenresultaten
+# Working folders: recordings, projects, intermediate results
 input/
 output/
 cache/
@@ -13,15 +13,15 @@ config/
 bin/
 .write_test
 
-# Wordt bij elke start opnieuw geschreven
+# Written again on every start
 docs/updates.json
 docs/pakketversies.json
 
-# Lettertypen haalt install.bat op; alleen de terugval staat in de repo
+# install.bat fetches the fonts; only the fallback lives in the repo
 assets/fonts/*.ttf
 !assets/fonts/DejaVuSans-Bold.ttf
 
-# Meetwerk: hoort bij een ijkverzameling, niet bij het programma
+# Measurement work: belongs to a reference collection, not to the program
 docs/testhistorie.json
 docs/modelmatrix.md
 docs/modelcombinaties.md
@@ -30,12 +30,12 @@ docs/testverslag.md
 docs/knipwoorden.txt
 docs/verslagen/
 
-# Interne werkorders en hulpmiddelen die niet naar buiten gaan
+# Internal work orders and tools that do not go out
 docs/hernoeming_B299_B300.md
 tools/github_export.py
 .karaoketool-export
 
-# Reservekopieen en rommel van editors
+# Backups and editor leftovers
 *.bak
 *.orig
 .idea/

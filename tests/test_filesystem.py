@@ -1,4 +1,4 @@
-"""Tests voor modules.filesystem."""
+"""Tests for modules.filesystem."""
 
 from __future__ import annotations
 
@@ -15,8 +15,9 @@ from modules.filesystem import (
 )
 
 
-def test_clean_cache_wist_alles_incl_readonly(tmp_path: Path) -> None:
-    """B184: cache volledig legen, ook geneste mappen en read-only bestanden."""
+def test_clean_cache_wipes_everything_incl_readonly(tmp_path: Path) -> None:
+    """B184: empty the cache completely, nested folders and read-only
+    files included."""
     import os
     import stat
     cache = tmp_path / "cache"
@@ -24,10 +25,10 @@ def test_clean_cache_wist_alles_incl_readonly(tmp_path: Path) -> None:
     (cache / "sub" / "diep" / "a.bin").write_bytes(b"x")
     ro = cache / "sub" / "readonly.bin"
     ro.write_bytes(b"y")
-    os.chmod(ro, stat.S_IREAD)                 # read-only bestand
+    os.chmod(ro, stat.S_IREAD)                 # read-only file
     (cache / "los.txt").write_text("z", encoding="utf-8")
     clean_cache(cache)
-    # De map bestaat nog, maar is helemaal leeg.
+    # The folder is still there, but completely empty.
     assert cache.exists()
     assert list(cache.iterdir()) == []
 
@@ -38,12 +39,13 @@ def test_timing_auto_file(tmp_path: Path) -> None:
 
 
 def test_prune_orphan_projects(tmp_path: Path) -> None:
-    """B112: invoermap zonder outputmap (verwijderd project) wordt opgeruimd."""
+    """B112: an input folder without an output folder (a deleted
+    project) is cleaned up."""
     from modules.filesystem import prune_orphan_projects
     (tmp_path / "input" / "Blijft").mkdir(parents=True)
     (tmp_path / "output" / "Blijft").mkdir(parents=True)
-    (tmp_path / "input" / "Weg").mkdir(parents=True)  # geen output -> wees
-    (tmp_path / "input" / "los.wav").write_bytes(b"x")  # los bestand blijft
+    (tmp_path / "input" / "Weg").mkdir(parents=True)  # no output -> orphan
+    (tmp_path / "input" / "los.wav").write_bytes(b"x")  # loose file stays
     pruned = prune_orphan_projects(tmp_path)
     assert pruned == ["Weg"]
     assert (tmp_path / "input" / "Blijft").exists()
@@ -52,7 +54,7 @@ def test_prune_orphan_projects(tmp_path: Path) -> None:
 
 
 def test_project_store_thread_safe_set_step(tmp_path: Path) -> None:
-    """B90: parallelle set_step-aanroepen gaan niet verloren of botsen."""
+    """B90: parallel set_step calls neither get lost nor collide."""
     import threading
 
     paths = ProjectPaths(root=tmp_path)
@@ -69,11 +71,11 @@ def test_project_store_thread_safe_set_step(tmp_path: Path) -> None:
     for thread in threads:
         thread.join()
 
-    # Elke schrijver heeft zijn laatste waarde; niets is verloren gegaan.
+    # Every writer has its own last value; nothing was lost.
     for n in range(6):
         step = store.get_step(f"stap_{n}")
         assert step is not None and step["i"] == 19
-    # Het weggeschreven bestand is nog geldige JSON (herlaadbaar).
+    # The file on disk is still valid JSON (it reloads).
     reloaded = ProjectStore(paths.project_file)
     assert reloaded.get_step("stap_0") is not None
 
@@ -82,24 +84,24 @@ def test_project_store_meta(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "project.json")
     assert store.get_meta("display_name") is None
     store.set_meta("display_name", "Lied O")
-    # Opnieuw inladen: waarde blijft bewaard.
+    # Load it again: the value is still there.
     again = ProjectStore(tmp_path / "project.json")
     assert again.get_meta("display_name") == "Lied O"
     assert again.get_meta("ontbreekt", "x") == "x"
 
 
 def test_remove_empty_tree(tmp_path: Path) -> None:
-    # Lege boom (alleen lege submappen) wordt volledig verwijderd.
+    # An empty tree (only empty subfolders) goes completely.
     empty = tmp_path / "output"
     (empty / "settings").mkdir(parents=True)
     assert remove_empty_tree(empty) is True
     assert not empty.exists()
-    # Boom met een bestand blijft staan.
-    gevuld = tmp_path / "input"
-    gevuld.mkdir()
-    (gevuld / "LEESMIJ.txt").write_text("hoi", encoding="utf-8")
-    assert remove_empty_tree(gevuld) is False
-    assert gevuld.exists()
+    # A tree with a file in it stays.
+    filled = tmp_path / "input"
+    filled.mkdir()
+    (filled / "LEESMIJ.txt").write_text("hoi", encoding="utf-8")
+    assert remove_empty_tree(filled) is False
+    assert filled.exists()
 
 
 def test_project_paths(tmp_path: Path) -> None:
@@ -133,7 +135,7 @@ def test_find_audio_file_missing(tmp_path: Path) -> None:
 def test_file_sha1(tmp_path: Path) -> None:
     path = tmp_path / "data.bin"
     path.write_bytes(b"carnaval")
-    # Bekende SHA1 van b"carnaval".
+    # Known SHA1 of b"carnaval".
     import hashlib
     assert file_sha1(path) == hashlib.sha1(b"carnaval").hexdigest()
 
@@ -221,13 +223,13 @@ def test_clean_logs_keeps_newest_five(tmp_path: Path) -> None:
 
     logs = tmp_path / "logs"
     logs.mkdir()
-    for day in range(1, 9):  # 8 dagen aan logs
+    for day in range(1, 9):  # 8 days of logs
         (logs / f"2026-07-{day:02d}.log").write_text("x", encoding="utf-8")
     removed = clean_logs(logs, keep=5)
     assert removed == 3
-    resterend = sorted(f.name for f in logs.glob("*.log"))
-    # De 5 nieuwste blijven staan (04 t/m 08).
-    assert resterend == ["2026-07-04.log", "2026-07-05.log",
+    remaining = sorted(f.name for f in logs.glob("*.log"))
+    # The 5 newest stay (04 through 08).
+    assert remaining == ["2026-07-04.log", "2026-07-05.log",
                          "2026-07-06.log", "2026-07-07.log",
                          "2026-07-08.log"]
 
@@ -239,4 +241,4 @@ def test_clean_logs_fewer_than_keep(tmp_path: Path) -> None:
     logs.mkdir()
     (logs / "2026-07-01.log").write_text("x", encoding="utf-8")
     assert clean_logs(logs, keep=5) == 0
-    assert clean_logs(tmp_path / "weg", keep=5) == 0  # map bestaat niet
+    assert clean_logs(tmp_path / "weg", keep=5) == 0  # folder is absent

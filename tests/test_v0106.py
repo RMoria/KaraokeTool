@@ -1,18 +1,18 @@
-"""Tests voor v0.106.0: B341, B342, B345, B346 en B347.
+"""Tests for v0.106.0: B341, B342, B345, B346 and B347.
 
-B341 - de bezig-kleur komt op de knop die de taak start; sinds B323 nam
-       elke stapknop opzij voor zijn eigen taak, want die draait al op
-       het moment dat de haak aan de beurt is.
-B342 - een woord dat op een segmentgrens is doorgeknipt komt twee keer
-       uit Whisper en wordt weer samengevoegd; "amen" erbij in de
-       Engelse hallucinatielijst.
-B345 - in de timing-editor kan niets meer voorbij het eind van het
-       nummer worden gesleept of gerekt.
-B346 - regels, blokken en originele zinnen kunnen elkaar niet meer
-       passeren (crowd mag nog wel overlappen).
-B347 - bij een pauze binnen een regel verloren de laatste woorden hun
-       hele duur, doordat de brokjes met een andere telling werden
-       doorlopen dan waarmee ze zijn opgeslagen.
+B341 - the busy colour lands on the button that starts the task; since
+       B323 every step button stepped aside for its own task, because
+       that one is already running by the time the hook has its turn.
+B342 - a word cut in two on a segment boundary comes out of Whisper
+       twice and is joined back together; "amen" added to the English
+       hallucination list.
+B345 - in the timing editor nothing can be dragged or stretched past
+       the end of the song any more.
+B346 - lines, blocks and original sentences can no longer pass each
+       other (crowd may still overlap).
+B347 - with a pause inside a line the last words lost their whole
+       duration, because the pieces were walked with a different count
+       than the one they were stored with.
 """
 from __future__ import annotations
 
@@ -37,211 +37,212 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-def _context(tmp_path: Path, naam: str = "Proef"):
+def _context(tmp_path: Path, name: str = "Proef"):
     from modules.config import default_config
     from modules.filesystem import (ProjectPaths, ProjectStore,
                                     ensure_directories)
 
-    paths = ProjectPaths(root=tmp_path, song=naam)
+    paths = ProjectPaths(root=tmp_path, song=name)
     ensure_directories(paths)
     return pipeline.AppContext(paths=paths, config=default_config(),
                                store=ProjectStore(paths.project_file))
 
 
 # --------------------------------------------------------------------------
-# B347: de woordtiming bij een pauze binnen de regel
+# B347: the word timing around a pause inside the line
 # --------------------------------------------------------------------------
 
-#: Precies zoals het in timing.json staat: fijnere brokjes dan de
-#: lettergrepen die split_line uit de woordtekst haalt (25 om 10).
-_BROKJES = ["I", "k", " g", "i", "ng", " a", "l", " j", "a", "r", "e", "n",
-            " m", "e", "t", " d", "e", " R", "ei", "g", "e", "r", "s",
-            " m", "ee"]
+#: Exactly as it stands in timing.json: finer pieces than the syllables
+#: split_line takes from the word text (25 against 10).
+_PIECES = ["I", "k", " g", "i", "ng", " a", "l", " j", "a", "r", "e", "n",
+           " m", "e", "t", " d", "e", " R", "ei", "g", "e", "r", "s",
+           " m", "ee"]
 
 
-def _regel_met_pauze() -> TimedLine:
-    stap = (86.351 - 81.031) / len(_BROKJES)
+def _line_with_a_pause() -> TimedLine:
+    step = (86.351 - 81.031) / len(_PIECES)
     syllables = tuple(
-        Syllable(text=stuk, start=round(81.031 + i * stap, 3),
-                 end=round(81.031 + (i + 1) * stap, 3))
-        for i, stuk in enumerate(_BROKJES))
+        Syllable(text=piece, start=round(81.031 + i * step, 3),
+                 end=round(81.031 + (i + 1) * step, 3))
+        for i, piece in enumerate(_PIECES))
     return TimedLine(index=20, text="Ik ging al jaren met de Zangers mee",
                      crowd=False, syllables=syllables)
 
 
-def test_piece_groups_telt_de_opgeslagen_brokjes() -> None:
-    """B347: de groepering volgt de spatie, niet de woordtekst."""
-    groepen = piece_groups(_regel_met_pauze().syllables)
-    assert [len(g) for g in groepen] == [2, 3, 2, 5, 3, 2, 6, 2]
-    assert sum(len(g) for g in groepen) == len(_BROKJES)
+def test_piece_groups_counts_the_stored_pieces() -> None:
+    """B347: the grouping follows the space, not the word text."""
+    groups = piece_groups(_line_with_a_pause().syllables)
+    assert [len(g) for g in groups] == [2, 3, 2, 5, 3, 2, 6, 2]
+    assert sum(len(g) for g in groups) == len(_PIECES)
 
 
-def test_geen_woord_verliest_zijn_duur_bij_een_pauze() -> None:
-    """B347: vier van de acht woorden stonden op begin == eind."""
-    vensters = [(81.031, 82.582), (84.686, 86.351)]
-    uit = distribute_over_windows(_regel_met_pauze(), vensters)
-    assert len(uit.syllables) == len(_BROKJES)
-    for tekst, begin, eind in word_spans(uit.syllables):
-        assert eind - begin > 0.001, f"{tekst} heeft geen duur"
-        assert eind >= begin, f"{tekst} loopt achteruit"
+def test_no_word_loses_its_duration_at_a_pause() -> None:
+    """B347: four of the eight words sat on start == end."""
+    windows = [(81.031, 82.582), (84.686, 86.351)]
+    out = distribute_over_windows(_line_with_a_pause(), windows)
+    assert len(out.syllables) == len(_PIECES)
+    for text, start, end in word_spans(out.syllables):
+        assert end - start > 0.001, f"{text} has no duration"
+        assert end >= start, f"{text} runs backwards"
 
 
-def test_de_woorden_komen_in_de_gezongen_helften() -> None:
-    """B347: de pauze hoort tussen de woorden te vallen, niet erin."""
-    pauze = (82.582, 84.686)
-    uit = distribute_over_windows(_regel_met_pauze(),
+def test_the_words_land_in_the_sung_halves() -> None:
+    """B347: the pause belongs between the words, not inside one."""
+    pause = (82.582, 84.686)
+    out = distribute_over_windows(_line_with_a_pause(),
                                   [(81.031, 82.582), (84.686, 86.351)])
-    woorden = word_spans(uit.syllables)
-    assert len(woorden) == 8
-    for _tekst, begin, eind in woorden:
-        assert not (pauze[0] < begin < pauze[1]), "woord begint in de pauze"
-        assert not (pauze[0] < eind < pauze[1]), "woord eindigt in de pauze"
-    assert woorden[0][1] == pytest.approx(81.031, abs=0.01)
-    assert woorden[-1][2] == pytest.approx(86.351, abs=0.01)
+    words = word_spans(out.syllables)
+    assert len(words) == 8
+    for _text, start, end in words:
+        assert not (pause[0] < start < pause[1]), "word starts in the pause"
+        assert not (pause[0] < end < pause[1]), "word ends in the pause"
+    assert words[0][1] == pytest.approx(81.031, abs=0.01)
+    assert words[-1][2] == pytest.approx(86.351, abs=0.01)
 
 
 # --------------------------------------------------------------------------
-# B345/B346: begrenzing en volgorde in de timing-editor
+# B345/B346: bounds and order in the timing editor
 # --------------------------------------------------------------------------
 
-_DUUR = 20.0
+_DURATION = 20.0
 
 
-def _regels(aantal: int = 3) -> list[dict]:
+def _lines(count: int = 3) -> list[dict]:
     return [{"text": f"regel {i + 1}", "crowd": False, "block": 0,
              "disabled": False,
              "syllables": [{"text": "a", "start": 1.0 + 2 * i,
                             "end": 2.0 + 2 * i, "held": False,
                             "stress": False, "crowd": False}]}
-            for i in range(aantal)]
+            for i in range(count)]
 
 
-def _span(regel: dict) -> tuple[float, float]:
-    return (regel["syllables"][0]["start"], regel["syllables"][-1]["end"])
+def _span(line: dict) -> tuple[float, float]:
+    return (line["syllables"][0]["start"], line["syllables"][-1]["end"])
 
 
-def _canvas(regels: list[dict], originals: list[dict] | None = None):
+def _canvas(lines: list[dict], originals: list[dict] | None = None):
     import numpy as np
     from modules.timing_editor import TimingCanvas
 
     peaks = np.zeros(2000)
-    canvas = TimingCanvas(peaks, peaks, _DUUR, regels, lambda *_: None,
+    canvas = TimingCanvas(peaks, peaks, _DURATION, lines, lambda *_: None,
                           originals=originals or [],
-                          original_duration=_DUUR, vocal_peaks=peaks)
+                          original_duration=_DURATION, vocal_peaks=peaks)
     canvas._cells = [{"text": r["text"], "start": _span(r)[0],
                       "end": _span(r)[1], "crowd": bool(r["crowd"]),
                       "rows": [i], "uit": False}
-                     for i, r in enumerate(regels)]
+                     for i, r in enumerate(lines)]
     return canvas
 
 
-def _sleep(canvas, cel: int, mode: str, vanaf: float, naar: float) -> None:
-    """Eén sleepbeweging, zoals de muis hem aflevert."""
+def _drag(canvas, cell: int, mode: str, start: float, to: float) -> None:
+    """One drag movement, the way the mouse delivers it."""
     from PySide6.QtCore import QPointF
 
-    class _Gebeurtenis:
+    class _Event:
         def __init__(self, x: float) -> None:
-            self._punt = QPointF(x, 0.0)
+            self._point = QPointF(x, 0.0)
 
         def position(self):
-            return self._punt
+            return self._point
 
-    canvas._drag = ("cel", cel, mode, vanaf)
-    canvas.mouseMoveEvent(_Gebeurtenis(naar * canvas._pps))
-
-
-def test_regel_kan_niet_voorbij_het_eind_worden_gerekt(qapp) -> None:
-    """B345: rekken tot 80 s in een nummer van 20 s."""
-    regels = _regels()
-    _sleep(_canvas(regels), 2, "rechts", 6.0, 80.0)
-    assert _span(regels[2])[1] == pytest.approx(_DUUR)
+    canvas._drag = ("cel", cell, mode, start)
+    canvas.mouseMoveEvent(_Event(to * canvas._pps))
 
 
-def test_regel_kan_niet_voorbij_het_eind_worden_gesleept(qapp) -> None:
-    """B345: verplaatsen naar 200 s zette hem gewoon op 199,5."""
-    regels = _regels()
-    _sleep(_canvas(regels), 2, "verplaats", 5.5, 200.0)
-    begin, eind = _span(regels[2])
-    assert eind <= _DUUR + 1e-6
-    assert eind - begin == pytest.approx(1.0)
+def test_a_line_cannot_be_stretched_past_the_end(qapp) -> None:
+    """B345: stretching to 80 s in a song of 20 s."""
+    lines = _lines()
+    _drag(_canvas(lines), 2, "rechts", 6.0, 80.0)
+    assert _span(lines[2])[1] == pytest.approx(_DURATION)
 
 
-def test_regel_kan_zijn_voorganger_niet_passeren(qapp) -> None:
-    """B346: clamp_span liet hem in het vrije gat vóór regel 1 vallen."""
-    regels = _regels()
-    _sleep(_canvas(regels), 1, "verplaats", 3.5, 0.4)
-    assert _span(regels[1])[0] >= _span(regels[0])[1] - 1e-6
+def test_a_line_cannot_be_dragged_past_the_end(qapp) -> None:
+    """B345: moving it to 200 s simply put it down on 199.5."""
+    lines = _lines()
+    _drag(_canvas(lines), 2, "verplaats", 5.5, 200.0)
+    start, end = _span(lines[2])
+    assert end <= _DURATION + 1e-6
+    assert end - start == pytest.approx(1.0)
 
 
-def test_regel_kan_zijn_opvolger_niet_passeren(qapp) -> None:
-    """B346: dezelfde regel, de andere kant op."""
-    regels = _regels()
-    _sleep(_canvas(regels), 0, "verplaats", 1.5, 9.0)
-    assert _span(regels[0])[1] <= _span(regels[1])[0] + 1e-6
+def test_a_line_cannot_pass_its_predecessor(qapp) -> None:
+    """B346: clamp_span let it drop into the free gap before line 1."""
+    lines = _lines()
+    _drag(_canvas(lines), 1, "verplaats", 3.5, 0.4)
+    assert _span(lines[1])[0] >= _span(lines[0])[1] - 1e-6
 
 
-def test_blok_kan_zijn_buur_niet_passeren(qapp) -> None:
-    """B346: in de blokweergave werd de overlapcontrole overgeslagen."""
-    regels = _regels()
-    canvas = _canvas(regels)
+def test_a_line_cannot_pass_its_successor(qapp) -> None:
+    """B346: the same rule, the other way round."""
+    lines = _lines()
+    _drag(_canvas(lines), 0, "verplaats", 1.5, 9.0)
+    assert _span(lines[0])[1] <= _span(lines[1])[0] + 1e-6
+
+
+def test_a_block_cannot_pass_its_neighbour(qapp) -> None:
+    """B346: in the block view the overlap check was skipped."""
+    lines = _lines()
+    canvas = _canvas(lines)
     canvas.set_view_mode("blocks")
     canvas._cells = [
         {"text": "blok 0", "start": 1.0, "end": 4.0, "crowd": False,
          "rows": [0, 1], "uit": False},
         {"text": "blok 1", "start": 5.0, "end": 6.0, "crowd": False,
          "rows": [2], "uit": False}]
-    _sleep(canvas, 1, "verplaats", 5.5, 0.5)
-    assert _span(regels[2])[0] >= _span(regels[1])[1] - 1e-6
+    _drag(canvas, 1, "verplaats", 5.5, 0.5)
+    assert _span(lines[2])[0] >= _span(lines[1])[1] - 1e-6
 
 
-def test_crowd_regel_mag_overlappen_maar_niet_passeren(qapp) -> None:
-    """B346: 'nooit overlappen, crowd uitgezonderd' - passeren nooit."""
-    regels = _regels()
-    regels[2]["crowd"] = True
-    _sleep(_canvas(regels), 2, "verplaats", 5.5, 0.5)
-    begin, _eind = _span(regels[2])
-    # Mag over regel 2 heen liggen ...
-    assert begin < _span(regels[1])[1]
-    # ... maar niet vóór het begin ervan uitkomen.
-    assert begin >= _span(regels[1])[0] - 1e-6
+def test_a_crowd_line_may_overlap_but_not_pass(qapp) -> None:
+    """B346: 'never overlap, crowd excepted' - passing never."""
+    lines = _lines()
+    lines[2]["crowd"] = True
+    _drag(_canvas(lines), 2, "verplaats", 5.5, 0.5)
+    start, _end = _span(lines[2])
+    # May lie over the line before it ...
+    assert start < _span(lines[1])[1]
+    # ... but may not come out in front of where that one begins.
+    assert start >= _span(lines[1])[0] - 1e-6
 
 
-def test_originele_zin_blijft_binnen_het_nummer_en_op_zijn_plek(qapp) -> None:
-    """B345/B346 op de originele baan."""
+def test_an_original_sentence_stays_in_the_song_and_in_place(qapp) -> None:
+    """B345/B346 on the original track."""
     from PySide6.QtCore import QPointF
 
-    regels = _regels()
+    lines = _lines()
     originals = [{"text": "o1", "start": 1.0, "end": 2.0, "rows": [0]},
                  {"text": "o2", "start": 3.0, "end": 4.0, "rows": [1]},
                  {"text": "o3", "start": 5.0, "end": 6.0, "rows": [2]}]
-    canvas = _canvas(regels, originals)
+    canvas = _canvas(lines, originals)
 
-    class _Gebeurtenis:
+    class _Event:
         def __init__(self, x: float) -> None:
-            self._punt = QPointF(x, 0.0)
+            self._point = QPointF(x, 0.0)
 
         def position(self):
-            return self._punt
+            return self._point
 
     canvas._drag = ("original", 2, "rechts", 6.0)
-    canvas.mouseMoveEvent(_Gebeurtenis(90.0 * canvas._pps))
-    assert originals[2]["end"] <= _DUUR + 1e-6
+    canvas.mouseMoveEvent(_Event(90.0 * canvas._pps))
+    assert originals[2]["end"] <= _DURATION + 1e-6
 
     canvas._drag = ("original", 1, "verplaats", 3.5)
-    canvas.mouseMoveEvent(_Gebeurtenis(0.4 * canvas._pps))
+    canvas.mouseMoveEvent(_Event(0.4 * canvas._pps))
     assert originals[1]["start"] >= originals[0]["end"] - 1e-6
 
 
 # --------------------------------------------------------------------------
-# B341: de bezig-kleur
+# B341: the busy colour
 # --------------------------------------------------------------------------
 
-def test_knop_die_een_taak_start_wordt_geel(qapp, tmp_path) -> None:
-    """B341: via een ECHTE klik, want daar zat het gat.
+def test_the_button_that_starts_a_task_turns_yellow(qapp, tmp_path) -> None:
+    """B341: through a REAL click, because that is where the hole was.
 
-    De oude test riep ``_mark_busy_click`` rechtstreeks aan met een lege
-    ``_worker`` en zag daarom niet dat de haak in werkelijkheid pas na de
-    eigen handler aan de beurt komt - als de taak dus al draait.
+    The old test called ``_mark_busy_click`` straight out with an empty
+    ``_worker`` and so did not see that in reality the hook only has
+    its turn after the handler of the button itself - that is, when the
+    task is already running.
     """
     import time
 
@@ -250,111 +251,113 @@ def test_knop_die_een_taak_start_wordt_geel(qapp, tmp_path) -> None:
     from modules import gui
 
     window = gui.MainWindow(_context(tmp_path, "Bezig1"))
-    knop = QPushButton("proef", window)
-    knop.pressed.connect(window._remember_worker)
-    knop.clicked.connect(
+    button = QPushButton("proef", window)
+    button.pressed.connect(window._remember_worker)
+    button.clicked.connect(
         lambda: window._run(lambda progress, message: time.sleep(0.2),
                             lambda _r: None))
-    knop.clicked.connect(lambda _=False: window._mark_busy_click(knop))
-    knop.click()
+    button.clicked.connect(lambda _=False: window._mark_busy_click(button))
+    button.click()
     try:
         assert window._worker.isRunning()
-        assert knop in window._busy_buttons
-        assert knop.styleSheet() != ""
+        assert button in window._busy_buttons
+        assert button.styleSheet() != ""
     finally:
         window._worker.wait()
 
 
-def test_knop_pakt_de_kleur_niet_af_van_een_lopende_taak(qapp,
-                                                        tmp_path) -> None:
-    """B323 blijft staan: andermans taak houdt de kleur."""
+def test_a_button_does_not_take_the_colour_from_a_running_task(qapp,
+                                                               tmp_path
+                                                               ) -> None:
+    """B323 still stands: someone else's task keeps the colour."""
     from PySide6.QtWidgets import QPushButton
 
     from modules import gui
 
     window = gui.MainWindow(_context(tmp_path, "Bezig2"))
-    bezig = window._step_buttons[0]
+    busy = window._step_buttons[0]
 
-    class _Draait:
+    class _Running:
         def isRunning(self) -> bool:
             return True
 
-    window._worker = _Draait()
-    window._busy_buttons.add(bezig)
-    window._apply_busy_style(bezig, True)
+    window._worker = _Running()
+    window._busy_buttons.add(busy)
+    window._apply_busy_style(busy, True)
 
-    andere = QPushButton("andere", window)
-    window._remember_worker()          # de druk vóór de klik
-    window._mark_busy_click(andere)
-    assert andere not in window._busy_buttons
-    assert bezig in window._busy_buttons
+    other = QPushButton("andere", window)
+    window._remember_worker()          # the press before the click
+    window._mark_busy_click(other)
+    assert other not in window._busy_buttons
+    assert busy in window._busy_buttons
 
 
 # --------------------------------------------------------------------------
-# B342: het doorgeknipte woord op de segmentgrens
+# B342: the word cut in two on the segment boundary
 # --------------------------------------------------------------------------
 
-def _segment(index: int, woorden: list[Word]) -> Segment:
-    return Segment(index=index, text=" ".join(w.text for w in woorden),
-                   start=woorden[0].start, end=woorden[-1].end,
-                   words=tuple(woorden))
+def _segment(index: int, words: list[Word]) -> Segment:
+    return Segment(index=index, text=" ".join(w.text for w in words),
+                   start=words[0].start, end=words[-1].end,
+                   words=tuple(words))
 
 
-def test_doorgeknipt_woord_wordt_samengevoegd() -> None:
-    """B342: de gemeten "reflections"/"Collections," van Lied D."""
-    links = _segment(12, [Word("Golden", 81.031, 81.335, 0.516),
-                          Word("reflections", 81.355, 81.740, 0.220)])
-    rechts = _segment(13, [Word("Collections,", 81.760, 82.582, 0.622),
-                           Word("given", 84.686, 85.127, 0.794)])
-    uit = pipeline._merge_boundary_duplicates((links, rechts))
-    assert [w.text for w in uit[0].words] == ["Golden"]
-    assert uit[0].end == pytest.approx(81.335)
-    eerste = uit[1].words[0]
-    assert eerste.text == "Collections,"
-    assert eerste.start == pytest.approx(81.355)   # de echte inzet
-    assert eerste.end == pytest.approx(82.582)
+def test_a_word_cut_in_two_is_joined_back_together() -> None:
+    """B342: the measured "reflections"/"Collections," of Lied D."""
+    left = _segment(12, [Word("Golden", 81.031, 81.335, 0.516),
+                         Word("reflections", 81.355, 81.740, 0.220)])
+    right = _segment(13, [Word("Collections,", 81.760, 82.582, 0.622),
+                          Word("given", 84.686, 85.127, 0.794)])
+    out = pipeline._merge_boundary_duplicates((left, right))
+    assert [w.text for w in out[0].words] == ["Golden"]
+    assert out[0].end == pytest.approx(81.335)
+    first = out[1].words[0]
+    assert first.text == "Collections,"
+    assert first.start == pytest.approx(81.355)   # the real onset
+    assert first.end == pytest.approx(82.582)
 
 
-def test_samengevoegd_woord_duurt_wat_het_elders_duurt() -> None:
-    """B342: het bewijs dat het één woord is - 1,29 s tegen 1,31/1,36."""
-    links = _segment(24, [Word("up,", 135.232, 135.695, 0.803),
-                          Word("dreaming", 136.178, 136.420, 0.253)])
-    rechts = _segment(25, [Word("Dreaming", 136.621, 137.466, 0.686),
-                           Word("of", 137.869, 137.909, 0.000)])
-    uit = pipeline._merge_boundary_duplicates((links, rechts))
-    samen = uit[1].words[0]
-    assert samen.end - samen.start == pytest.approx(1.288, abs=0.005)
+def test_a_joined_word_lasts_what_it_lasts_elsewhere() -> None:
+    """B342: the proof that it is one word - 1.29 s against 1.31/1.36."""
+    left = _segment(24, [Word("up,", 135.232, 135.695, 0.803),
+                         Word("dreaming", 136.178, 136.420, 0.253)])
+    right = _segment(25, [Word("Dreaming", 136.621, 137.466, 0.686),
+                          Word("of", 137.869, 137.909, 0.000)])
+    out = pipeline._merge_boundary_duplicates((left, right))
+    merged = out[1].words[0]
+    assert merged.end - merged.start == pytest.approx(1.288, abs=0.005)
 
 
-def test_echte_herhaling_blijft_staan() -> None:
-    """B342: "Tickle, tickle" staat binnen één segment en blijft heel."""
+def test_a_real_repetition_stays_standing() -> None:
+    """B342: "Tickle, tickle" sits inside one segment and stays whole."""
     segment = _segment(8, [Word("Tickle,", 56.680, 57.560, 0.640),
                            Word("tickle,", 57.621, 57.981, 0.490)])
-    uit = pipeline._merge_boundary_duplicates((segment,))
-    assert len(uit[0].words) == 2
+    out = pipeline._merge_boundary_duplicates((segment,))
+    assert len(out[0].words) == 2
 
 
-def test_groot_gat_wordt_niet_samengevoegd() -> None:
-    """B342: 0,70 s stilte binnen een woord proppen is geen winst."""
-    links = _segment(1, [Word("I'm", 40.0, 40.2, 0.700),
-                         Word("sure", 40.30, 40.38, 0.010)])
-    rechts = _segment(2, [Word("sure.", 41.082, 41.802, 0.620)])
-    uit = pipeline._merge_boundary_duplicates((links, rechts))
-    assert [w.text for w in uit[0].words] == ["I'm", "sure"]
-    assert uit[1].words[0].start == pytest.approx(41.082)
+def test_a_wide_gap_is_not_joined_together() -> None:
+    """B342: stuffing 0.70 s of silence inside a word is no gain."""
+    left = _segment(1, [Word("I'm", 40.0, 40.2, 0.700),
+                        Word("sure", 40.30, 40.38, 0.010)])
+    right = _segment(2, [Word("sure.", 41.082, 41.802, 0.620)])
+    out = pipeline._merge_boundary_duplicates((left, right))
+    assert [w.text for w in out[0].words] == ["I'm", "sure"]
+    assert out[1].words[0].start == pytest.approx(41.082)
 
 
-def test_zeker_woord_wordt_niet_als_stompje_gezien() -> None:
-    """B342: alleen een korter EN onzekerder woord telt als stompje."""
-    links = _segment(1, [Word("oh", 10.0, 10.4, 0.900),
-                         Word("no", 10.5, 11.2, 0.880)])
-    rechts = _segment(2, [Word("No", 11.30, 11.60, 0.910)])
-    uit = pipeline._merge_boundary_duplicates((links, rechts))
-    assert len(uit[0].words) == 2
+def test_a_confident_word_is_not_taken_for_a_stub() -> None:
+    """B342: only a word that is shorter AND less sure counts as a
+    stub."""
+    left = _segment(1, [Word("oh", 10.0, 10.4, 0.900),
+                        Word("no", 10.5, 11.2, 0.880)])
+    right = _segment(2, [Word("No", 11.30, 11.60, 0.910)])
+    out = pipeline._merge_boundary_duplicates((left, right))
+    assert len(out[0].words) == 2
 
 
-def test_amen_staat_in_de_engelse_hallucinatielijst() -> None:
-    """B342: 0,11 s, betrouwbaarheid 0,032, twee tellen na de zang."""
+def test_amen_stands_in_the_english_hallucination_list() -> None:
+    """B342: 0.11 s, confidence 0.032, two beats after the singing."""
     from modules import phonetics
 
     assert "amen" in phonetics.word_list("en", "hallucinations")

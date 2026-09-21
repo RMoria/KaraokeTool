@@ -1,15 +1,15 @@
-"""Tests voor v0.101.0: B323 tot en met B328.
+"""Tests for v0.101.0: B323 through B328.
 
-B323 - de Stop-knop pakt de bezig-kleur niet meer af van de stap die
-       loopt, zodat "1.1. Detecteer woorden" niet geel blijft.
-B324 - de originele bestandsnaam van songtekst en karaoketekst wordt
-       geschreven onder dezelfde sleutel als waaronder hij gelezen wordt.
-B325 - de knoppen heten <tab>.<knop>. en een melding noemt een knop bij
-       sleutel, niet bij naam.
-B326 - "2.2. Timing verfijnen" liep stuk op een Nederlandse sleutel; de
-       teksten die de pijplijn teruggeeft lopen nu via translations.py.
-B327 - de baanlabels van de golfvorm-editor toonden hun eigen sleutel.
-B328 - de handleiding beschrijft wat er te zien en te bedienen is.
+B323 - the Stop button no longer takes the busy colour away from the
+       running step, so "1.1. Detecteer woorden" does not stay yellow.
+B324 - the original file name of the lyrics and of the karaoke text is
+       written under the same key it is read back with.
+B325 - the buttons are called <tab>.<button>. and a message names a
+       button by its key, not by its name.
+B326 - "2.2. Timing verfijnen" broke on a Dutch key; the texts the
+       pipeline hands back now go through translations.py.
+B327 - the lane labels of the waveform editor showed their own key.
+B328 - the manual describes what there is to see and to operate.
 """
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ from modules import pipeline  # noqa: E402
 from modules import translations as translations_module  # noqa: E402
 from modules.translations import TRANSLATIONS, t  # noqa: E402
 
-WORTEL = Path(__file__).resolve().parents[1]
-MODULES = WORTEL / "modules"
+ROOT = Path(__file__).resolve().parents[1]
+MODULES = ROOT / "modules"
 
 
 @pytest.fixture(scope="module")
@@ -38,29 +38,29 @@ def qapp():
 
 
 @pytest.fixture
-def nederlands():
-    """Zet de taal terug, ook als een test hem onderweg omzet."""
+def restore_language():
+    """Put the language back, even if a test switches it midway."""
     yield
     translations_module.set_language("nl")
 
 
-def _context(tmp_path: Path, naam: str = "Proef"):
+def _context(tmp_path: Path, name: str = "Proef"):
     from modules.config import default_config
     from modules.filesystem import (ProjectPaths, ProjectStore,
                                     ensure_directories)
 
-    paths = ProjectPaths(root=tmp_path, song=naam)
+    paths = ProjectPaths(root=tmp_path, song=name)
     ensure_directories(paths)
     return pipeline.AppContext(paths=paths, config=default_config(),
                                store=ProjectStore(paths.project_file))
 
 
 # --------------------------------------------------------------------------
-# B323: de Stop-knop en de bezig-kleur
+# B323: the Stop button and the busy colour
 # --------------------------------------------------------------------------
 
-def test_stop_wordt_niet_op_bezig_gezet(qapp, tmp_path) -> None:
-    """Stop start geen taak; hij hoort de bezig-kleur niet te krijgen."""
+def test_stop_is_not_marked_busy(qapp, tmp_path) -> None:
+    """Stop starts no task; it should not get the busy colour."""
     from modules import gui
 
     window = gui.MainWindow(_context(tmp_path, "Stop1"))
@@ -68,12 +68,13 @@ def test_stop_wordt_niet_op_bezig_gezet(qapp, tmp_path) -> None:
     assert window._stop_button not in window._busy_buttons
 
 
-def test_stop_laat_de_lopende_knop_niet_geel_achter(qapp, tmp_path) -> None:
-    """De gemelde volgorde: detectie starten, Stop drukken, afbreken.
+def test_stop_does_not_leave_the_running_button_yellow(qapp,
+                                                       tmp_path) -> None:
+    """The reported order: start detection, press Stop, cancel.
 
-    Stop was ook aangehaakt en werd daarmee eigenaar van de bezig-kleur;
-    het opruimen zette daarna Stop terug in plaats van de stapknop, die
-    dus geel bleef staan.
+    Stop was hooked up too and so became owner of the busy colour; the
+    cleanup then reset Stop instead of the step button, which therefore
+    stayed yellow.
     """
     from modules import gui
 
@@ -84,78 +85,78 @@ def test_stop_laat_de_lopende_knop_niet_geel_achter(qapp, tmp_path) -> None:
     assert detect in window._busy_buttons
     assert detect.styleSheet() != ""
 
-    # Er loopt een taak; een klik op Stop mag het eigenaarschap niet
-    # overnemen. (De echte worker vervangen we door een stand-in.)
-    class _Bezig:
+    # A task is running; a click on Stop must not take the ownership
+    # over. (We replace the real worker with a stand-in.)
+    class _Running:
         def isRunning(self) -> bool:
             return True
 
-    window._worker = _Bezig()
+    window._worker = _Running()
     window._mark_busy_click(window._stop_button)
     assert detect in window._busy_buttons
     assert window._stop_button not in window._busy_buttons
 
-    # En na het afbreken is de stapknop weer gewoon.
+    # And after the cancel the step button is plain again.
     window._worker = None
     window._release_busy_button()
     assert detect.styleSheet() == ""
     assert not window._busy_buttons
 
 
-def test_alle_gemarkeerde_knoppen_gaan_terug(qapp, tmp_path) -> None:
-    """``_busy_buttons`` is een verzameling: er blijft er nooit een staan."""
+def test_every_marked_button_is_reset(qapp, tmp_path) -> None:
+    """``_busy_buttons`` is a set: not one of them is ever left behind."""
     from modules import gui
 
     window = gui.MainWindow(_context(tmp_path, "Stop3"))
-    eerste, tweede = window._step_buttons[0], window._step_buttons[1]
-    window._busy_buttons = {eerste, tweede}
-    window._apply_busy_style(eerste, True)
-    window._apply_busy_style(tweede, True)
+    first, second = window._step_buttons[0], window._step_buttons[1]
+    window._busy_buttons = {first, second}
+    window._apply_busy_style(first, True)
+    window._apply_busy_style(second, True)
     window._release_busy_button()
-    assert eerste.styleSheet() == "" and tweede.styleSheet() == ""
+    assert first.styleSheet() == "" and second.styleSheet() == ""
 
 
 # --------------------------------------------------------------------------
-# B324: onder welke sleutel de originele bestandsnaam staat
+# B324: which key the original file name is stored under
 # --------------------------------------------------------------------------
 
-def test_schrijfsleutel_en_leessleutel_zijn_dezelfde() -> None:
-    """De schrijver gebruikte de bestandsnaam (``songtekst``), de lezer
-    vroeg om ``lyrics``. Daardoor stond er altijd de interne naam."""
-    gui_bron = (MODULES / "gui.py").read_text(encoding="utf-8")
+def test_the_write_key_and_the_read_key_are_the_same() -> None:
+    """The writer used the file name (``songtekst``), the reader asked
+    for ``lyrics``. So what showed up was always the internal name."""
+    gui_source = (MODULES / "gui.py").read_text(encoding="utf-8")
 
-    geschreven = set(re.findall(
+    written = set(re.findall(
         r'_copy_into_input\(\s*chosen,\s*\n?\s*(?:f?"[^"]+"|[^,]+),\s*\n?\s*"(\w+)"',
-        gui_bron))
-    gelezen = set(re.findall(
-        r'input_display_name\(\s*\n?\s*self\._context,\s*"(\w+)"', gui_bron))
-    gelezen |= set(re.findall(r'input_start_dir\(self\._context,\s*"(\w+)"',
-                              gui_bron))
+        gui_source))
+    read_back = set(re.findall(
+        r'input_display_name\(\s*\n?\s*self\._context,\s*"(\w+)"',
+        gui_source))
+    read_back |= set(re.findall(r'input_start_dir\(self\._context,\s*"(\w+)"',
+                                gui_source))
 
-    # De audiosporen gaan via de variabele ``stem`` (original/karaoke)
-    # en zijn altijd al gelijk geweest; de tekstbestanden niet.
-    assert geschreven == {"lyrics", "karaoke_text", "logo"}, geschreven
-    assert gelezen == {"lyrics", "karaoke_text", "logo"}, gelezen
-    onbekend = (geschreven | gelezen) - set(pipeline.INPUT_NAME_KEYS)
-    assert not onbekend, f"sleutel buiten INPUT_NAME_KEYS: {sorted(onbekend)}"
-    # De schrijver mag de sleutel niet meer uit de bestandsnaam afleiden.
-    assert "Path(target_name).stem" not in gui_bron
-
-
-@pytest.mark.parametrize("sleutel", pipeline.INPUT_NAME_KEYS)
-def test_elke_invoersleutel_leest_terug_wat_hij_schreef(tmp_path,
-                                                        sleutel) -> None:
-    context = _context(tmp_path, f"Sleutel_{sleutel}")
-    bron = tmp_path / "map" / "viva espanja-origineel.txt"
-    bron.parent.mkdir(parents=True, exist_ok=True)
-    bron.write_text("x", encoding="utf-8")
-    pipeline.set_input_origin(context, sleutel, bron)
-    assert pipeline.input_display_name(context, sleutel, "val") == bron.name
-    assert pipeline.input_start_dir(context, sleutel) == str(bron.parent)
+    # The audio tracks go through the ``stem`` variable
+    # (original/karaoke) and have always matched; the text files did not.
+    assert written == {"lyrics", "karaoke_text", "logo"}, written
+    assert read_back == {"lyrics", "karaoke_text", "logo"}, read_back
+    unknown = (written | read_back) - set(pipeline.INPUT_NAME_KEYS)
+    assert not unknown, f"key outside INPUT_NAME_KEYS: {sorted(unknown)}"
+    # The writer may no longer derive the key from the file name.
+    assert "Path(target_name).stem" not in gui_source
 
 
-def test_bestaand_project_wordt_omgezet(tmp_path) -> None:
-    """Wie al projecten heeft, moet zijn namen niet kwijt zijn."""
+@pytest.mark.parametrize("key", pipeline.INPUT_NAME_KEYS)
+def test_every_input_key_reads_back_what_it_wrote(tmp_path, key) -> None:
+    context = _context(tmp_path, f"Key_{key}")
+    source = tmp_path / "folder" / "viva espanja-origineel.txt"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("x", encoding="utf-8")
+    pipeline.set_input_origin(context, key, source)
+    assert pipeline.input_display_name(context, key, "val") == source.name
+    assert pipeline.input_start_dir(context, key) == str(source.parent)
+
+
+def test_an_existing_project_is_migrated(tmp_path) -> None:
+    """Anyone who already has projects must not lose his names."""
     context = _context(tmp_path, "Migratie")
     context.store.set_meta("input_names", {
         "songtekst": {"name": "viva espanja-origineel.txt", "dir": "/tmp"},
@@ -169,12 +170,12 @@ def test_bestaand_project_wordt_omgezet(tmp_path) -> None:
         == "Lied S-karaoke.txt"
     assert pipeline.input_display_name(context, "original", "val") \
         == "viva.mp3"
-    # Idempotent: een tweede keer verandert er niets meer.
+    # Idempotent: a second run changes nothing.
     assert pipeline.migrate_input_names(context) is False
 
 
-def test_migratie_overschrijft_geen_nieuwe_waarde(tmp_path) -> None:
-    """Staat er al een goede waarde, dan wint die van de oude sleutel."""
+def test_migration_does_not_overwrite_a_new_value(tmp_path) -> None:
+    """If a good value is already there, it beats the old key."""
     context = _context(tmp_path, "Migratie2")
     context.store.set_meta("input_names", {
         "songtekst": {"name": "oud.txt", "dir": "/tmp"},
@@ -185,10 +186,10 @@ def test_migratie_overschrijft_geen_nieuwe_waarde(tmp_path) -> None:
 
 
 # --------------------------------------------------------------------------
-# B325: de knopnummering
+# B325: the button numbering
 # --------------------------------------------------------------------------
 
-VERWACHTE_NUMMERS = {
+EXPECTED_NUMBERS = {
     "step_detect": "1.1. ", "step_couple": "1.2. ",
     "step_analyse": "1.3. ", "step_karaoke": "1.4. ",
     "video_edit_stress": "2.1. ", "video_timing": "2.2. ",
@@ -196,227 +197,227 @@ VERWACHTE_NUMMERS = {
 }
 
 
-@pytest.mark.parametrize("sleutel,nummer", sorted(VERWACHTE_NUMMERS.items()))
-def test_knop_draagt_tab_en_volgnummer(sleutel: str, nummer: str) -> None:
-    for taal in ("nl", "en"):
-        assert TRANSLATIONS[taal][sleutel].startswith(nummer), (taal, sleutel)
+@pytest.mark.parametrize("key,number", sorted(EXPECTED_NUMBERS.items()))
+def test_a_button_carries_tab_and_number(key: str, number: str) -> None:
+    for language in ("nl", "en"):
+        assert TRANSLATIONS[language][key].startswith(number), (language, key)
 
 
-def test_de_knoplijst_is_compleet() -> None:
-    assert set(translations_module.BUTTON_KEYS) == set(VERWACHTE_NUMMERS)
+def test_the_button_list_is_complete() -> None:
+    assert set(translations_module.BUTTON_KEYS) == set(EXPECTED_NUMBERS)
 
 
-def test_geen_tekst_noemt_een_knop_nog_bij_naam() -> None:
-    """Een melding die een knopnaam uitschrijft loopt bij de volgende
-    hernummering weer uit de pas. Ze horen de sleutel te gebruiken."""
-    overtreders = []
-    for taal, woordenboek in TRANSLATIONS.items():
-        namen = {s: woordenboek[s] for s in translations_module.BUTTON_KEYS}
-        for sleutel, tekst in woordenboek.items():
-            if sleutel in translations_module.BUTTON_KEYS:
+def test_no_text_names_a_button_by_name_any_more() -> None:
+    """A message that spells out a button name falls out of step at the
+    next renumbering. They are meant to use the key."""
+    offenders = []
+    for language, catalogue in TRANSLATIONS.items():
+        names = {k: catalogue[k] for k in translations_module.BUTTON_KEYS}
+        for key, text in catalogue.items():
+            if key in translations_module.BUTTON_KEYS:
                 continue
-            for knop, naam in namen.items():
-                # De naam zonder nummer, dat is het deel dat blijft staan.
-                kaal = naam.split(". ", 1)[-1]
-                if f"'{naam}'" in tekst or f"'{kaal}'" in tekst:
-                    overtreders.append(f"{taal}/{sleutel} noemt {knop}")
-    assert not overtreders, overtreders
+            for button, name in names.items():
+                # The name without its number: the part that stays put.
+                bare = name.split(". ", 1)[-1]
+                if f"'{name}'" in text or f"'{bare}'" in text:
+                    offenders.append(f"{language}/{key} names {button}")
+    assert not offenders, offenders
 
 
-def test_knopverwijzing_wordt_ingevuld(nederlands) -> None:
-    for taal in ("nl", "en"):
-        translations_module.set_language(taal)
-        tekst = t("prereq_need_detect")
-        assert "{step_detect}" not in tekst
-        assert TRANSLATIONS[taal]["step_detect"] in tekst
+def test_a_button_reference_is_filled_in(restore_language) -> None:
+    for language in ("nl", "en"):
+        translations_module.set_language(language)
+        text = t("prereq_need_detect")
+        assert "{step_detect}" not in text
+        assert TRANSLATIONS[language]["step_detect"] in text
 
 
-def test_andere_plaatshouders_blijven_staan(nederlands) -> None:
-    """``t()`` vult alleen knopverwijzingen in; de rest doet de aanroeper."""
-    tekst = t("err_no_transcription")
-    assert "{track}" in tekst
-    assert "1.1. Detecteer woorden" in tekst
-    assert "{track}" not in tekst.format(track="origineel")
+def test_other_placeholders_stay(restore_language) -> None:
+    """``t()`` only fills in button references; the caller does the rest."""
+    text = t("err_no_transcription")
+    assert "{track}" in text
+    assert "1.1. Detecteer woorden" in text
+    assert "{track}" not in text.format(track="origineel")
 
 
 # --------------------------------------------------------------------------
-# B326: de vastloper bij "2.2. Timing verfijnen"
+# B326: the crash at "2.2. Timing verfijnen"
 # --------------------------------------------------------------------------
 
-def test_koppelkwaliteit_heeft_engelse_sleutels() -> None:
-    """``couple_timing`` geeft high/medium/low; de pijplijn las hoog/
-    midden/laag en liep daarop stuk met een KeyError."""
+def test_coupling_quality_has_english_keys() -> None:
+    """``couple_timing`` returns high/medium/low; the pipeline read
+    hoog/midden/laag and broke on that with a KeyError."""
     from modules import timing as timing_module
 
-    bron = (MODULES / "pipeline.py").read_text(encoding="utf-8")
-    for oud in ("quality['hoog']", "quality['midden']", "quality['laag']",
+    source = (MODULES / "pipeline.py").read_text(encoding="utf-8")
+    for old in ("quality['hoog']", "quality['midden']", "quality['laag']",
                 'quality["hoog"]', 'quality["midden"]', 'quality["laag"]'):
-        assert oud not in bron, oud
+        assert old not in source, old
     assert set(timing_module.couple_timing.__doc__ or "") or True
-    tekst = t("timing_detail_coupling").format(high=1, medium=2, low=3)
-    assert "1x" in tekst and "2x" in tekst and "3x" in tekst
+    text = t("timing_detail_coupling").format(high=1, medium=2, low=3)
+    assert "1x" in text and "2x" in text and "3x" in text
 
 
-def test_timing_detail_volgt_de_taal(nederlands) -> None:
+def test_timing_detail_follows_the_language(restore_language) -> None:
     translations_module.set_language("en")
-    engels = t("timing_detail_even")
+    english = t("timing_detail_even")
     translations_module.set_language("nl")
-    assert engels != t("timing_detail_even")
+    assert english != t("timing_detail_even")
     assert "songtekst" in t("timing_detail_even")
 
 
-def test_video_invoer_heeft_taalonafhankelijke_sleutels(tmp_path) -> None:
-    """De render sloeg de offset over op zijn NEDERLANDSE naam; in het
-    Engels klopte die vergelijking niet en weigerde hij te renderen."""
+def test_video_input_has_language_independent_keys(tmp_path) -> None:
+    """The render skipped the offset by its DUTCH name; in English that
+    comparison did not hold and it refused to render."""
     context = _context(tmp_path, "Invoer")
-    sleutels = [rij[0] for rij in pipeline.video_input_status(context)]
-    assert sleutels == ["lyrics", "karaoke_text", "logo", "timing", "offset"]
+    keys = [row[0] for row in pipeline.video_input_status(context)]
+    assert keys == ["lyrics", "karaoke_text", "logo", "timing", "offset"]
     assert "offset" in pipeline.VIDEO_INPUT_OPTIONAL
-    bron = (MODULES / "pipeline.py").read_text(encoding="utf-8")
-    assert '!= "offset origineel/karaoke"' not in bron
+    source = (MODULES / "pipeline.py").read_text(encoding="utf-8")
+    assert '!= "offset origineel/karaoke"' not in source
 
 
-def test_video_invoerdetails_volgen_de_taal(tmp_path, nederlands) -> None:
+def test_video_input_details_follow_the_language(tmp_path,
+                                                 restore_language) -> None:
     context = _context(tmp_path, "Invoer2")
 
     def details():
-        return [rij[3] for rij in pipeline.video_input_status(context)]
+        return [row[3] for row in pipeline.video_input_status(context)]
 
     translations_module.set_language("nl")
     nl_details = details()
     translations_module.set_language("en")
     en_details = details()
-    # De paden zijn gelijk; de zinnen eromheen niet.
+    # The paths are the same; the sentences around them are not.
     assert nl_details != en_details
 
 
-@pytest.mark.parametrize("functie,argumenten", [
+@pytest.mark.parametrize("function,arguments", [
     ("check_text_alignment", ()),
     ("sync_timing_with_text_change", ((), ())),
 ])
-def test_pijplijnmeldingen_volgen_de_taal(tmp_path, nederlands,
-                                          functie, argumenten) -> None:
-    """Deze twee geven een melding terug die de GUI toont; die stond
-    hardgecodeerd in het Nederlands."""
-    context = _context(tmp_path, f"Melding_{functie}")
-    aanroep = getattr(pipeline, functie)
+def test_pipeline_messages_follow_the_language(tmp_path, restore_language,
+                                               function, arguments) -> None:
+    """These two hand back a message that the GUI shows; it used to be
+    hard-coded in Dutch."""
+    context = _context(tmp_path, f"Message_{function}")
+    call = getattr(pipeline, function)
 
     translations_module.set_language("nl")
-    _, nl_melding = aanroep(context, *argumenten)
+    _, nl_message = call(context, *arguments)
     translations_module.set_language("en")
-    _, en_melding = aanroep(context, *argumenten)
-    assert nl_melding and en_melding and nl_melding != en_melding
+    _, en_message = call(context, *arguments)
+    assert nl_message and en_message and nl_message != en_message
 
 
-def test_geen_nederlandse_letterlijke_tekst_meer_in_die_functies() -> None:
-    """Regressiewacht op de functies waarvan de GUI de tekst toont."""
-    bron = (MODULES / "pipeline.py").read_text(encoding="utf-8")
-    boom = ast.parse(bron)
-    bewaakt = {"generate_timing", "video_input_status", "check_text_alignment",
+def test_no_dutch_literals_left_in_those_functions() -> None:
+    """Regression guard on the functions whose text the GUI shows."""
+    source = (MODULES / "pipeline.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    guarded = {"generate_timing", "video_input_status", "check_text_alignment",
                "sync_timing_with_text_change"}
-    nederlands = re.compile(
+    dutch = re.compile(
         r"\b(?:geen|niet|regels|eerst|draai|secties|verschilt|onleesbaar|"
         r"gewijzigd|bijgewerkt|aanwezig|songtekst|karaoketekst)\b", re.I)
-    overtreders = []
-    for knoop in ast.walk(boom):
-        if not isinstance(knoop, ast.FunctionDef) or knoop.name not in bewaakt:
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name not in guarded:
             continue
-        docstring = knoop.body[0].value if (
-            knoop.body and isinstance(knoop.body[0], ast.Expr)) else None
-        for kind in ast.walk(knoop):
-            if kind is docstring or not isinstance(kind, ast.Constant):
+        docstring = node.body[0].value if (
+            node.body and isinstance(node.body[0], ast.Expr)) else None
+        for child in ast.walk(node):
+            if child is docstring or not isinstance(child, ast.Constant):
                 continue
-            if isinstance(kind.value, str) and nederlands.search(kind.value):
-                overtreders.append(f"{knoop.name}:{kind.lineno} "
-                                   f"{kind.value[:50]!r}")
-    assert not overtreders, overtreders
+            if isinstance(child.value, str) and dutch.search(child.value):
+                offenders.append(f"{node.name}:{child.lineno} "
+                                 f"{child.value[:50]!r}")
+    assert not offenders, offenders
 
 
 # --------------------------------------------------------------------------
-# B327: sleutels die met een f-string worden opgebouwd
+# B327: keys that are built up with an f-string
 # --------------------------------------------------------------------------
 
-def test_alle_samengestelde_vertaalsleutels_bestaan() -> None:
-    """``t(f"lane_{key}")`` ontsnapte aan de wacht van B315: drie
-    baannamen bleven bij de hernoeming in het Nederlands staan en
-    stonden daarna letterlijk als sleutel in beeld."""
-    ontbreekt = []
-    for pad in sorted(MODULES.glob("*.py")):
-        bron = pad.read_text(encoding="utf-8")
-        for prefix in set(re.findall(r't\(f"(\w+_)\{', bron)):
-            # Alle waarden die als staart in die f-string terechtkomen:
-            # de losse tekstconstanten in dit bestand.
-            for staart in re.findall(r'"(\w+)"', bron):
-                sleutel = prefix + staart
-                if sleutel in TRANSLATIONS["nl"]:
+def test_every_composed_translation_key_exists() -> None:
+    """``t(f"lane_{key}")`` escaped the B315 guard: three lane names
+    stayed Dutch through the rename and then showed up on screen as the
+    key itself."""
+    missing = []
+    for path in sorted(MODULES.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        for prefix in set(re.findall(r't\(f"(\w+_)\{', source)):
+            # Every value that can end up as the tail of that f-string:
+            # the loose text constants in this file.
+            for tail in re.findall(r'"(\w+)"', source):
+                key = prefix + tail
+                if key in TRANSLATIONS["nl"]:
                     continue
-    # Directer: de baanlabels en de bronkeuze van de golfvorm-editor.
+    # More directly: the lane labels and the source picker of the editor.
     from modules import timing_editor
 
-    for naam, _top in timing_editor._LANE_LABELS:
-        sleutel = f"lane_{naam}"
-        if sleutel not in TRANSLATIONS["nl"]:
-            ontbreekt.append(sleutel)
-    for naam in ("original", "karaoke", "vocals"):
-        if f"lane_{naam}" not in TRANSLATIONS["nl"]:
-            ontbreekt.append(f"lane_{naam}")
-    for modus in ("blocks", "sentences", "words"):
-        if f"view_{modus}" not in TRANSLATIONS["nl"]:
-            ontbreekt.append(f"view_{modus}")
-    assert not ontbreekt, ontbreekt
+    for name, _top in timing_editor._LANE_LABELS:
+        key = f"lane_{name}"
+        if key not in TRANSLATIONS["nl"]:
+            missing.append(key)
+    for name in ("original", "karaoke", "vocals"):
+        if f"lane_{name}" not in TRANSLATIONS["nl"]:
+            missing.append(f"lane_{name}")
+    for mode in ("blocks", "sentences", "words"):
+        if f"view_{mode}" not in TRANSLATIONS["nl"]:
+            missing.append(f"view_{mode}")
+    assert not missing, missing
 
 
-def test_geen_baanlabel_toont_zijn_eigen_sleutel() -> None:
+def test_no_lane_label_shows_its_own_key() -> None:
     from modules import timing_editor
 
-    for naam, _top in timing_editor._LANE_LABELS:
-        assert t(f"lane_{naam}") != f"lane_{naam}"
+    for name, _top in timing_editor._LANE_LABELS:
+        assert t(f"lane_{name}") != f"lane_{name}"
 
 
-def test_de_bronkeuze_kent_dezelfde_namen_als_de_gui() -> None:
-    """De sleutels van ``audio_paths`` moeten aan beide kanten gelijk
-    zijn, anders verdwijnt de zangstem stilletjes uit het keuzelijstje."""
+def test_the_source_picker_uses_the_same_names_as_the_gui() -> None:
+    """The keys of ``audio_paths`` have to match on both sides, or the
+    vocal stem quietly drops out of the picker."""
     editor = (MODULES / "timing_editor.py").read_text(encoding="utf-8")
-    gui_bron = (MODULES / "gui.py").read_text(encoding="utf-8")
+    gui_source = (MODULES / "gui.py").read_text(encoding="utf-8")
     assert 'for name in ("original", "karaoke", "vocals")' in editor
-    assert '"vocals": vocal_wav' in gui_bron
+    assert '"vocals": vocal_wav' in gui_source
     assert "zangstem" not in editor
 
 
 # --------------------------------------------------------------------------
-# B328: de handleiding
+# B328: the manual
 # --------------------------------------------------------------------------
 
-HANDLEIDING = (WORTEL / "docs" / "handleiding.md").read_text(encoding="utf-8")
+MANUAL = (ROOT / "docs" / "manual.md").read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("sleutel,nummer", sorted(VERWACHTE_NUMMERS.items()))
-def test_handleiding_noemt_de_huidige_knopnamen(sleutel: str,
-                                                nummer: str) -> None:
-    naam = TRANSLATIONS["nl"][sleutel]
-    assert naam in HANDLEIDING, f"handleiding mist '{naam}'"
+@pytest.mark.parametrize("key,number", sorted(EXPECTED_NUMBERS.items()))
+def test_the_manual_names_the_current_buttons(key: str, number: str) -> None:
+    name = TRANSLATIONS["nl"][key]
+    assert name in MANUAL, f"manual is missing '{name}'"
 
 
-def test_handleiding_noemt_geen_oude_knopnamen() -> None:
-    """Elke vermelding van een knop draagt de huidige nummering, zodat
-    de handleiding niet stilletjes achterloopt op de app."""
-    for sleutel, nummer in VERWACHTE_NUMMERS.items():
-        kaal = TRANSLATIONS["nl"][sleutel][len(nummer):]
-        for treffer in re.finditer(re.escape(kaal), HANDLEIDING):
-            begin = treffer.start()
-            assert HANDLEIDING[max(0, begin - len(nummer)):begin] == nummer, (
-                f"'{kaal}' zonder nummer '{nummer}': "
-                f"...{HANDLEIDING[max(0, begin - 50):treffer.end()]}")
+def test_the_manual_names_no_old_buttons() -> None:
+    """Every mention of a button carries the current numbering, so that
+    the manual does not quietly fall behind the app."""
+    for key, number in EXPECTED_NUMBERS.items():
+        bare = TRANSLATIONS["nl"][key][len(number):]
+        for hit in re.finditer(re.escape(bare), MANUAL):
+            start = hit.start()
+            assert MANUAL[max(0, start - len(number)):start] == number, (
+                f"'{bare}' without number '{number}': "
+                f"...{MANUAL[max(0, start - 50):hit.end()]}")
 
 
-@pytest.mark.parametrize("onderwerp", [
-    "afhankelijkheden.md",          # de afleidingsketen (B311)
-    "Zangstem-analyse",             # de instelling achter B313/B319
-    "Terug uit origineel",          # de groene blokken in de dempingeditor
-    "Regel uit/aan",                # niet renderen
-    "Blokken",                      # de weergavekeuze in de golfvormeditor
-    "legenda",                      # de kleuren in de koppeleditor
-    "Sluiten",                      # opslaan-bij-sluiten verschilt per editor
+@pytest.mark.parametrize("topic", [
+    "dependencies.md",          # the derivation chain (B311)
+    "Zangstem-analyse",             # the setting behind B313/B319
+    "Terug uit origineel",          # the green blocks in the damping editor
+    "Regel uit/aan",                # not rendering
+    "Blokken",                      # the view choice in the waveform editor
+    "legenda",                      # the colours in the coupling editor
+    "Sluiten",                      # save-on-close differs per editor
 ])
-def test_handleiding_beschrijft_wat_er_te_bedienen_is(onderwerp: str) -> None:
-    assert onderwerp in HANDLEIDING, f"handleiding mist '{onderwerp}'"
+def test_the_manual_describes_what_can_be_operated(topic: str) -> None:
+    assert topic in MANUAL, f"manual is missing '{topic}'"

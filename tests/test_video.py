@@ -1,4 +1,4 @@
-"""Tests voor modules.video (regelvensters + echte mini-render)."""
+"""Tests for modules.video (line windows + a real mini render)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def _timed_lines():
 
 
 def test_load_background_center_crop(tmp_path: Path) -> None:
-    """B126: achtergrondbeeld wordt center-croppend op het videoformaat gezet."""
+    """B126: the background image is center-cropped to the video size."""
     from PIL import Image
     from modules.video import _load_background
     src = tmp_path / "bg.png"
@@ -31,52 +31,54 @@ def test_load_background_center_crop(tmp_path: Path) -> None:
     assert _load_background(str(tmp_path / "weg.png"), 1280, 720) is None
 
 
-def test_uitgeschakelde_regels_niet_in_render(tmp_path: Path) -> None:
-    """B180: als alle regels uitgeschakeld zijn, is er geen zangregel meer."""
+def test_disabled_lines_are_not_in_the_render(tmp_path: Path) -> None:
+    """B180: with every line disabled there is no singing line left."""
     from dataclasses import replace
     lines = [replace(line, disabled=True) for line in _timed_lines()]
     logo = tmp_path / "logo.png"
     from PIL import Image
     Image.new("RGB", (10, 10)).save(logo)
     audio = tmp_path / "a.wav"
-    audio.write_bytes(b"RIFF")  # inhoud maakt niet uit; faalt eerder
+    audio.write_bytes(b"RIFF")  # content is irrelevant; it fails earlier
     with pytest.raises(VideoError):
         render_video(lines, audio, logo, "T", tmp_path / "out.mp4")
 
 
 def test_fit_body_font_shrinks_long_line() -> None:
-    """B102: een lange regel laat de bodyfont verkleinen om binnen 85% te
-    passen; een korte regel houdt de basisgrootte."""
+    """B102: a long line makes the body font shrink to fit within 85%; a
+    short line keeps the base size."""
     from modules.timing import Syllable, TimedLine
     from modules.video import _fit_body_font
     base = int(720 * 0.06)
     short = [TimedLine(0, "hoi", False, (Syllable("hoi", 0.0, 1.0),))]
-    lang_txt = "a" * 200
-    held = [TimedLine(0, lang_txt, False, (Syllable(lang_txt, 0.0, 1.0),))]
+    long_text = "a" * 200
+    long_line = [TimedLine(0, long_text, False,
+                           (Syllable(long_text, 0.0, 1.0),))]
     assert _fit_body_font("", short, 1280, base).size == base
-    assert _fit_body_font("", held, 1280, base).size < base
+    assert _fit_body_font("", long_line, 1280, base).size < base
 
 
 def test_countdown_number() -> None:
-    """B101: 3-2-1 in de laatste 3 s vóór de eerste zang, daarbuiten niets."""
+    """B101: 3-2-1 in the last 3 s before the first singing, nothing
+    outside that."""
     from modules.video import countdown_number
     first = 10.0
-    assert countdown_number(6.9, first) is None   # > 3 s ervoor
-    assert countdown_number(7.0, first) == 3      # exact 3 s ervoor
+    assert countdown_number(6.9, first) is None   # > 3 s before
+    assert countdown_number(7.0, first) == 3      # exactly 3 s before
     assert countdown_number(7.5, first) == 3
     assert countdown_number(8.5, first) == 2
     assert countdown_number(9.5, first) == 1
-    assert countdown_number(10.0, first) is None  # zang begint
-    assert countdown_number(11.0, first) is None  # tijdens de zang
+    assert countdown_number(10.0, first) is None  # the singing starts
+    assert countdown_number(11.0, first) is None  # during the singing
 
 
 def test_shift_times_windows() -> None:
     windows = shift_times(_timed_lines())
-    # Eerste regel zichtbaar vanaf 5 s vóór de zang (6.0 - 5).
+    # First line visible from 5 s before the singing (6.0 - 5).
     assert windows[0].slot1_from == pytest.approx(1.0)
-    # Schuift door zodra regel 2 begint (9.0 < 8.0 + 3).
+    # Moves on as soon as line 2 starts (9.0 < 8.0 + 3).
     assert windows[0].slot1_until == pytest.approx(9.0)
-    # Laatste regel blijft 3 s staan.
+    # The last line stays up for 3 s.
     assert windows[1].slot1_until == pytest.approx(14.0)
 
 
@@ -88,9 +90,9 @@ def test_render_requires_times() -> None:
 
 
 def test_render_small_video(tmp_path: Path) -> None:
-    """Echte mini-render: mp4 met H.264/yuv420p en AAC."""
+    """A real mini render: mp4 with H.264/yuv420p and AAC."""
     if not ffmpeg.is_available():
-        pytest.skip("ffmpeg niet beschikbaar")
+        pytest.skip("ffmpeg not available")
     from PIL import Image
 
     from modules.audio import save_wav
@@ -119,13 +121,12 @@ def test_render_small_video(tmp_path: Path) -> None:
     assert streams["video"]["codec_name"] == "h264"
     assert streams["video"]["pix_fmt"] == "yuv420p"
     assert streams["audio"]["codec_name"] == "aac"
-    # Outro: laatste regel eindigt op 11 s -> video >= 11 + 3 + 5 s.
+    # Outro: the last line ends at 11 s -> video >= 11 + 3 + 5 s.
     assert float(streams["video"]["duration"]) >= 18.5
 
 
 def test_every_line_gets_a_window_even_with_equal_times() -> None:
-    """Regels met identieke tijden blijven allemaal zichtbaar, in
-    volgorde."""
+    """Lines with identical times all stay visible, in order."""
     lines = (TextLine(0, "regel een", False), TextLine(1, "regel twee",
                                                        False))
     timed = generate_skeleton(lines, {0: (10.0, 12.0), 1: (10.0, 12.0)})
@@ -135,44 +136,47 @@ def test_every_line_gets_a_window_even_with_equal_times() -> None:
 
 
 def test_compose_frame_layout(tmp_path) -> None:
-    """Intro toont logo+titel; tijdens zang 3 regels en geen logo."""
+    """The intro shows logo and title; during the singing 3 lines and no
+    logo."""
     from PIL import Image, ImageFont
 
     from modules.karaoke_text import TextLine
     from modules.timing import generate_skeleton
     from modules.video import _compose_frame
 
-    # Regel 0 (zang) met crowd 'La la' eronder, dan meer zang.
+    # Line 0 (singing) with crowd 'La la' under it, then more singing.
     lines = [TextLine(0, "regel 0", False), TextLine(1, "La la", True),
              TextLine(2, "regel 1", False), TextLine(3, "regel 2", False),
              TextLine(4, "regel 3", False)]
     spans = {0: (10.0, 11.0), 1: (10.2, 10.9), 2: (12.0, 13.0),
              3: (14.0, 15.0), 4: (16.0, 17.0)}
     timed = generate_skeleton(lines, spans)
-    # B475: een crowdregel loopt gewoon mee in de stroom, niet meer als
-    # losse extra regel eronder.
+    # B475: a crowd line simply runs along in the stream, no longer as a
+    # separate extra line underneath.
     vocal = sorted(timed, key=lambda line: line.index)
     font = ImageFont.load_default()
     logo = Image.new("RGBA", (80, 40), (0, 200, 0, 255))
 
-    # Intro (voor eerste tekst op 10-5=5s): logo zichtbaar (groen pixel).
+    # Intro (before the first text at 10-5=5s): logo visible (green
+    # pixel).
     from modules.video import _DEFAULT_COLORS
     intro = _compose_frame(1.0, vocal, 5.0, 30.0, 320, 180,
                            font, font, logo, "Titel", _DEFAULT_COLORS)
     assert _has_colour(intro, (0, 200, 0), tol=60)
 
-    # Tijdens de zang: geen logo (geen groen blok), wel tekst.
+    # During the singing: no logo (no green block), but text.
     singing = _compose_frame(10.5, vocal, 5.0, 30.0, 320,
                              180, font, font, logo, "Titel",
                              _DEFAULT_COLORS)
     assert not _has_colour(singing, (0, 200, 0), tol=40)
-    # Rode crowdregel 'La la' (10.2-10.9) is op dat moment de actieve
-    # regel en staat dus gewoon in de stroom mee (B475).
+    # The red crowd line 'La la' (10.2-10.9) is the active line at that
+    # moment and so runs along in the stream (B475).
     assert _has_colour(singing, (229, 57, 53), tol=60)
 
 
-def test_outro_title_uses_zang_colour(tmp_path) -> None:
-    """B72: de eindtitel (outro) staat in de 'nu-zingen'-kleur; intro wit."""
+def test_outro_title_uses_the_vocal_colour(tmp_path) -> None:
+    """B72: the closing title (outro) is in the 'singing now' colour; the
+    intro is white."""
     from PIL import Image, ImageFont
 
     from modules.karaoke_text import TextLine
@@ -184,30 +188,31 @@ def test_outro_title_uses_zang_colour(tmp_path) -> None:
     vocal = [t for t in timed if not t.crowd]
     font = ImageFont.load_default()
     logo = Image.new("RGBA", (40, 20), (0, 0, 0, 0))
-    # Outro (na outro_start): titel in kleur_zang (groen).
+    # Outro (after outro_start): title in the vocal colour (green).
     outro = _compose_frame(40.0, vocal, 5.0, 30.0, 320, 180, font, font,
                            logo, "Titel", _DEFAULT_COLORS)
     assert _has_colour(outro, (60, 176, 67), tol=40)
 
 
 def test_fit_title_font_shrinks_to_width() -> None:
-    """B73: de titel wordt verkleind zodat hij smaller wordt en, waar het
-    kan, op één regel binnen de breedte past."""
+    """B73: the title is shrunk so that it gets narrower and, where it
+    can, fits on one line within the width."""
     from modules.video import _fit_title_font, _load_font
 
-    held = "Een lange songtitel die verkleind moet worden"
-    groot = _load_font("", 48)
+    title = "Een lange songtitel die verkleind moet worden"
+    big = _load_font("", 48)
     try:
-        # Bij een krappe breedte wordt de titel kleiner dan de startgrootte.
-        fitted = _fit_title_font("", held, max_width=200, start_size=48)
-        assert fitted.getlength(held) < groot.getlength(held)
-        # Bij een haalbare breedte past de titel echt binnen de grens.
-        passend = _fit_title_font("", held, max_width=600, start_size=48)
-        assert passend.getlength(held) <= 600
-        # Bij een ruime breedte behoudt een korte titel de startgrootte.
-        ruim = _fit_title_font("", "Titel", max_width=100000, start_size=48)
-        assert ruim.getlength("Titel") == groot.getlength("Titel")
-    except AttributeError:  # load_default zonder getlength
+        # With a tight width the title gets smaller than the start size.
+        fitted = _fit_title_font("", title, max_width=200, start_size=48)
+        assert fitted.getlength(title) < big.getlength(title)
+        # With an attainable width the title really fits within the
+        # limit.
+        fitting = _fit_title_font("", title, max_width=600, start_size=48)
+        assert fitting.getlength(title) <= 600
+        # With a roomy width a short title keeps the start size.
+        roomy = _fit_title_font("", "Titel", max_width=100000, start_size=48)
+        assert roomy.getlength("Titel") == big.getlength("Titel")
+    except AttributeError:  # load_default without getlength
         pass
 
 
@@ -240,16 +245,16 @@ def test_wrap_and_overflow() -> None:
 
     font = ImageFont.load_default()
     short = generate_skeleton((TextLine(0, "Kort zinnetje", False),))[0]
-    # Ruime breedte: past op één rij.
+    # Roomy width: fits on one row.
     assert len(_wrap_syllables(short.syllables, font, 100000)) == 1
-    # Nul-brede limiet: forceert splitsing in twee rijen.
-    held = generate_skeleton(
+    # Zero-wide limit: forces a split into two rows.
+    long_line = generate_skeleton(
         (TextLine(0, "Een langere zin, met een komma erin", False),))[0]
-    rows = _wrap_syllables(held.syllables, font, 1.0)
+    rows = _wrap_syllables(long_line.syllables, font, 1.0)
     assert len(rows) == 2
-    # Splitsing bij de komma: eerste rij eindigt op een komma-woord.
+    # Split at the comma: the first row ends on a comma word.
     assert rows[0][-1].text.rstrip().endswith(",")
     assert fits_on_screen(short.syllables, font, 100000) is True
 
     lines = generate_skeleton((TextLine(0, "x " * 200, False),))
-    assert overflowing_lines(lines, 320, 180, "")  # veel te lang
+    assert overflowing_lines(lines, 320, 180, "")  # far too long

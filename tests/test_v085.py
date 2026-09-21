@@ -1,6 +1,7 @@
-"""Tests voor v0.85.0-fixes (B261 voice-only-stilte bij regel-oprekking,
-B262 terug naar eerste tabblad bij projectwissel, B263 songtekst als
-Whisper-``initial_prompt``, B264 gelijktijdige achtergrondzang ``[bg]``)."""
+"""Tests for the v0.85.0 fixes (B261 voice-only silence when a line is
+stretched, B262 back to the first tab on a project change, B263 song
+text as Whisper ``initial_prompt``, B264 simultaneous backing vocals
+``[bg]``)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,13 +11,13 @@ import pytest
 
 
 # --------------------------------------------------------------------------
-# B261 - active_end() moest de piek van de HELE zangstem-envelop gebruiken,
-# niet de piek binnen het (mogelijk al te ver opgerekte) venster zelf.
-# Reproduceert "Lied B": een regel liep door tot vlak vóór de
-# volgende regel terwijl voice-only er al (bijna) stil bij lag.
+# B261 - active_end() had to use the peak of the WHOLE vocal envelope,
+# not the peak inside the (possibly over-stretched) window itself.
+# Reproduces "Lied B": a line ran on until just before the
+# next one while voice-only had already fallen (nearly) silent.
 # --------------------------------------------------------------------------
-def _stel_envelop_in(monkeypatch, audio_path: Path,
-                     times: np.ndarray, rms: np.ndarray) -> None:
+def _set_envelope(monkeypatch, audio_path: Path,
+                  times: np.ndarray, rms: np.ndarray) -> None:
     from modules import rhythm
 
     monkeypatch.setattr(rhythm, "is_available", lambda: True)
@@ -26,17 +27,18 @@ def _stel_envelop_in(monkeypatch, audio_path: Path,
                                  rms.astype(np.float32))
 
 
-def test_active_end_gebruikt_songbrede_piek_niet_venster_piek(
+def test_active_end_uses_the_song_wide_peak_not_the_window_peak(
         monkeypatch, tmp_path: Path) -> None:
-    """B261: een klein restje ruis vlak vóór het venstereinde mag de
-    stilte-detectie niet om de tuin leiden.
+    """B261: a small leftover of noise just before the end of the window
+    must not lead the silence detection astray.
 
-    Simuleert een crowd-regel die door B194 al opgerekt is tot vlak vóór de
-    volgende regel (venster loopt door tot 8s), terwijl de echte zang na 3s
-    stopt en er alleen nog een kleine ruisrest (10% van de songpiek) inzit
-    tot 7.5s. Met de oude (venster-eigen) piek als referentie was die
-    ruisrest zelf de "piek" en bleef alles "boven de drempel" - actief_end
-    gaf dan bijna 8s terug i.p.v. de echte stop bij ~3s.
+    Simulates a crowd line that B194 has already stretched to just
+    before the next line (the window runs on to 8s), while the real
+    singing stops after 3s and only a small noise remnant (10% of the
+    song peak) is left until 7.5s. With the old (window-own) peak as
+    reference that remnant was itself the "peak" and everything stayed
+    "above the threshold" - active_end then returned nearly 8s instead
+    of the real stop around 3s.
     """
     from modules import rhythm
 
@@ -45,35 +47,36 @@ def test_active_end_gebruikt_songbrede_piek_niet_venster_piek(
 
     times = np.linspace(0.0, 10.0, 1000)
     rms = np.zeros_like(times)
-    # Songbrede piek: een luide passage vroeg in het lied (elders, hoog).
+    # Song-wide peak: a loud passage early in the song (elsewhere, high).
     rms[(times >= 0.0) & (times < 0.2)] = 1.0
-    # De regel zelf: echte zang van 0-3s op een gematigd niveau.
+    # The line itself: real singing from 0-3s at a moderate level.
     rms[(times >= 0.0) & (times < 3.0)] = np.maximum(
         rms[(times >= 0.0) & (times < 3.0)], 0.5)
-    # Kleine ruisrest binnen het (te ver opgerekte) venster: 10% van de
-    # songpiek - met de oude, venster-eigen piek zou dit zelf tellen als
-    # "top" en de 8%-drempel dus overal halen.
+    # Small noise remnant inside the (over-stretched) window: 10% of the
+    # song peak - with the old, window-own peak this would count as the
+    # "top" itself and so clear the 8% threshold everywhere.
     rms[(times >= 3.0) & (times < 7.5)] = 0.1
 
-    _stel_envelop_in(monkeypatch, audio, times, rms)
+    _set_envelope(monkeypatch, audio, times, rms)
 
-    # Venster loopt door tot 8s (alsof B194 het al opgerekt heeft).
+    # The window runs on to 8s (as if B194 had already stretched it).
     end = rhythm.active_end(audio, 0.0, 8.0, thr_ratio=0.08)
     assert end is not None
-    # Songbrede piek = 1.0, drempel = 0.08. De ruisrest (0.1) zit BOVEN die
-    # drempel (0.1 >= 0.08), dus active_end vindt terecht het laatste
-    # moment mét resterende energie (rond 7.5s) - maar cruciaal is dat de
-    # drempel zelf songbreed is bepaald, niet venster-lokaal. Toon dat aan
-    # met een hogere, realistischere ruisrest die de oude bug zou maskeren.
+    # Song-wide peak = 1.0, threshold = 0.08. The noise remnant (0.1)
+    # sits ABOVE that threshold (0.1 >= 0.08), so active_end rightly
+    # finds the last moment with energy left (around 7.5s) - what
+    # matters is that the threshold itself is set song-wide, not
+    # window-locally. Show that with a higher, more realistic noise
+    # remnant, the kind that would mask the old bug.
     assert end < 8.0
 
 
-def test_active_end_songbrede_piek_detecteert_echte_stilte(
+def test_active_end_with_the_song_wide_peak_finds_the_real_silence(
         monkeypatch, tmp_path: Path) -> None:
-    """B261: bij een venster met écht stille ruis (ver onder de songbrede
-    piek) na de zang, vindt active_end het echte stop-moment - dit faalde
-    met de oude venster-eigen piek zodra de "stille" ruis toevallig de
-    lokale top was."""
+    """B261: with a window holding truly quiet noise (far under the
+    song-wide peak) after the singing, active_end finds the real stop -
+    this failed with the old window-own peak as soon as the "quiet"
+    noise happened to be the local top."""
     from modules import rhythm
 
     audio = tmp_path / "vocals.wav"
@@ -81,27 +84,28 @@ def test_active_end_songbrede_piek_detecteert_echte_stilte(
 
     times = np.linspace(0.0, 10.0, 1000)
     rms = np.zeros_like(times)
-    rms[(times >= 0.0) & (times < 3.0)] = 1.0     # songbrede piek + de regel
-    # Ruisvloer na de zang: 1% van de songpiek (ver onder de 8%-drempel).
+    rms[(times >= 0.0) & (times < 3.0)] = 1.0     # song peak + the line
+    # Noise floor after the singing: 1% of the song peak (far under the
+    # 8% threshold).
     rms[(times >= 3.0) & (times < 8.0)] = 0.01
 
-    _stel_envelop_in(monkeypatch, audio, times, rms)
+    _set_envelope(monkeypatch, audio, times, rms)
 
     end = rhythm.active_end(audio, 0.0, 8.0, thr_ratio=0.08)
     assert end is not None
     assert end < 3.5, (
-        "active_end had het echte stop-moment (~3s) moeten vinden, niet "
-        "doorlopen tot het venstereinde")
+        "active_end should have found the real stop (~3s) instead of "
+        "running on to the end of the window")
 
 
 # --------------------------------------------------------------------------
-# B262 - bij elke projectwissel (nieuw én bestaand project) terug naar het
-# eerste tabblad, i.p.v. blijven hangen op bv. Instellingen/Handleiding.
+# B262 - on every project change (new as well as existing project) back
+# to the first tab, instead of staying put on e.g. Settings/Manual.
 # --------------------------------------------------------------------------
-def test_switch_instance_reset_pattern_naar_eerste_tabblad() -> None:
-    """B262: het patroon dat KaraokeWindow._switch_instance gebruikt
-    (``if hasattr(self, "_tabs"): self._tabs.setCurrentIndex(0)``) werkt
-    op een echte QTabWidget: vanaf een willekeurig tabblad terug naar 0."""
+def test_the_switch_instance_pattern_returns_to_the_first_tab() -> None:
+    """B262: the pattern KaraokeWindow._switch_instance uses
+    (``if hasattr(self, "_tabs"): self._tabs.setCurrentIndex(0)``) works
+    on a real QTabWidget: back to 0 from any tab."""
     pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -113,26 +117,26 @@ def test_switch_instance_reset_pattern_naar_eerste_tabblad() -> None:
     tabs = QTabWidget()
     for item_name in ("Audio", "Karaokevideo", "Instellingen", "Handleiding"):
         tabs.addTab(QWidget(), item_name)
-    tabs.setCurrentIndex(2)  # simuleer: gebruiker staat op Instellingen
+    tabs.setCurrentIndex(2)  # simulate: the user is on Settings
     assert tabs.currentIndex() == 2
 
-    class _Nep:
+    class _Fake:
         pass
 
-    nep = _Nep()
-    nep._tabs = tabs
-    # Zelfde patroon als in KaraokeWindow._switch_instance (B262).
-    if hasattr(nep, "_tabs"):
-        nep._tabs.setCurrentIndex(0)
+    fake = _Fake()
+    fake._tabs = tabs
+    # The same pattern as in KaraokeWindow._switch_instance (B262).
+    if hasattr(fake, "_tabs"):
+        fake._tabs.setCurrentIndex(0)
     assert tabs.currentIndex() == 0
 
 
-def test_gui_switch_instance_bevat_tab_reset() -> None:
-    """B262: broncontrole dat ``_switch_instance`` daadwerkelijk terug-
-    schakelt naar tabblad 0 - vangt een toekomstige, per ongeluk
-    verwijderde reset op, ook zonder dat PySide6 hier geïnstalleerd is."""
+def test_the_gui_switch_instance_holds_the_tab_reset() -> None:
+    """B262: a source check that ``_switch_instance`` really does switch
+    back to tab 0 - it catches a future reset removed by accident, even
+    where PySide6 is not installed."""
     import inspect
-    pytest.importorskip("ast", exc_type=ImportError)  # altijd aanwezig; guard
+    pytest.importorskip("ast", exc_type=ImportError)  # always there; guard
 
     source = Path("modules/gui.py").read_text(encoding="utf-8")
     start = source.index("def _switch_instance")
@@ -140,15 +144,15 @@ def test_gui_switch_instance_bevat_tab_reset() -> None:
     body = source[start:end]
     assert "setCurrentIndex(0)" in body
     assert "_tabs" in body
-    del inspect  # alleen gebruikt om de importeerbaarheid te bevestigen
+    del inspect  # only used to confirm that it can be imported
 
 
 # --------------------------------------------------------------------------
-# B263 - songtekst (gededupliceerd, unieke woorden eerst) als Whisper-
-# initial_prompt, zodat consequent verkeerd herkende woorden minder vaak
-# fout gaan.
+# B263 - song text (deduplicated, unique words first) as the Whisper
+# initial_prompt, so that consistently misheard words go wrong less
+# often.
 # --------------------------------------------------------------------------
-def test_deduped_prompt_text_verwijdert_herhalingen() -> None:
+def test_deduped_prompt_text_drops_repetitions() -> None:
     from modules.song_text import LyricWord, deduped_prompt_text
 
     lyrics = tuple(
@@ -158,12 +162,12 @@ def test_deduped_prompt_text_verwijdert_herhalingen() -> None:
             "Sunday tonight tonight".split()))
     text_value = deduped_prompt_text(lyrics)
     words = text_value.split()
-    # Unieke woorden (ongeacht hoofdletters) blijven maar één keer over,
-    # in volgorde van eerste voorkomen.
+    # Unique words (regardless of case) are left over only once, in the
+    # order of their first appearance.
     assert words == ["Sunday", "Bloody", "tonight"]
 
 
-def test_deduped_prompt_text_respecteert_max_chars_op_woordgrens() -> None:
+def test_deduped_prompt_text_honours_max_chars_on_a_word_boundary() -> None:
     from modules.song_text import LyricWord, deduped_prompt_text
 
     lyrics = tuple(LyricWord(i, w, line=0) for i, w in enumerate(
@@ -171,39 +175,41 @@ def test_deduped_prompt_text_respecteert_max_chars_op_woordgrens() -> None:
     text_value = deduped_prompt_text(lyrics, max_chars=20)
     assert len(text_value) <= 20
     assert not text_value.endswith(" ")
-    # Nooit een half woord: elk woord in de output moet integraal in de
-    # oorspronkelijke lijst voorkomen.
+    # Never half a word: every word in the output has to appear whole in
+    # the original list.
     for word in text_value.split():
         assert word in ["alfabet", "bravo", "charlie", "delta", "echo",
                          "foxtrot"]
 
 
-def test_deduped_prompt_text_leeg_bij_geen_woorden() -> None:
+def test_deduped_prompt_text_is_empty_without_words() -> None:
     from modules.song_text import deduped_prompt_text
 
     assert deduped_prompt_text(()) == ""
 
 
-def test_whisper_transcribe_geeft_initial_prompt_door(monkeypatch,
-                                                       tmp_path: Path) -> None:
-    """B263: whisper.transcribe() geeft initial_prompt door aan
-    model.transcribe(), zonder gedragsverandering als die leeg/None is."""
+def test_whisper_transcribe_passes_the_initial_prompt_on(monkeypatch,
+                                                         tmp_path: Path
+                                                         ) -> None:
+    """B263: whisper.transcribe() passes initial_prompt on to
+    model.transcribe(), with no change of behaviour when it is
+    empty/None."""
     from modules import whisper
     from modules.config import WhisperSettings
 
-    gezien = {}
+    seen = {}
 
-    class _NepInfo:
+    class _FakeInfo:
         duration = 1.0
         language = "nl"
         language_probability = 0.9
 
-    class _NepModel:
+    class _FakeModel:
         def transcribe(self, *_a, **kwargs):
-            gezien.update(kwargs)
-            return (), _NepInfo()
+            seen.update(kwargs)
+            return (), _FakeInfo()
 
-    monkeypatch.setattr(whisper, "_load_model", lambda settings: _NepModel())
+    monkeypatch.setattr(whisper, "_load_model", lambda settings: _FakeModel())
 
     audio = tmp_path / "original.wav"
     audio.write_bytes(b"nep")
@@ -212,20 +218,20 @@ def test_whisper_transcribe_geeft_initial_prompt_door(monkeypatch,
 
     whisper.transcribe(audio, settings, tmp_path / "uit",
                        initial_prompt="Sunday Bloody tonight")
-    assert gezien["initial_prompt"] == "Sunday Bloody tonight"
+    assert seen["initial_prompt"] == "Sunday Bloody tonight"
 
-    gezien.clear()
+    seen.clear()
     whisper.transcribe(audio, settings, tmp_path / "uit2")
-    assert gezien["initial_prompt"] is None
+    assert seen["initial_prompt"] is None
 
 
 # --------------------------------------------------------------------------
-# B264 - gelijktijdige achtergrondzang [bg]...[/bg] (block/regel/inline),
-# analoog aan [crowd]: telt niet mee bij de zin-koppeling, deelt het
-# tijdvak van de voorgaande regel, en wordt standaard niet getoond/
-# gerenderd (uitgeschakeld=True).
+# B264 - simultaneous backing vocals [bg]...[/bg] (block/line/inline),
+# in the same vein as [crowd]: they do not count in the sentence
+# coupling, they share the time span of the line before them, and they
+# are not shown/rendered by default (disabled=True).
 # --------------------------------------------------------------------------
-def test_karaoketekst_bg_blok() -> None:
+def test_karaoke_text_bg_block() -> None:
     from modules.karaoke_text import parse_lines
     import tempfile
 
@@ -243,7 +249,7 @@ def test_karaoketekst_bg_blok() -> None:
     assert lines[1].text == "Tonight, tonight"
 
 
-def test_karaoketekst_bg_inline_op_een_regel() -> None:
+def test_karaoke_text_bg_inline_on_one_line() -> None:
     from modules.karaoke_text import parse_lines
     import tempfile
 
@@ -259,7 +265,7 @@ def test_karaoketekst_bg_inline_op_een_regel() -> None:
     assert lines[1].text == "Tonight, tonight"
 
 
-def test_karaoketekst_bg_en_crowd_zijn_onafhankelijk() -> None:
+def test_karaoke_text_bg_and_crowd_are_independent() -> None:
     from modules.karaoke_text import parse_lines
     import tempfile
 
@@ -273,7 +279,7 @@ def test_karaoketekst_bg_en_crowd_zijn_onafhankelijk() -> None:
         (True, False), (False, True), (False, False)]
 
 
-def test_songtekst_load_lyrics_bg_blok() -> None:
+def test_song_text_load_lyrics_bg_block() -> None:
     from modules.song_text import load_lyrics
     import tempfile
 
@@ -288,10 +294,10 @@ def test_songtekst_load_lyrics_bg_blok() -> None:
     assert all(not w.bg for w in words if w.text not in bg_words)
 
 
-def test_align_lyrics_slaat_bg_woorden_over_bij_uitlijning() -> None:
-    """B264: bg-woorden mogen geen transcriptiewoorden van de lead
-    wegkapen in de DP-uitlijning (ze klinken er toch tegelijk mee, niet
-    na elkaar) - net als filler-woorden blijven ze ongekoppeld."""
+def test_align_lyrics_skips_bg_words_when_aligning() -> None:
+    """B264: bg words must not snatch transcription words away from the
+    lead in the DP alignment (they sound at the same time as it anyway,
+    not after it) - like filler words they stay uncoupled."""
     from modules.song_text import LyricWord, align_lyrics
     from modules.whisper import Segment, Word
 
@@ -311,15 +317,15 @@ def test_align_lyrics_slaat_bg_woorden_over_bij_uitlijning() -> None:
     aligned = align_lyrics(lyrics, segs, skip_filler=True)
     by_index = {a.lyric.index: a for a in aligned}
     assert by_index[3].start is None and by_index[4].start is None
-    # De echte lead-woorden blijven wel gekoppeld.
+    # The real lead words do stay coupled.
     assert by_index[0].start is not None
     assert by_index[5].start is not None
 
 
-def test_couple_timing_bg_lines_uitgesloten_van_blok_telling() -> None:
-    """B264: karaoke_blocks zonder bg-regels matcht het songtekst-
-    blok qua aantal (3 tegen 3), i.p.v. te verschuiven door een extra
-    (bg-)regel mee te tellen."""
+def test_couple_timing_leaves_bg_lines_out_of_the_block_count() -> None:
+    """B264: karaoke_blocks without bg lines matches the song text block
+    in number (3 against 3), instead of shifting because an extra (bg)
+    line is counted along."""
     from modules.karaoke_text import TextLine
     from modules.timing import couple_timing, attach_bg_lines
 
@@ -331,11 +337,11 @@ def test_couple_timing_bg_lines_uitgesloten_van_blok_telling() -> None:
     ]
     bg_lines = [l for l in all_lines if l.bg]
     coupled = [l for l in all_lines if not l.bg]
-    kb = [coupled]  # één blok, 3 regels (bg uitgesloten)
+    kb = [coupled]  # one block, 3 lines (bg excluded)
     ob = [[(0.0, 2.0, True), (2.0, 4.0, True), (4.0, 6.0, True)]]
 
     timed, quality, mapping = couple_timing(kb, ob, duration=10.0)
-    # 1-op-1: elke niet-bg regel krijgt precies haar songtekstvenster.
+    # One to one: every non-bg line gets its own song text window.
     by_index = {t.index: t for t in timed}
     assert (by_index[0].start, by_index[0].end) == (0.0, 2.0)
     assert (by_index[2].start, by_index[2].end) == (2.0, 4.0)
@@ -345,19 +351,19 @@ def test_couple_timing_bg_lines_uitgesloten_van_blok_telling() -> None:
     result = attach_bg_lines(timed, bg_lines)
     by_index2 = {t.index: t for t in result}
     bg_timed = by_index2[1]
-    # De bg-regel deelt het tijdvak van haar voorgaande (niet-bg) regel.
+    # The bg line shares the time span of the (non-bg) line before it.
     assert (bg_timed.start, bg_timed.end) == (0.0, 2.0)
-    # B510: hij is bg, en dat is wat hem uit de render houdt - niet meer
-    # het uitzetten, want dat is wat de gebruiker beslist.
+    # B510: it is bg, and that is what keeps it out of the render - no
+    # longer the switching off, because that is the user's decision.
     assert bg_timed.bg is True
     assert bg_timed.disabled is False
     assert by_index2[0].disabled is False
     assert by_index2[3].disabled is False
 
 
-def test_attach_bg_lines_valt_terug_op_eerste_regel_zonder_voorganger() -> None:
-    """B264: een bg-regel vóór elke gekoppelde regel (geen voorganger)
-    valt terug op de eerste getimede regel i.p.v. te crashen."""
+def test_attach_bg_lines_falls_back_to_the_first_line() -> None:
+    """B264: a bg line in front of every coupled line (no predecessor)
+    falls back on the first timed line instead of crashing."""
     from modules.karaoke_text import TextLine
     from modules.timing import couple_timing, attach_bg_lines
 
@@ -377,9 +383,8 @@ def test_attach_bg_lines_valt_terug_op_eerste_regel_zonder_voorganger() -> None:
                                                      by_index[1].end)
 
 
-def test_video_render_slaat_uitgeschakelde_bg_regels_over() -> None:
-    """B264: een uitgeschakelde bg-regel wordt (net als B180) niet
-    gerenderd."""
+def test_the_video_render_skips_disabled_bg_lines() -> None:
+    """B264: a disabled bg line is not rendered (just as in B180)."""
     from modules.timing import TimedLine, Syllable
 
     lines = [

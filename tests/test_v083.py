@@ -1,36 +1,36 @@
-"""Tests voor v0.83.0-functies (B252 underscore-lettergreep, B251 arbitrage)."""
+"""Tests for v0.83.0 (B252 underscore syllable, B251 arbitration)."""
 from __future__ import annotations
 
 
 # --------------------------------------------------------------------------
-# B252 - underscore koppelt woorden tot één lettergreep; _ -> spatie in render
+# B252 - an underscore joins words into one syllable; _ -> space on screen
 # --------------------------------------------------------------------------
 def test_underscore_is_one_syllable() -> None:
-    """B252: een underscore-woord telt als één lettergreep en houdt de marker."""
+    """B252: an underscore word counts as one syllable and keeps its mark."""
     from modules.timing import split_syllables
     assert split_syllables("'k_heb") == ["'k_heb"]
     assert split_syllables("een_twee_drie") == ["een_twee_drie"]
-    # gewone woorden blijven normaal splitsen
+    # ordinary words still split as usual
     assert split_syllables("Zwarte") == ["Zwar", "te"]
 
 
 def test_underscore_skeleton_single_syllable() -> None:
-    """B252: het skelet maakt van een underscore-woord één lettergreep."""
+    """B252: the skeleton makes one syllable of an underscore word."""
     from modules.karaoke_text import TextLine
     from modules.timing import generate_skeleton, word_spans
     line = generate_skeleton((TextLine(0, "'k_heb het al", False),),
                              {0: (0.0, 3.0)})[0]
-    # 3 woorden: "'k_heb" (1 lettergreep) + "het" (1) + "al" (1) -> 3 syls
+    # 3 words: "'k_heb" (1 syllable) + "het" (1) + "al" (1) -> 3 syls
     assert len(line.syllables) == 3
     assert line.syllables[0].text == "'k_heb"
-    # regel reconstrueert exact (underscore blijft intern staan)
+    # the line reconstructs exactly (the underscore stays in place)
     assert "".join(s.text for s in line.syllables) == "'k_heb het al"
-    # word_spans ziet één woord met de underscore
+    # word_spans sees one word, underscore and all
     assert word_spans(line.syllables)[0][0] == "'k_heb"
 
 
 def test_underscore_atomic_in_phonetic_timing() -> None:
-    """B252: fonetische timing splitst een underscore-woord niet verder op."""
+    """B252: phonetic timing does not split an underscore word further."""
     from modules.timing import Syllable, TimedLine, apply_phonetic_timing
     line = TimedLine(0, "'k_heb", False,
                      (Syllable("'k_heb", 0.0, 1.0, held=True),))
@@ -41,7 +41,8 @@ def test_underscore_atomic_in_phonetic_timing() -> None:
 
 
 def test_underscore_renders_as_space() -> None:
-    """B252: in de render wordt de underscore een spatie, meten idem."""
+    """B252: in the render the underscore becomes a space, and it is
+    measured that way too."""
     from PIL import ImageFont
 
     from modules.video import _disp, _wrap_syllables
@@ -51,17 +52,17 @@ def test_underscore_renders_as_space() -> None:
     assert _disp("'k_heb") == "'k heb"
     assert _disp("gewoon") == "gewoon"
 
-    # De weergavebreedte wordt op de spatie-vorm gemeten, niet op de underscore.
+    # The display width is measured on the space form, not the underscore.
     font = ImageFont.load_default()
     line = generate_skeleton((TextLine(0, "'k_heb het", False),))[0]
     rows = _wrap_syllables(line.syllables, font, 100000)
-    assert len(rows) == 1                       # past ruim op één rij
-    # underscore-lettergreep blijft één cel (geen woordgrens door de spatie)
+    assert len(rows) == 1                       # fits easily on one row
+    # the underscore syllable stays one cell (the space is no word break)
     assert rows[0][0].text == "'k_heb"
 
 
 # --------------------------------------------------------------------------
-# B251 - geordende + gewogen timing-arbitrage met blok-barrières
+# B251 - ordered and weighted timing arbitration with block barriers
 # --------------------------------------------------------------------------
 def _anchor(ref, t, w, block=0):
     from modules.timing_rules import Candidate, KIND_ANCHOR
@@ -75,25 +76,25 @@ def test_candidate_effect_is_weight_times_confidence() -> None:
 
 
 def test_arbitrate_within_block_weighted() -> None:
-    """B250 blijft: binnen een blok verdringt een zwaarder anker een zwakker."""
+    """B250 still holds: inside a block a heavier anchor wins."""
     from modules.timing_rules import arbitrate_anchors
-    # regel 1 (zwak, t5) ligt na regel 2 (sterk, t4): de sterke wint.
+    # line 1 (weak, t5) sits after line 2 (strong, t4): the strong one wins.
     cands = [_anchor(0, 0.0, 0.5), _anchor(1, 5.0, 0.5), _anchor(2, 4.0, 2.0)]
     kept = arbitrate_anchors(cands)
     assert set(kept) == {0, 2}
-    assert list(kept.values()) == sorted(kept.values())   # monotoon
+    assert list(kept.values()) == sorted(kept.values())   # monotonic
 
 
 def test_arbitrate_block_barrier_protects_earlier_block() -> None:
-    """B251: een later blok verdringt een eerder-blok-anker niet."""
+    """B251: a later block does not push out an earlier block's anchor."""
     from modules.timing_rules import arbitrate_anchors
-    # refrein (blok 0) op t8; couplet-regel (blok 1) op t6 (vóór het refrein).
-    # Zonder barrière zou de tijd terugspringen; met barrière blijft het
-    # refrein-anker staan en wordt het niet-monotone couplet-anker overgeslagen.
+    # Chorus (block 0) at t8; verse line (block 1) at t6, before it.
+    # Without the barrier time would jump back; with it the chorus anchor
+    # stays and the non-monotonic verse anchor is skipped.
     cands = [_anchor(0, 0.0, 10.0, 0), _anchor(1, 8.0, 3.0, 0),
              _anchor(2, 6.0, 3.0, 1)]
     kept = arbitrate_anchors(cands)
-    assert 1 in kept and kept[1] == 8.0          # refrein-anker beschermd
+    assert 1 in kept and kept[1] == 8.0          # chorus anchor protected
     assert list(kept.values()) == sorted(kept.values())
 
 
@@ -108,29 +109,30 @@ def test_best_per_ref_keeps_strongest() -> None:
 def test_clamp_refinement_stays_within_span() -> None:
     from modules.timing_rules import clamp_refinement
     assert clamp_refinement(0.5, 3.0, 1.0, 2.0) == (1.0, 2.0)
-    s, e = clamp_refinement(1.2, 1.1, 1.0, 2.0)   # end < start -> geklemd
+    s, e = clamp_refinement(1.2, 1.1, 1.0, 2.0)   # end < start -> clamped
     assert s <= e and 1.0 <= s <= 2.0
 
 
 def test_sanitize_single_block_barrier_noop() -> None:
-    """B251: bij één blok verandert de barrière niets (oud gedrag intact)."""
+    """B251: with one block the barrier changes nothing (old behaviour)."""
     from modules.timing import Syllable, TimedLine, sanitize_timing
 
-    def line(idx, start, kwal):
+    def line(idx, start, quality):
         return TimedLine(idx, f"regel {idx}", False,
                          (Syllable(f"r{idx}", start, start + 0.5),),
-                         quality=kwal)
+                         quality=quality)
     lines = [line(0, 0.0, "high"), line(1, 2.0, "high"),
              line(2, 4.0, "high")]
-    aan = sanitize_timing(lines, first_start=0.0, song_duration=10.0,
-                          blok_barriere=True)
-    uit = sanitize_timing(lines, first_start=0.0, song_duration=10.0,
+    on = sanitize_timing(lines, first_start=0.0, song_duration=10.0,
+                         blok_barriere=True)
+    off = sanitize_timing(lines, first_start=0.0, song_duration=10.0,
                           blok_barriere=False)
-    assert [ln.start for ln in aan] == [ln.start for ln in uit]
+    assert [ln.start for ln in on] == [ln.start for ln in off]
 
 
 def test_eval_identical_is_zero_and_skips_mismatch() -> None:
-    """B251: gelijke timing -> 0 fout; regels met andere tekst tellen niet mee."""
+    """B251: identical timing -> 0 error; lines with other text do not
+    count."""
     from modules.timing_eval import compare
 
     def rows(items):
@@ -139,22 +141,22 @@ def test_eval_identical_is_zero_and_skips_mismatch() -> None:
                 for s, t, b in items]
     ref = rows([(0.0, "een", 0), (2.0, "twee", 1)])
     assert compare(ref, ref)["total"]["onset"]["avg"] == 0.0
-    # afwijkende tekst wordt overgeslagen; alleen "een" telt (0 ms)
+    # differing text is skipped; only "een" counts (0 ms)
     auto = rows([(0.0, "een", 0), (9.9, "anders", 1)])
     res = compare(auto, ref)
     assert res["total"]["onset"]["n"] == 1
     assert res["total"]["onset"]["avg"] == 0.0
 
 
-def test_config_roundtrip_timing_arbitrage(tmp_path) -> None:
-    """B251: nieuwe geavanceerd-velden overleven een save/load."""
+def test_config_roundtrip_timing_arbitration(tmp_path) -> None:
+    """B251: the new advanced fields survive a save/load."""
     from dataclasses import replace
 
     from modules import config as cfg
     base = cfg.default_config()
-    gav = replace(base.advanced, block_anchor_barrier=False,
-                  anchor_weight_high=2.5, anchor_weight_onset=12.0)
-    conf = replace(base, advanced=gav)
+    advanced = replace(base.advanced, block_anchor_barrier=False,
+                       anchor_weight_high=2.5, anchor_weight_onset=12.0)
+    conf = replace(base, advanced=advanced)
     path = tmp_path / "config.json"
     cfg.save_config(conf, path)
     back = cfg.load_config(path)

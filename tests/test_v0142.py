@@ -31,9 +31,8 @@ def test_the_render_writes_next_to_the_target_and_moves_it_afterwards() -> None:
     assert 'scratch = target.with_name(' in source
     assert '        str(scratch),\n' in source
     assert "os.replace(scratch, target)" in source
-    # Both ways out have to clear up the half-finished file.
-    # Elke uitgang ruimt het halve bestand op: vooraf, gebroken pijp,
-    # elke andere fout, en een ffmpeg die faalt.
+    # Every way out clears up the half-finished file: beforehand, a
+    # broken pipe, any other error, and an ffmpeg that fails.
     assert source.count("_discard(scratch)") == 4
 
 
@@ -63,7 +62,7 @@ def test_a_failed_render_leaves_the_old_video_untouched(tmp_path,
     from modules import ffmpeg
 
     if not ffmpeg.is_available():
-        pytest.skip("ffmpeg niet beschikbaar")
+        pytest.skip("ffmpeg not available")
     from PIL import Image
 
     audio = tmp_path / "karaoke.wav"
@@ -101,28 +100,28 @@ def test_the_orphan_cleanup_measures_against_the_output_folder_in_use(
     from modules import filesystem
 
     (tmp_path / "input" / "Een Lied").mkdir(parents=True)
-    elders = tmp_path / "elders"
-    (elders / "Een Lied").mkdir(parents=True)
+    elsewhere = tmp_path / "elders"
+    (elsewhere / "Een Lied").mkdir(parents=True)
     # With the real output folder in hand the project is not an orphan.
-    assert filesystem.prune_orphan_projects(tmp_path, elders) == []
+    assert filesystem.prune_orphan_projects(tmp_path, elsewhere) == []
     assert (tmp_path / "input" / "Een Lied").exists()
-    # Wijst hij naar een map waar het project niet in staat, dan is het
-    # wel een wees - dat is het bestaande gedrag van B112.
+    # Pointed at a folder the project is not in, it IS an orphan - that
+    # is the existing behaviour of B112.
     (tmp_path / "output" / "Ander Lied").mkdir(parents=True)
     assert filesystem.prune_orphan_projects(tmp_path) == ["Een Lied"]
 
 
 def test_an_empty_output_folder_never_means_everything_is_an_orphan(
         tmp_path) -> None:
-    """Zonder deze rem wist de eerste start na het verzetten van de
-    uitvoermap alsnog elke invoermap. De map bestaat dan wel - de app
-    maakt hem zelf één regel eerder aan - maar hij is leeg."""
+    """Without this brake the first start after moving the output
+    folder still wiped every input folder. The folder does exist by then
+    - the app makes it itself one line earlier - but it is empty."""
     from modules import filesystem
 
     (tmp_path / "input" / "Een Lied").mkdir(parents=True)
-    leeg = tmp_path / "verzet"
-    leeg.mkdir()
-    assert filesystem.prune_orphan_projects(tmp_path, leeg) == []
+    empty = tmp_path / "verzet"
+    empty.mkdir()
+    assert filesystem.prune_orphan_projects(tmp_path, empty) == []
     assert (tmp_path / "input" / "Een Lied").exists()
     assert filesystem.prune_orphan_projects(tmp_path, tmp_path / "weg") == []
     assert (tmp_path / "input" / "Een Lied").exists()
@@ -192,8 +191,8 @@ def test_the_coupling_still_ignores_those_estimated_words() -> None:
 
 def test_without_any_coupling_the_editor_still_gets_the_text(
         tmp_path) -> None:
-    """Een lege baan is geen antwoord: dan kan hij niets op de goede plek
-    zetten, en dat is precies waar hij de editor voor nodig heeft."""
+    """An empty lane is no answer: he can then put nothing in the right
+    place, which is precisely what he needs the editor for."""
     context = _context(tmp_path)
     (context.paths.input_dir / "songtekst.txt").write_text(
         "een regel\ntwee regel\ndrie regel\n", encoding="utf-8")
@@ -203,13 +202,13 @@ def test_without_any_coupling_the_editor_still_gets_the_text(
     assert [item["text"] for item in items] == \
         ["een regel", "twee regel", "drie regel"]
     assert all(item["end"] > item["start"] for item in items)
-    # Elke karaokezin heeft iets om aan te hangen.
+    # Every karaoke sentence has something to hang on.
     assert set(mapping) == {0, 1}
 
 
 def test_the_render_timing_keeps_its_own_road() -> None:
-    """De terugval is voor de editor; de timing heeft er al een
-    (``fallback_even``) en mag niet achter een gok aan gaan lopen."""
+    """The fallback is for the editor; the timing already has one
+    (``fallback_even``) and must not go trailing after a guess."""
     source = inspect.getsource(pipeline._original_lines_detailed)
     assert "log_original_times_guessed" not in source
     assert "log_original_times_guessed" in inspect.getsource(
@@ -287,10 +286,11 @@ def test_two_sentences_over_two_rows_do_not_draw_through_each_other() -> None:
                                  video._DEFAULT_COLORS)
     rows = sorted(set(_rows_with(frame, video._DEFAULT_COLORS["voor"], tol=30))
                   | set(_rows_with(frame, video._DEFAULT_COLORS["na"], tol=30)))
-    # Vier zinnen van twee rijen: acht blokken, en de ruimte binnen een
-    # zin hoort kleiner te zijn dan die tussen twee zinnen (B476).
+    # Four sentences of two rows: eight blocks, and the space within a
+    # sentence should be smaller than the space between two sentences
+    # (B476).
     gaps = sorted(_gaps(rows))
-    assert len(gaps) == 7, f"acht blokken verwacht, gaten: {gaps}"
+    assert len(gaps) == 7, f"eight blocks expected, gaps: {gaps}"
     assert max(gaps[:4]) < min(gaps[4:]), gaps
 
 
@@ -312,7 +312,7 @@ def test_the_countdown_takes_the_place_of_the_line_just_sung() -> None:
 
 
 def test_the_line_that_made_way_does_not_come_back_after_the_gap() -> None:
-    """Hij zou terugspringen op precies de plek waar het cijfer stond."""
+    """It would jump back to exactly the place where the digit stood."""
     source = inspect.getsource(video._text_frame)
     assert "after_gap = (active_index > 0" in source
     assert "else (0 if after_gap else -1))" in source
@@ -349,8 +349,8 @@ def test_the_rows_of_one_sentence_sit_closer_than_two_sentences() -> None:
         def __init__(self, text): self.text = text
 
     rows = [[_Piece("zonder staarten")], [_Piece("ook geen staarten")]]
-    # Zonder staartjes en zonder accenten mogen de rijen dichter op
-    # elkaar dan de volle fontdoos.
+    # Without descenders and without accents the rows may sit closer
+    # together than the full font box.
     assert video._row_tops(rows, font)[1] < ascent + descent
     assert video._line_gap(font) > 0
 
@@ -358,9 +358,9 @@ def test_the_rows_of_one_sentence_sit_closer_than_two_sentences() -> None:
 def test_the_two_places_that_measure_a_row_use_the_same_number() -> None:
     """Measurement and drawing could drift apart because ``+ 2`` stood in
     the code twice, separately."""
-    # B541: het tekenen haalt zijn rijen en hun hoogtes nu uit
-    # ``_rows_of``, dat er nog steeds ``_row_tops`` voor gebruikt - één
-    # plek, en die wordt maar één keer per render uitgerekend.
+    # B541: the drawing now takes its rows and their heights from
+    # ``_rows_of``, which still uses ``_row_tops`` for it - one place,
+    # and it is worked out only once per render.
     assert "_row_tops(rows, font)" in inspect.getsource(video._rows_of)
     assert "_rows_of(line, font, width)" in inspect.getsource(video._draw_line)
     assert "_row_tops(rows, font)" in inspect.getsource(
@@ -368,8 +368,8 @@ def test_the_two_places_that_measure_a_row_use_the_same_number() -> None:
 
 
 def test_a_sentence_that_has_been_sung_stays_grey_on_the_top_slot() -> None:
-    """Wit betekent "komt nog"; wat achter ons ligt is grijs. De net
-    gezongen regel werd weer wit zodra hij naar boven schoof."""
+    """White means "still to come"; what lies behind us is grey. The
+    line just sung turned white again as soon as it moved up."""
     from modules.karaoke_text import TextLine
     from modules.timing import generate_skeleton
 
@@ -381,8 +381,8 @@ def test_a_sentence_that_has_been_sung_stays_grey_on_the_top_slot() -> None:
     frame = _frame(6.0, timed)
     grey = _rows_with(frame, video._DEFAULT_COLORS["na"], tol=25)
     white = _rows_with(frame, video._DEFAULT_COLORS["voor"], tol=25)
-    assert grey, "de al gezongen regel hoort grijs te zijn"
-    # De grijze regel staat bovenaan, de wachtende eronder.
+    assert grey, "the line already sung belongs in grey"
+    # The grey line stands at the top, the waiting one below it.
     assert min(grey) < min(white)
 
 
@@ -422,8 +422,8 @@ def test_the_outline_is_swept_along_with_the_fill() -> None:
     source = inspect.getsource(video._draw_line)
     assert 'before_edge = palette.get("outline_" + sung_key)' in source
     assert 'after_edge = palette.get("outline_voor")' in source
-    # B487 heeft de uitzondering voor de niet-actieve regel weer
-    # ingetrokken: elke regel krijgt er een.
+    # B487 withdrew the exception for the inactive line again: every
+    # line gets one.
     assert "before_edge = after_edge = None" not in source
 
 
@@ -508,9 +508,9 @@ def test_the_rerender_action_is_gone() -> None:
     assert not hasattr(test_panel, "_numbered_target")
     assert not hasattr(test_panel.TestAction("x", "y", "z", True, print),
                        "slow")
-    actie = next(a for a in test_panel.ACTIONS if a.code == "1.5.12")
-    assert actie.function is test_panel.rebuild_videos
-    assert actie.on_request
+    action = next(a for a in test_panel.ACTIONS if a.code == "1.5.12")
+    assert action.function is test_panel.rebuild_videos
+    assert action.on_request
 
 
 def test_its_texts_are_gone_too() -> None:
@@ -521,7 +521,7 @@ def test_its_texts_are_gone_too() -> None:
         for key in ("test_rerender", "rerender_none", "rerender_done",
                     "rerender_skipped", "log_rerender_failed"):
             assert key not in keys
-        # B531: de nieuwe klus heeft eigen teksten, geen hergebruikte.
+        # B531: the new job has texts of its own, not reused ones.
         assert keys["test_rebuild"].strip()
 
 
@@ -680,8 +680,8 @@ def test_the_trial_no_longer_leaves_folders_in_temp() -> None:
 
 
 def test_every_song_writes_its_own_converted_file() -> None:
-    """De stem heet in elk project ``vocals.wav``; in één gedeelde
-    kladmap schrijven ze anders over elkaar heen."""
+    """The voice is called ``vocals.wav`` in every project; in one
+    shared scratch folder they would write over each other."""
     from modules import test_panel
 
     source = inspect.getsource(test_panel._at_level)

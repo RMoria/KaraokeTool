@@ -1,12 +1,12 @@
-"""Test panel behind button 1.5 (TIJDELIJK).
+"""Test panel behind button 1.5 (TEMPORARY).
 
 A tick list of numbered test functions that run on the user's machine
 instead of on mine. Every action gets a number (1.5.1 up to 1.5.10) so
 it can be referred to in conversation: "just run 1.5.3". The maximum is
 TEN: small tests are merged rather than letting the list grow.
 
-TIJDELIJK: this whole file does not belong in a publication. See
-``docs/doorontwikkeling.md``, section "Voor publicatie beslissen".
+TEMPORARY: this whole file does not belong in a publication. See
+``docs/development_log.md``, section "Decide before release".
 
 Agreements that hold for every action:
 
@@ -2930,7 +2930,7 @@ HEAVY_TRIALS: tuple[HeavyTrial, ...] = (
     # syllables by hand it won nothing four times and lost 14 ms once.
     # Where c, d and e were switched off and kept, this one went out
     # with its subject: the button is gone, so a trial that measures it
-    # can no longer run. The numbers are in doorontwikkeling.md.
+    # can no longer run. The numbers are in development_log.md.
 )
 
 
@@ -3385,7 +3385,7 @@ def visible_actions() -> tuple[TestAction, ...]:
 
 
 class TestPanel(QDialog):
-    """Tick list with the numbered test functions (TIJDELIJK)."""
+    """Tick list with the numbered test functions (TEMPORARY)."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)

@@ -1,13 +1,13 @@
-"""Tests voor v0.108.0 en v0.109.0: B349, B350, B351 en B352.
+"""Tests for v0.108.0 and v0.109.0: B349, B350, B351 and B352.
 
-B349 - de voortgang toonde het percentage twee keer: één keer in de balk
-       zelf en één keer in de tekst ernaast.
-B350 - melding als er met hoge zekerheid iets is gehoord dat niet in de
-       songtekst staat, met onderscheid tussen een ontbrekende herhaling
-       en onbekende tekst.
-B351 - een regel die achter een pauze begint, begint te laat: het anker
-       komt uit de uitlijning en die zet het woordbegin ná de inzet van
-       de zang.
+B349 - the progress showed the percentage twice: once in the bar itself
+       and once in the text beside it.
+B350 - a report when something is heard with high confidence that is not
+       in the lyrics, telling a missing repetition apart from unknown
+       text.
+B351 - a line that starts after a pause starts too late: the anchor
+       comes out of the alignment, and that puts the start of the word
+       after the singing comes in.
 """
 from __future__ import annotations
 
@@ -24,90 +24,93 @@ from modules.timing import (  # noqa: E402
 )
 from modules.translations import TRANSLATIONS  # noqa: E402
 
-WORTEL = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def _regel(index: int, start: float, eind: float,
-           kwaliteit: str = "high") -> TimedLine:
+def _line(index: int, start: float, end: float,
+          quality: str = "high") -> TimedLine:
     return TimedLine(index=index, text=f"regel {index}", crowd=False,
-                     syllables=(Syllable(text="la", start=start, end=eind),),
-                     quality=kwaliteit)
+                     syllables=(Syllable(text="la", start=start, end=end),),
+                     quality=quality)
 
 
 # --------------------------------------------------------------------------
-# B349: het percentage stond er twee keer
+# B349: the percentage was there twice
 # --------------------------------------------------------------------------
 
-def test_voortgangstekst_heeft_geen_percentage_meer() -> None:
-    """De balk toont zelf al '20%'; de tekst ernaast houdt de seconden."""
-    for taal in ("nl", "en"):
-        tekst = TRANSLATIONS[taal]["progress_pct"]
-        assert "%" not in tekst, f"{taal} toont het percentage nog een keer"
-        assert "{done" in tekst and "{total" in tekst
+def test_the_progress_text_no_longer_holds_a_percentage() -> None:
+    """The bar already shows '20%' itself; the text beside it keeps the
+    seconds."""
+    for language in ("nl", "en"):
+        text = TRANSLATIONS[language]["progress_pct"]
+        assert "%" not in text, f"{language} shows the percentage twice"
+        assert "{done" in text and "{total" in text
 
 
-def test_voortgangstekst_verdraagt_de_oude_aanroep() -> None:
-    """``pct`` wordt nog meegegeven; een ongebruikte sleutel mag."""
-    tekst = TRANSLATIONS["nl"]["progress_pct"].format(
+def test_the_progress_text_tolerates_the_old_call() -> None:
+    """``pct`` is still passed in; an unused key is allowed."""
+    text = TRANSLATIONS["nl"]["progress_pct"].format(
         pct=20, done=12.0, total=60.0)
-    assert tekst == "Voortgang: 12 / 60 s"
+    assert text == "Voortgang: 12 / 60 s"
 
 
 # --------------------------------------------------------------------------
-# B351: het begin achter een pauze
+# B351: the start after a pause
 # --------------------------------------------------------------------------
 
-def test_anker_achter_een_pauze_gaat_naar_de_inzet() -> None:
-    """Gemeten geval: begin op 151,46 terwijl de zang op 150,98 inzet."""
-    regel = _regel(1, 151.46, 154.0)
-    inzet = _onset_before_start(regel, previous_end=149.0,
+def test_an_anchor_after_a_pause_moves_to_the_onset() -> None:
+    """Measured case: start at 151.46 while the singing comes in at
+    150.98."""
+    line = _line(1, 151.46, 154.0)
+    onset = _onset_before_start(line, previous_end=149.0,
                                 ordered=[145.0, 150.98, 151.60])
-    assert inzet == pytest.approx(150.98)
+    assert onset == pytest.approx(150.98)
 
 
-def test_zonder_pauze_blijft_het_anker_staan() -> None:
-    """Aansluitende regels zijn juist goed - daar valt niets te winnen."""
-    regel = _regel(1, 151.46, 154.0)
-    assert _onset_before_start(regel, previous_end=151.20,
+def test_without_a_pause_the_anchor_stays_put() -> None:
+    """Lines that follow straight on are right as they are - there is
+    nothing to be won there."""
+    line = _line(1, 151.46, 154.0)
+    assert _onset_before_start(line, previous_end=151.20,
                                ordered=[150.98, 151.60]) is None
 
 
-def test_klein_verschil_blijft_ongemoeid() -> None:
-    """Regels die de gebruiker liet staan zitten 0,10-0,23 s achter hun
-    inzet; die drempel houdt ze met rust."""
-    regel = _regel(1, 151.46, 154.0)
-    assert _onset_before_start(regel, previous_end=149.0,
+def test_a_small_difference_is_left_alone() -> None:
+    """Lines the user left as they were sit 0.10-0.23 s behind their
+    onset; that threshold leaves them in peace."""
+    line = _line(1, 151.46, 154.0)
+    assert _onset_before_start(line, previous_end=149.0,
                                ordered=[151.30]) is None
 
 
-def test_nooit_verder_terug_dan_de_vorige_regel() -> None:
-    regel = _regel(1, 151.46, 154.0)
-    assert _onset_before_start(regel, previous_end=151.0,
+def test_never_further_back_than_the_previous_line() -> None:
+    line = _line(1, 151.46, 154.0)
+    assert _onset_before_start(line, previous_end=151.0,
                                ordered=[150.50]) is None
 
 
-def test_snap_verzet_een_gemeten_regel_achter_een_pauze() -> None:
-    """Het hele pad: B330 laat gemeten regels staan, B351 maakt hierop
-    één uitzondering."""
-    lijnen = (_regel(0, 140.0, 149.0), _regel(1, 151.46, 154.0))
-    uit = snap_to_onsets(lijnen, [150.98], period=None)
-    assert uit[0].start == pytest.approx(140.0)      # ongemoeid
-    assert uit[1].start == pytest.approx(150.98)
-    assert uit[1].end == pytest.approx(154.0)        # eind blijft staan
+def test_snap_moves_a_measured_line_that_follows_a_pause() -> None:
+    """The whole path: B330 leaves measured lines alone, B351 makes one
+    exception to that."""
+    lines = (_line(0, 140.0, 149.0), _line(1, 151.46, 154.0))
+    out = snap_to_onsets(lines, [150.98], period=None)
+    assert out[0].start == pytest.approx(140.0)      # untouched
+    assert out[1].start == pytest.approx(150.98)
+    assert out[1].end == pytest.approx(154.0)        # the end stays put
 
 
-def test_snap_laat_een_aansluitende_gemeten_regel_met_rust() -> None:
-    lijnen = (_regel(0, 140.0, 151.20), _regel(1, 151.46, 154.0))
-    uit = snap_to_onsets(lijnen, [150.98], period=None)
-    assert uit[1].start == pytest.approx(151.46)
+def test_snap_leaves_an_adjoining_measured_line_alone() -> None:
+    lines = (_line(0, 140.0, 151.20), _line(1, 151.46, 154.0))
+    out = snap_to_onsets(lines, [150.98], period=None)
+    assert out[1].start == pytest.approx(151.46)
 
 
 # --------------------------------------------------------------------------
-# B350: melding over wat er is gehoord maar niet in de songtekst staat
+# B350: a report on what was heard but is not in the lyrics
 # --------------------------------------------------------------------------
 
-def _project(tmp_path: Path, songtekst: str, karaoketekst: str,
-             segmenten: list[dict]):
+def _project(tmp_path: Path, lyrics: str, karaoke_text: str,
+             segments: list[dict]):
     import json
 
     from modules.config import default_config
@@ -116,29 +119,30 @@ def _project(tmp_path: Path, songtekst: str, karaoketekst: str,
 
     paths = ProjectPaths(root=tmp_path, song="Proef")
     ensure_directories(paths)
-    (paths.input_dir / "songtekst.txt").write_text(songtekst,
+    (paths.input_dir / "songtekst.txt").write_text(lyrics,
                                                    encoding="utf-8")
-    (paths.input_dir / "karaoketekst.txt").write_text(karaoketekst,
+    (paths.input_dir / "karaoketekst.txt").write_text(karaoke_text,
                                                       encoding="utf-8")
     context = pipeline.AppContext(paths=paths, config=default_config(),
                                   store=ProjectStore(paths.project_file))
     cache = pipeline.transcript_cache(context, pipeline.TRACK_ORIGINAL)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps(segmenten), encoding="utf-8")
-    context.store.set_step("whisper_original", {"segments": len(segmenten)})
+    cache.write_text(json.dumps(segments), encoding="utf-8")
+    context.store.set_step("whisper_original", {"segments": len(segments)})
     return context
 
 
-def _segment(index: int, woorden: list[tuple[str, float, float, float]]
+def _segment(index: int, words: list[tuple[str, float, float, float]]
              ) -> dict:
-    return {"index": index, "text": " ".join(w[0] for w in woorden),
-            "start": woorden[0][1], "end": woorden[-1][2],
+    return {"index": index, "text": " ".join(w[0] for w in words),
+            "start": words[0][1], "end": words[-1][2],
             "words": [{"text": t, "start": s, "end": e, "confidence": c}
-                      for t, s, e, c in woorden]}
+                      for t, s, e, c in words]}
 
 
-def test_ontbrekende_herhaling_wordt_gemeld(tmp_path) -> None:
-    """Het gemeten geval: de zang doet het paar twee keer, de tekst één."""
+def test_a_missing_repetition_is_reported(tmp_path) -> None:
+    """The measured case: the singing does the pair twice, the text
+    once."""
     context = _project(
         tmp_path,
         "shalalie shalala\nja ik weet het alweer\n",
@@ -152,13 +156,13 @@ def test_ontbrekende_herhaling_wordt_gemeld(tmp_path) -> None:
                       ("weet", 13.4, 13.7, 0.9),
                       ("het", 13.7, 13.9, 0.9),
                       ("alweer", 13.9, 14.4, 0.9)])])
-    gemeld = pipeline.missing_repetitions(context)
-    assert [m["repetition"] for m in gemeld] == [True]
-    assert gemeld[0]["text"].lower().startswith("shalalie")
-    assert gemeld[0]["similarity"] >= 0.9
+    reported = pipeline.missing_repetitions(context)
+    assert [m["repetition"] for m in reported] == [True]
+    assert reported[0]["text"].lower().startswith("shalalie")
+    assert reported[0]["similarity"] >= 0.9
 
 
-def test_kloppende_tekst_geeft_geen_melding(tmp_path) -> None:
+def test_text_that_matches_gives_no_report(tmp_path) -> None:
     context = _project(
         tmp_path,
         "shalalie shalala shalalie shalala\nja ik weet het alweer\n",
@@ -176,8 +180,8 @@ def test_kloppende_tekst_geeft_geen_melding(tmp_path) -> None:
             if m["repetition"]] == []
 
 
-def test_onzeker_woord_levert_geen_melding(tmp_path) -> None:
-    """Onder de drempel is het gemompel aan het eind van een regel."""
+def test_an_uncertain_word_gives_no_report(tmp_path) -> None:
+    """Below the threshold it is the mumbling at the end of a line."""
     context = _project(
         tmp_path,
         "shalalie shalala\nja ik weet het alweer\n",
@@ -191,29 +195,32 @@ def test_onzeker_woord_levert_geen_melding(tmp_path) -> None:
                       ("weet", 13.4, 13.7, 0.9),
                       ("het", 13.7, 13.9, 0.9),
                       ("alweer", 13.9, 14.4, 0.9)])])
-    gemeld = pipeline.missing_repetitions(context)
-    assert all(m["similarity"] >= 0.9 or not m["repetition"] for m in gemeld)
+    reported = pipeline.missing_repetitions(context)
+    assert all(m["similarity"] >= 0.9 or not m["repetition"]
+               for m in reported)
 
 
-def test_melding_hangt_achter_de_koppel_editor(tmp_path) -> None:
-    """De controle draait na 1.2, want daar wordt de koppeling gemaakt."""
-    bron = (WORTEL / "modules" / "gui.py").read_text(encoding="utf-8")
-    kop = bron[bron.index("def _open_word_couple("):]
-    lijf = kop[:kop.index("\n    def _report_missing(")]
-    assert "_report_missing" in lijf
-    assert "missing_repetitions" in bron
+def test_the_report_comes_after_the_coupling_editor(tmp_path) -> None:
+    """The check runs after 1.2, because that is where the coupling is
+    made."""
+    source = (ROOT / "modules" / "gui.py").read_text(encoding="utf-8")
+    head = source[source.index("def _open_word_couple("):]
+    body = head[:head.index("\n    def _report_missing(")]
+    assert "_report_missing" in body
+    assert "missing_repetitions" in source
 
 
 # --------------------------------------------------------------------------
-# B352: de meetlat gaf de zangvensters niet door
+# B352: the yardstick did not pass on the vocal windows
 # --------------------------------------------------------------------------
 
-def test_meetlat_geeft_de_zangvensters_mee() -> None:
-    """De app doet dat wel, dus alles wat erop leunt werd nooit gemeten."""
-    bron = (WORTEL / "tools" / "timing_regression.py").read_text(
+def test_the_yardstick_passes_on_the_vocal_windows() -> None:
+    """The app does, so everything that leans on them was never
+    measured."""
+    source = (ROOT / "tools" / "timing_regression.py").read_text(
         encoding="utf-8")
-    aanroep = bron[bron.index("sanitize_timing("):]
-    aanroep = aanroep[:aanroep.index(")\n")]
-    assert "active_windows" in aanroep
-    app = (WORTEL / "modules" / "pipeline.py").read_text(encoding="utf-8")
+    call = source[source.index("sanitize_timing("):]
+    call = call[:call.index(")\n")]
+    assert "active_windows" in call
+    app = (ROOT / "modules" / "pipeline.py").read_text(encoding="utf-8")
     assert "active_windows=_vocal_windows(context)" in app

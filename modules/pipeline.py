@@ -6556,7 +6556,7 @@ def video_input_status(
     """Check whether all input for the karaoke video is present.
 
     The video is only made when everything is there (see
-    ``docs/karaokevideo_werkwijze.md``). Each line is
+    ``docs/video_standard.md``). Each line is
     ``(key, name, present, detail)``; ``key`` is language-independent
     and is what the caller tests against (B326), ``name`` and ``detail``
     are for the user.

@@ -28,8 +28,8 @@ def _lyrics(tmp_path: Path, text: str):
 
 def test_a_background_tail_leaves_the_rest_of_the_sentence_alone(
         tmp_path) -> None:
-    """Dit is de fout waardoor twaalf regels van Lied R uit de originele
-    baan verdwenen: de hele zin werd achtergrondzang."""
+    """This is the defect that made twelve lines of Lied R vanish from
+    the original lane: the whole sentence became background singing."""
     words = _lyrics(tmp_path, "een twee drie [bg]vier[/bg]\n")
     assert [(w.text, w.bg) for w in words] == [
         ("een", False), ("twee", False), ("drie", False), ("vier", True)]
@@ -67,7 +67,7 @@ def _karaoke(tmp_path: Path, text: str):
 def test_the_karaoke_side_marks_the_words_too(tmp_path) -> None:
     lines = _karaoke(tmp_path, "Dus laat maar komen [bg]LIED_R[/bg]\n")
     assert len(lines) == 1
-    assert lines[0].bg is False, "de zin zelf is geen achtergrondzang"
+    assert lines[0].bg is False, "the sentence itself is not background"
     assert lines[0].bg_words == frozenset({4})
     assert lines[0].text == "Dus laat maar komen LIED_R"
 
@@ -79,8 +79,8 @@ def test_a_karaoke_line_that_is_only_background_keeps_its_flag(
 
 
 def test_crowd_and_background_can_share_a_line(tmp_path) -> None:
-    """De woordnummers worden op de uiteindelijke lijst geteld, dus de
-    twee markeringen lopen niet uit elkaar."""
+    """The word numbers are counted on the final list, so the two
+    markings cannot drift apart."""
     lines = _karaoke(tmp_path,
                      "een [crowd]twee[/crowd] drie [bg]vier[/bg]\n")
     assert lines[0].crowd_words == frozenset({1})
@@ -89,8 +89,8 @@ def test_crowd_and_background_can_share_a_line(tmp_path) -> None:
 
 
 def test_the_line_numbers_do_not_shift(tmp_path) -> None:
-    """Het bg-stuk blijft onderdeel van zijn regel, dus een bestaande
-    timing.json blijft geldig."""
+    """The bg piece stays part of its line, so an existing timing.json
+    stays valid."""
     lines = _karaoke(tmp_path,
                      "een\ntwee [bg]bg[/bg]\ndrie\n")
     assert [line.index for line in lines] == [0, 1, 2]
@@ -116,15 +116,15 @@ def test_the_syllables_of_the_piece_are_marked() -> None:
 
 
 def test_the_piece_does_not_decide_where_the_sentence_ends() -> None:
-    """Anders sleept het bg-stuk de hele zin mee zodra het over zijn buur
-    heen wordt gelegd."""
+    """Otherwise the bg piece drags the whole sentence along as soon as
+    it is laid over its neighbour."""
     line = timing.TimedLine(
         index=0, text="een bg", crowd=False,
         syllables=(timing.Syllable("een", 1.0, 2.0),
                    timing.Syllable(" bg", 2.0, 9.0, bg=True)))
     assert line.start == 1.0 and line.end == 2.0
-    # De volledige tijd blijft opvraagbaar: de muziek moet er wel
-    # lang genoeg voor doorlopen.
+    # The full time can still be asked for: the music does have to run
+    # on long enough for it.
     assert line.full_end == 9.0
 
 
@@ -151,8 +151,8 @@ def test_a_line_without_anything_else_is_not_rendered_empty() -> None:
 
 
 def test_the_width_and_the_height_count_without_the_piece() -> None:
-    # B541: het meten zelf staat in ``_measure_line_height``; de naam
-    # ernaast onthoudt alleen de uitkomst voor deze render.
+    # B541: the measuring itself lives in ``_measure_line_height``; the
+    # name beside it only remembers the outcome for this render.
     source = inspect.getsource(video._measure_line_height)
     assert "_sung_syllables(line)" in source
     assert "_sung_syllables(line)" in inspect.getsource(video._rows_of)
@@ -160,8 +160,8 @@ def test_the_width_and_the_height_count_without_the_piece() -> None:
 
 
 def test_the_refit_keeps_its_hands_off_the_piece() -> None:
-    """De auto-fit werkt binnen het venster van de zin en zou de
-    achtergrondzang daar weer in trekken."""
+    """The auto-fit works within the window of the sentence and would
+    pull the background singing back into it."""
     line = timing.TimedLine(
         index=0, text="een bg", crowd=False,
         syllables=(timing.Syllable("een", 1.0, 2.0),
@@ -190,7 +190,7 @@ def test_the_file_carries_the_mark_and_an_older_one_still_reads(
     timing.save_timing([line], path)
     back = timing.load_timing(path)
     assert [s.bg for s in back[0].syllables] == [False, True]
-    # Een bestand van vóór deze versie heeft het veld niet.
+    # A file from before this version does not have the field.
     text = path.read_text(encoding="utf-8").replace('"bg": true', '"bg": false')
     path.write_text(text.replace('"bg": false,', ""), encoding="utf-8")
     assert all(not s.bg for s in timing.load_timing(path)[0].syllables)
@@ -201,10 +201,11 @@ def test_the_file_carries_the_mark_and_an_older_one_still_reads(
 # --------------------------------------------------------------------------
 
 def _source_of(module) -> str:
-    """De broncode van het bestand zelf.
+    """The source code of the file itself.
 
-    Bewust niet via ``inspect.getsource(functie)``: een andere test kan
-    de functie op de module vervangen hebben, en dan lees je die.
+    Deliberately not through ``inspect.getsource(function)``: another
+    test may have replaced the function on the module, and then that is
+    what you read.
     """
     return Path(module.__file__).read_text(encoding="utf-8")
 
@@ -216,8 +217,8 @@ def test_background_words_get_their_own_attempt() -> None:
 
 
 def test_they_still_stay_out_of_the_ordered_matching() -> None:
-    """Ze klinken tegelijk met de hoofdstem en zouden daar de woorden van
-    de hoofdstem inpikken."""
+    """They sound at the same time as the lead voice and would snatch
+    the lead voice's own words away there."""
     source = _source_of(song_text)
     assert "if w.bg or (skip_filler" in source
 
@@ -227,8 +228,8 @@ def test_they_still_stay_out_of_the_ordered_matching() -> None:
 # --------------------------------------------------------------------------
 
 def test_every_sentence_of_the_real_song_keeps_its_lead(tmp_path) -> None:
-    """Twaalf regels van Lied R hadden een achtergrondstaart en vielen
-    daardoor helemaal weg."""
+    """Twelve lines of Lied R had a background tail and fell away
+    completely because of it."""
     text = (
         "I'm not that easy to tame\n"
         "Noon gam-go, ha-na, dool, set [bg]Twee-uh[/bg]\n"
@@ -241,7 +242,7 @@ def test_every_sentence_of_the_real_song_keeps_its_lead(tmp_path) -> None:
         per_line.setdefault(word.line, []).append(word.bg)
     assert len(per_line) == 4
     assert all(any(not bg for bg in flags) for flags in per_line.values()), \
-        "elke regel houdt zijn eigen woorden"
+        "every line keeps its own words"
 
 
 def test_the_original_lane_shows_the_piece_but_does_not_time_it() -> None:
@@ -257,8 +258,8 @@ def test_the_original_lane_shows_the_piece_but_does_not_time_it() -> None:
 # --------------------------------------------------------------------------
 
 def test_the_editor_keeps_the_mark_when_it_saves() -> None:
-    """Eén keer opslaan wiste de markering, en daarna stond het stuk
-    gewoon in de video."""
+    """Saving once wiped the marking, and after that the piece simply
+    stood in the video."""
     from modules import timing_editor
 
     line = timing.TimedLine(
@@ -271,8 +272,8 @@ def test_the_editor_keeps_the_mark_when_it_saves() -> None:
 
 def test_an_empty_output_folder_is_not_a_folder_full_of_orphans(
         tmp_path) -> None:
-    """De app maakt ``output/settings`` zelf aan, dus "de map bestaat"
-    zegt niets."""
+    """The app creates ``output/settings`` itself, so "the folder
+    exists" says nothing."""
     from modules import filesystem
 
     (tmp_path / "input" / "Een Lied").mkdir(parents=True)
@@ -283,33 +284,33 @@ def test_an_empty_output_folder_is_not_a_folder_full_of_orphans(
 
 
 def test_never_all_of_them_at_once(tmp_path) -> None:
-    """Dat álles tegelijk een wees is, is geen opruimklus maar een teken
-    dat er tegen de verkeerde map gemeten wordt."""
+    """EVERYTHING being an orphan at once is not a clean-up job but a
+    sign that the wrong folder is being measured against."""
     from modules import filesystem
 
-    for naam in ("Een", "Twee", "Drie"):
-        (tmp_path / "input" / naam).mkdir(parents=True)
+    for name in ("Een", "Twee", "Drie"):
+        (tmp_path / "input" / name).mkdir(parents=True)
     out = tmp_path / "output"
     (out / "Vier").mkdir(parents=True)
     assert filesystem.prune_orphan_projects(tmp_path, out) == []
     assert len(list((tmp_path / "input").iterdir())) == 3
-    # Eén wees tussen projecten die er wél zijn wordt gewoon opgeruimd.
+    # One orphan among projects that do exist is cleaned up as usual.
     (out / "Een").mkdir()
     (out / "Twee").mkdir()
     assert filesystem.prune_orphan_projects(tmp_path, out) == ["Drie"]
 
 
 def test_a_marker_does_what_it_says_wherever_it_stands(tmp_path) -> None:
-    """Een aangeplakte marker werd apart afgehandeld vóór de lus, en dan
-    werd "Tonight[/bg] my dear" van begin tot eind achtergrondzang."""
+    """A marker stuck to a word was handled separately before the loop,
+    and then "Tonight[/bg] my dear" was background from end to end."""
     words = _lyrics(tmp_path, "[bg]\naaa\nbbb[/bg] ccc\nddd\n")
     assert [(w.text, w.bg) for w in words] == [
         ("aaa", True), ("bbb", True), ("ccc", False), ("ddd", False)]
 
 
 def test_the_two_readers_say_the_same_thing(tmp_path) -> None:
-    """Songtekst en karaoketekst moeten elke schrijfwijze gelijk lezen;
-    ze voeden dezelfde koppeling."""
+    """The lyrics and the karaoke text have to read every spelling the
+    same way; they feed the same coupling."""
     for text in ("een twee [bg]drie[/bg]\n",
                  "[bg]een[/bg] twee drie\n",
                  "een [bg]twee[/bg] drie\n",
@@ -342,13 +343,13 @@ def test_the_energy_timing_leaves_the_piece_where_it_is() -> None:
                    timing.Syllable(" bg", 13.0, 14.0, bg=True)))
     out = timing.distribute_over_windows(line, [(10.0, 11.5), (12.0, 13.0)])
     assert (out.syllables[-1].start, out.syllables[-1].end) == (13.0, 14.0)
-    # En de zin zelf verliest zijn tijd niet aan het stuk.
+    # And the sentence itself does not lose its time to the piece.
     assert out.end <= 13.0
 
 
 def test_the_marking_is_read_back_from_the_text() -> None:
-    """Markers toevoegen aan een liedje dat al getimed is verandert geen
-    letter aan de zin, dus niets merkte het."""
+    """Adding markers to a song that is already timed changes not one
+    letter of the sentence, so nothing noticed it."""
     from modules import pipeline
 
     source = Path(pipeline.__file__).read_text(encoding="utf-8")
@@ -362,9 +363,9 @@ def test_the_marking_is_read_back_from_the_text() -> None:
 
 
 def test_the_sentence_keeps_its_own_words() -> None:
-    """De bg-woorden erbij plakken liet het woordaantal afwijken van de
-    gemeten woordvensters, en dan valt de klemtooneditor terug op
-    gelijkmatig verdelen."""
+    """Sticking the bg words on made the word count differ from the
+    measured word windows, and then the stress editor falls back on
+    spreading everything evenly."""
     from modules import pipeline
 
     source = Path(pipeline.__file__).read_text(encoding="utf-8")
@@ -398,8 +399,8 @@ def test_the_music_runs_long_enough_for_the_piece() -> None:
 
 
 def test_the_mark_is_not_laid_on_a_line_that_no_longer_matches() -> None:
-    """Woordnummers uit de tekst op een timing leggen werkt alleen zolang
-    de twee hetzelfde zeggen; anders verdwijnt er een woord uit beeld."""
+    """Laying word numbers from the text onto a timing only works while
+    the two say the same thing; otherwise a word drops out of sight."""
     lines = (timing.TimedLine(
         index=0, text="een bg", crowd=False,
         syllables=(timing.Syllable("een", 0.0, 1.0),
@@ -414,8 +415,8 @@ def test_the_mark_is_not_laid_on_a_line_that_no_longer_matches() -> None:
 
 
 def test_the_phonetic_step_keeps_the_mark() -> None:
-    """Die stap draait op élke verse timing, dus zonder dit stond er in
-    geen enkel bestand een markering."""
+    """That step runs on EVERY fresh timing, so without this there was
+    no marking in any file at all."""
     source = Path(timing.__file__).read_text(encoding="utf-8")
     assert "achtergrond = any(s.bg for s in group)" in source
     assert source.count("crowd=crowd, bg=achtergrond)") == 2

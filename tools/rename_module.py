@@ -1,18 +1,18 @@
-"""Scope-bewust hernoemen van modulenamen (B299, fase 1).
+"""Scope-aware renaming of module names (B299, phase 1).
 
-Waarom niet zoek-en-vervang: `analyse` is in deze codebase tegelijk een
-module (`from . import analyse`), een config-sectie
-(`context.config.analyse.min_confidence`) en een prefix van opgeslagen
-stapnamen (`"analysis_original"`). Alleen de eerste mag hernoemd worden.
+Why not search-and-replace: `analyse` is in this codebase at once a
+module (`from . import analyse`), a config section
+(`context.config.analyse.min_confidence`) and a prefix of stored step
+names (`"analysis_original"`). Only the first may be renamed.
 
-Deze tool gebruikt de AST om precies te bepalen wat wat is:
-- `ast.Name` met id == oude naam  -> een verwijzing naar de module (hernoemen)
-- `ast.Attribute` met attr == oude naam -> een attribuut van iets anders
-  (bv. `config.analyse`) -> NIET aanraken
-- stringliteralen -> NIET aanraken
-- import-statements -> apart afgehandeld
+This tool uses the AST to work out exactly what is what:
+- `ast.Name` with id == old name -> a reference to the module (rename)
+- `ast.Attribute` with attr == old name -> an attribute of something
+  else (e.g. `config.analyse`) -> DO NOT touch
+- string literals -> DO NOT touch
+- import statements -> handled separately
 
-Bewerkingen gaan van achter naar voren zodat eerdere posities geldig blijven.
+Edits run from back to front so that earlier positions stay valid.
 """
 from __future__ import annotations
 
@@ -29,36 +29,37 @@ def _line_offsets(source: str) -> list[int]:
     return offsets
 
 
-def bewerkingen_voor(source: str, old: str) -> list[tuple[int, int]]:
-    """Geef (start, eind)-byteposities van elke te hernoemen naam."""
-    boom = ast.parse(source)
+def edits_for(source: str, old: str) -> list[tuple[int, int]]:
+    """Return the (start, end) byte positions of every name to rename."""
+    tree = ast.parse(source)
     offsets = _line_offsets(source)
     points: list[tuple[int, int]] = []
 
-    def pos(node, veld_lineno, veld_col, length):
-        start = offsets[veld_lineno - 1] + veld_col
+    def pos(node, line, col, length):
+        start = offsets[line - 1] + col
         return (start, start + length)
 
-    for node in ast.walk(boom):
+    for node in ast.walk(tree):
         # `from . import songtekst`  /  `from . import songtekst as x`
         if isinstance(node, ast.ImportFrom) and node.module is None:
             for alias in node.names:
                 if alias.name == old:
-                    # zoek de naam binnen de regel(s) van dit statement
-                    startregel = node.lineno - 1
-                    eindregel = getattr(node, "end_lineno", node.lineno)
-                    block_start = offsets[startregel]
-                    block_end = offsets[eindregel]
+                    # find the name inside the line(s) of this statement
+                    start_line = node.lineno - 1
+                    end_line = getattr(node, "end_lineno", node.lineno)
+                    block_start = offsets[start_line]
+                    block_end = offsets[end_line]
                     block = source[block_start:block_end]
                     idx = 0
                     while True:
                         idx = block.find(old, idx)
                         if idx < 0:
                             break
-                        voor = block[idx - 1] if idx else " "
-                        na = block[idx + len(old)] if idx + len(old) < len(block) else " "
-                        if not (voor.isalnum() or voor == "_") and \
-                           not (na.isalnum() or na == "_"):
+                        before = block[idx - 1] if idx else " "
+                        after = (block[idx + len(old)]
+                                 if idx + len(old) < len(block) else " ")
+                        if not (before.isalnum() or before == "_") and \
+                           not (after.isalnum() or after == "_"):
                             points.append((block_start + idx,
                                            block_start + idx + len(old)))
                             break
@@ -67,10 +68,10 @@ def bewerkingen_voor(source: str, old: str) -> list[tuple[int, int]]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             parts = node.module.split(".")
             if old in parts or any(a.name == old for a in node.names):
-                startregel = node.lineno - 1
-                block_start = offsets[startregel]
-                eindregel = getattr(node, "end_lineno", node.lineno)
-                block = source[block_start:offsets[eindregel]]
+                start_line = node.lineno - 1
+                block_start = offsets[start_line]
+                end_line = getattr(node, "end_lineno", node.lineno)
+                block = source[block_start:offsets[end_line]]
                 idx = block.find(old)
                 if idx >= 0:
                     points.append((block_start + idx, block_start + idx + len(old)))
@@ -85,7 +86,7 @@ def bewerkingen_voor(source: str, old: str) -> list[tuple[int, int]]:
                     if idx >= 0:
                         points.append((block_start + idx,
                                        block_start + idx + len(old)))
-        # gewone verwijzing: songtekst.foo  ->  Name(id='songtekst')
+        # ordinary reference: songtekst.foo -> Name(id='songtekst')
         elif isinstance(node, ast.Name) and node.id == old \
                 and isinstance(node.ctx, ast.Load):
             points.append(pos(node, node.lineno, node.col_offset, len(old)))
@@ -93,16 +94,16 @@ def bewerkingen_voor(source: str, old: str) -> list[tuple[int, int]]:
     return sorted(set(points), reverse=True)
 
 
-def hernoem_in_bestand(path: pathlib.Path, mapping: dict[str, str]) -> int:
+def rename_in_file(path: pathlib.Path, mapping: dict[str, str]) -> int:
     source = path.read_text(encoding="utf-8")
     original = source
     for old, new in mapping.items():
         if old not in source:
             continue
         try:
-            points = bewerkingen_voor(source, old)
+            points = edits_for(source, old)
         except SyntaxError as exc:
-            print(f"  !! syntaxfout in {path}: {exc}")
+            print(f"  !! syntax error in {path}: {exc}")
             return 0
         for start, end in points:
             source = source[:start] + new + source[end:]
@@ -113,8 +114,8 @@ def hernoem_in_bestand(path: pathlib.Path, mapping: dict[str, str]) -> int:
 
 
 def main() -> None:
-    wortel = pathlib.Path(sys.argv[1])
-    # mapping oud -> nieuw
+    root = pathlib.Path(sys.argv[1])
+    # mapping old -> new
     MAPPING = {
         "lyrics": "song_text",
         "karaoketekst": "karaoke_text",
@@ -131,11 +132,11 @@ def main() -> None:
         "klemtooneditor": "stress_editor",
     }
     changed = 0
-    for path in sorted(wortel.rglob("*.py")):
+    for path in sorted(root.rglob("*.py")):
         if "__pycache__" in str(path):
             continue
-        changed += hernoem_in_bestand(path, MAPPING)
-    print(f"bestanden aangepast: {changed}")
+        changed += rename_in_file(path, MAPPING)
+    print(f"files changed: {changed}")
 
 
 if __name__ == "__main__":

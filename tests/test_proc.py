@@ -1,4 +1,4 @@
-"""Tests voor modules.proc (vensterloos starten van subprocessen, B89)."""
+"""Tests for modules.proc (starting subprocesses windowless, B89)."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ import subprocess
 from modules import proc
 
 
-def test_no_window_kwargs_leeg_op_niet_windows(monkeypatch) -> None:
-    """Op niet-Windows geeft de helper een lege dict (ongewijzigd gedrag)."""
+def test_no_window_kwargs_empty_off_windows(monkeypatch) -> None:
+    """Off Windows the helper returns an empty dict (unchanged behaviour)."""
     monkeypatch.setattr(proc.sys, "platform", "linux")
     assert proc.no_window_kwargs() == {}
 
 
-def test_no_window_kwargs_zet_vlag_op_windows(monkeypatch) -> None:
-    """Op Windows staat de CREATE_NO_WINDOW-vlag + verborgen STARTUPINFO erin."""
+def test_no_window_kwargs_sets_the_flag_on_windows(monkeypatch) -> None:
+    """On Windows: the CREATE_NO_WINDOW flag + a hidden STARTUPINFO."""
     monkeypatch.setattr(proc.sys, "platform", "win32")
-    # STARTUPINFO/vlaggen bestaan alleen echt op Windows; simuleer ze.
+    # STARTUPINFO and the flags only truly exist on Windows; simulate them.
     monkeypatch.setattr(subprocess, "STARTUPINFO", lambda: type(
         "S", (), {"dwFlags": 0, "wShowWindow": 0})(), raising=False)
     monkeypatch.setattr(subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
@@ -27,8 +27,8 @@ def test_no_window_kwargs_zet_vlag_op_windows(monkeypatch) -> None:
     assert "startupinfo" in kwargs
 
 
-def test_windowless_python_kiest_pythonw(monkeypatch, tmp_path) -> None:
-    """Op Windows wordt python.exe vervangen door pythonw.exe indien aanwezig."""
+def test_windowless_python_picks_pythonw(monkeypatch, tmp_path) -> None:
+    """On Windows python.exe is replaced by pythonw.exe when present."""
     python = tmp_path / "python.exe"
     python.write_text("")
     (tmp_path / "pythonw.exe").write_text("")
@@ -37,9 +37,9 @@ def test_windowless_python_kiest_pythonw(monkeypatch, tmp_path) -> None:
     assert proc.windowless_python().endswith("pythonw.exe")
 
 
-def test_windowless_python_terugval_zonder_pythonw(monkeypatch,
-                                                   tmp_path) -> None:
-    """Zonder pythonw.exe valt het terug op de gewone interpreter."""
+def test_windowless_python_falls_back_without_pythonw(monkeypatch,
+                                                      tmp_path) -> None:
+    """Without pythonw.exe it falls back to the ordinary interpreter."""
     python = tmp_path / "python.exe"
     python.write_text("")
     monkeypatch.setattr(proc.sys, "platform", "win32")
@@ -47,26 +47,26 @@ def test_windowless_python_terugval_zonder_pythonw(monkeypatch,
     assert proc.windowless_python() == str(python)
 
 
-def test_windowless_python_ongewijzigd_op_niet_windows(monkeypatch) -> None:
-    """Op niet-Windows blijft sys.executable ongewijzigd."""
+def test_windowless_python_unchanged_off_windows(monkeypatch) -> None:
+    """Off Windows sys.executable stays unchanged."""
     monkeypatch.setattr(proc.sys, "platform", "linux")
     monkeypatch.setattr(proc.sys, "executable", "/usr/bin/python3")
     assert proc.windowless_python() == "/usr/bin/python3"
 
 
-def test_ffmpeg_loopt_door_de_ene_deur(monkeypatch) -> None:
-    """ffmpeg._run gaat via proc.run (B89/B356).
+def test_ffmpeg_goes_through_the_one_door(monkeypatch) -> None:
+    """ffmpeg._run goes through proc.run (B89/B356).
 
-    Sinds B356 is proc.run de enige plek waar een extern programma
-    start: daar worden de no-window-kwargs gezet EN wordt het proces
-    geregistreerd, zodat Stop het kan afschieten.
+    Since B356 proc.run is the only place where an external program
+    starts: that is where the no-window kwargs are set AND where the
+    process is registered, so that Stop can kill it.
     """
     from modules import ffmpeg
 
-    gezien: dict = {}
+    seen: dict = {}
 
-    def nep_run(command, **kwargs):
-        gezien["command"] = list(command)
+    def fake_run(command, **kwargs):
+        seen["command"] = list(command)
 
         class _R:
             returncode = 0
@@ -74,65 +74,65 @@ def test_ffmpeg_loopt_door_de_ene_deur(monkeypatch) -> None:
             stderr = ""
         return _R()
 
-    monkeypatch.setattr(ffmpeg.proc, "run", nep_run)
+    monkeypatch.setattr(ffmpeg.proc, "run", fake_run)
     ffmpeg._run(["ffprobe", "-version"])
-    assert gezien["command"] == ["ffprobe", "-version"]
+    assert seen["command"] == ["ffprobe", "-version"]
 
 
-def test_proc_run_verbergt_het_venster_en_registreert(monkeypatch) -> None:
-    """De ene deur zet de vlaggen en houdt bij wat er loopt (B89/B356)."""
+def test_proc_run_hides_the_window_and_registers(monkeypatch) -> None:
+    """The one door sets the flags and tracks what runs (B89/B356)."""
     from modules import proc
 
-    gezien: dict = {}
+    seen: dict = {}
 
-    class _Proces:
+    class _Process:
         returncode = 0
 
         def communicate(self, timeout=None):
-            gezien["draaide"] = list(proc._RUNNING)
+            seen["was_running"] = list(proc._RUNNING)
             return ("", "")
 
-    def nep_popen(command, **kwargs):
-        gezien["kwargs"] = kwargs
-        return _Proces()
+    def fake_popen(command, **kwargs):
+        seen["kwargs"] = kwargs
+        return _Process()
 
-    monkeypatch.setattr(proc.subprocess, "Popen", nep_popen)
+    monkeypatch.setattr(proc.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(proc, "no_window_kwargs",
                         lambda: {"creationflags": 0x08000000})
     proc.run(["ffprobe", "-version"])
-    assert gezien["kwargs"].get("creationflags") == 0x08000000
-    assert len(gezien["draaide"]) == 1          # stond geregistreerd
-    assert not proc._RUNNING                    # en is weer opgeruimd
+    assert seen["kwargs"].get("creationflags") == 0x08000000
+    assert len(seen["was_running"]) == 1        # it was registered
+    assert not proc._RUNNING                    # and cleaned up again
 
 
-def test_terminate_all_schiet_af_wat_er_loopt(monkeypatch) -> None:
-    """Stop moet Demucs echt kunnen stoppen (B356)."""
+def test_terminate_all_kills_what_is_running(monkeypatch) -> None:
+    """Stop has to be able to really stop Demucs (B356)."""
     from modules import proc
 
-    gedood = []
+    killed = []
 
-    class _Proces:
+    class _Process:
         def kill(self):
-            gedood.append(self)
+            killed.append(self)
 
-    proces = _Proces()
-    proc._RUNNING.add(proces)
+    process = _Process()
+    proc._RUNNING.add(process)
     try:
         assert proc.terminate_all() == 1
-        assert gedood == [proces]
+        assert killed == [process]
     finally:
-        proc._RUNNING.discard(proces)
+        proc._RUNNING.discard(process)
 
 
-def test_scheiding_gebruikt_vensterloze_interpreter(monkeypatch,
+def test_separation_uses_the_windowless_interpreter(monkeypatch,
                                                     tmp_path) -> None:
-    """Demucs start met de vensterloze interpreter via proc.run (B89/B356)."""
+    """B89/B356: Demucs starts with the windowless interpreter."""
     from modules import separation
 
-    gezien: dict = {}
+    seen: dict = {}
 
-    def nep_run(command, **kwargs):
-        gezien["command"] = list(command)
+    def fake_run(command, **kwargs):
+        seen["command"] = list(command)
 
         class _R:
             returncode = 0
@@ -143,38 +143,38 @@ def test_scheiding_gebruikt_vensterloze_interpreter(monkeypatch,
     monkeypatch.setattr(separation, "is_available", lambda: True)
     monkeypatch.setattr(separation.proc, "windowless_python",
                         lambda: "pythonw.exe")
-    monkeypatch.setattr(separation.proc, "run", nep_run)
-    # Zonder echte stems geeft separate een SeparationError ná de aanroep.
+    monkeypatch.setattr(separation.proc, "run", fake_run)
+    # Without real stems separate raises a SeparationError after the call.
     try:
         separation.separate(tmp_path / "in.wav", tmp_path / "werk")
     except separation.SeparationError:
         pass
-    assert gezien["command"][0] == "pythonw.exe"
+    assert seen["command"][0] == "pythonw.exe"
 
 
-def test_geen_kale_subprocess_aanroepen() -> None:
-    """Alles hoort door de ene deur (B356).
+def test_no_bare_subprocess_calls() -> None:
+    """Everything belongs through the one door (B356).
 
-    Een kale ``subprocess.run`` doet twee dingen fout: op Windows
-    knippert er een cmd-venster, en het proces luistert niet naar Stop.
-    Precies zo ontstonden de pop-ups bij 1.5.7 en de trage Stop.
+    A bare ``subprocess.run`` gets two things wrong: on Windows a cmd
+    window flashes, and the process does not listen to Stop. That is
+    exactly how the pop-ups at 1.5.7 and the slow Stop came about.
     """
     import re
     from pathlib import Path
 
-    wortel = Path(__file__).resolve().parents[1]
-    fouten = []
-    for map_ in ("modules", "tools"):
-        for pad in sorted((wortel / map_).glob("*.py")):
-            if pad.name == "proc.py":
-                continue          # dat IS de deur
-            tekst = pad.read_text(encoding="utf-8")
-            for treffer in re.finditer(r"subprocess\.(run|Popen|check_output)\s*\(",
-                                       tekst):
-                regel = tekst[:treffer.start()].count("\n") + 1
-                staart = tekst[treffer.start():treffer.start() + 400]
-                if "no_window_kwargs" in staart:
-                    continue      # mag: zet de vlaggen zelf
-                fouten.append(f"{pad.name}:{regel}")
-    assert not fouten, ("kale subprocess-aanroep (moet via proc.run): "
-                        + ", ".join(fouten))
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for folder in ("modules", "tools"):
+        for path in sorted((root / folder).glob("*.py")):
+            if path.name == "proc.py":
+                continue          # that one IS the door
+            text = path.read_text(encoding="utf-8")
+            for hit in re.finditer(r"subprocess\.(run|Popen|check_output)\s*\(",
+                                   text):
+                line = text[:hit.start()].count("\n") + 1
+                tail = text[hit.start():hit.start() + 400]
+                if "no_window_kwargs" in tail:
+                    continue      # allowed: sets the flags itself
+                offenders.append(f"{path.name}:{line}")
+    assert not offenders, ("bare subprocess call (has to go through "
+                           "proc.run): " + ", ".join(offenders))

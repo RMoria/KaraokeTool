@@ -1,13 +1,13 @@
-"""Woordenboek voor B299 fase 2: Nederlandse identifiers naar Engels.
+"""Dictionary for B299 phase 2: Dutch identifiers into English.
 
-Werkwijze: een identifier wordt alleen hernoemd als hij VOLLEDIG uiteenvalt
-in bekende delen (NL_WOORD of EN_BEHOUD) en er minstens één Nederlands deel
-in zit. Onbekende delen -> niet aanraken en apart rapporteren. Zo kan er
-nooit iets half of verkeerd hernoemd worden.
+How it works: an identifier is renamed only when it falls apart
+COMPLETELY into known parts (NL_WOORD or EN_BEHOUD) and at least one
+Dutch part is in it. Unknown parts -> leave alone and report
+separately. That way nothing can ever be renamed halfway or wrongly.
 """
 
-#: Nederlands -> Engels. Alleen ondubbelzinnige woorden; twijfelgevallen
-#: staan bewust NIET in deze tabel en komen in de rapportage terecht.
+#: Dutch -> English. Unambiguous words only; doubtful cases are
+#: deliberately NOT in this table and end up in the report.
 NL_WOORD = {
     "woord": "word", "words": "words", "woordje": "word",
     "text": "text", "teksten": "texts",
@@ -27,14 +27,14 @@ NL_WOORD = {
     "naam": "name", "namen": "names",
     "path": "path", "paden": "paths",
     "file": "file", "bestanden": "files",
-    # LET OP (B303): "map" staat hier NIET meer in. Het Nederlandse "map"
-    # is tegelijk Pythons ingebouwde functie ``map()``, en een hernoeming
-    # ervan maakte van ``', '.join(map(str, ...))`` stilletjes
-    # ``', '.join(dir(str, ...))`` - een crash in een GUI-pad dat geen test
-    # raakte. Een bronwoord dat samenvalt met een ingebouwde naam mag nooit
-    # in deze tabel; ``tests/test_v0961.py`` dwingt dat af. Mapnamen komen
-    # in de praktijk toch altijd als samenstelling voor (``uitvoermap`` ->
-    # ``output_dir``), en die worden gewoon herkend.
+    # WATCH OUT (B303): "map" is no longer in here. The Dutch "map" is
+    # at the same time Python's built-in ``map()``, and renaming it
+    # silently turned ``', '.join(map(str, ...))`` into
+    # ``', '.join(dir(str, ...))`` - a crash in a GUI path that no test
+    # touched. A source word that coincides with a built-in name may
+    # never be in this table; ``tests/test_v0961.py`` enforces that. In
+    # practice folder names always turn up as a compound anyway
+    # (``uitvoermap`` -> ``output_dir``), and those are recognised fine.
     "mappen": "dirs",
     "stap": "step", "steps": "steps",
     "keuze": "choice", "keuzes": "choices",
@@ -152,8 +152,8 @@ NL_WOORD = {
     "toestand": "state", "soort": "kind", "soorten": "kinds",
 }
 
-#: Engelse (of taalneutrale) delen die in een samengestelde naam mogen
-#: staan en ongemoeid blijven.
+#: English (or language-neutral) parts that may stand in a compound
+#: name and are left untouched.
 EN_BEHOUD = {
     "karaoke", "segment", "segments", "wav", "mp3", "track", "tracks",
     "index", "indices", "start", "end", "sim", "id", "ids", "db", "ms",

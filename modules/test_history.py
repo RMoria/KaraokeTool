@@ -1,4 +1,4 @@
-"""Measurement history per action, project and version (B362, TIJDELIJK).
+"""Measurement history per action, project and version (B362, TEMPORARY).
 
 Without bookkeeping every test run measures everything again, including
 the eleven projects that have not changed at all since the previous
@@ -24,8 +24,8 @@ he said that with new data or model additions it does have to be redone.
 The switched-off models are part of that fingerprint too (B361): the
 same code with B213 off is a different measurement.
 
-TIJDELIJK: hoort bij het testpaneel. Zie ``docs/doorontwikkeling.md``,
-paragraaf "Voor publicatie beslissen".
+TEMPORARY: this belongs to the test panel. See
+``docs/development_log.md``, section "Decide before release".
 """
 from __future__ import annotations
 

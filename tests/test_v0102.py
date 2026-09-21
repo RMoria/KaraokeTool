@@ -1,17 +1,17 @@
-"""Tests voor v0.102.0: B329 tot en met B333.
+"""Tests for v0.102.0: B329 up to and including B333.
 
-Van groot naar klein. De zinsstructuur wordt eerst goed gezet, daarna
-pas verfijnd op woord- en lettergreepniveau.
+From large to small. The sentence structure is put right first, and only
+then refined at word and syllable level.
 
-B329 - een herhaalde zin is overal ongeveer even lang; een exemplaar dat
-       daar ver vanaf zit is geen aangehouden zin maar een fout.
-B330 - een geschat regelbegin gaat naar de zanginzet waar hij bij hoort.
-B331 - twee losse roepjes vlak na elkaar zijn twee inzetten, geen één
-       samengesmolten venster.
-B332 - de fraseperiode is de eenheid van het zinsniveau: als ankertoets
-       en als verdeling tussen twee ankers.
-B333 - een gemeten regelbegin wint van de minimumduur van de regel
-       ervoor; anders stapelen die duwtjes op over het hele lied.
+B329 - a repeated sentence is about equally long everywhere; a copy that
+       sits far away from that is not a held sentence but a mistake.
+B330 - an estimated line start moves to the vocal onset it belongs to.
+B331 - two separate shouts close after each other are two onsets, not
+       one merged window.
+B332 - the phrase period is the unit of the sentence level: as an anchor
+       check, and as the division between two anchors.
+B333 - a measured line start wins from the minimum duration of the line
+       before it; otherwise those nudges stack up over the whole song.
 """
 from __future__ import annotations
 
@@ -26,355 +26,359 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from modules import timing as T  # noqa: E402
 from modules.timing import Syllable, TimedLine  # noqa: E402
 
-PERIODE = 3.6
+PERIOD = 3.6
 
 
-def regel(index: int, tekst: str, start: float, eind: float,
-          kwaliteit: str = "high", lettergrepen: int = 6,
-          crowd: bool = False) -> TimedLine:
-    stap = (eind - start) / max(1, lettergrepen)
+def line(index: int, text: str, start: float, end: float,
+         quality: str = "high", syllable_count: int = 6,
+         crowd: bool = False) -> TimedLine:
+    step = (end - start) / max(1, syllable_count)
     return TimedLine(
-        index=index, text=tekst, crowd=crowd,
-        syllables=tuple(Syllable(text=f"s{i}", start=start + i * stap,
-                                 end=start + (i + 1) * stap)
-                        for i in range(lettergrepen)),
-        quality=kwaliteit, block=0)
+        index=index, text=text, crowd=crowd,
+        syllables=tuple(Syllable(text=f"s{i}", start=start + i * step,
+                                 end=start + (i + 1) * step)
+                        for i in range(syllable_count)),
+        quality=quality, block=0)
 
 
-def strak_lied(n: int = 12, periode: float = PERIODE) -> list[TimedLine]:
-    """Een lied dat netjes elke ``periode`` een nieuwe regel begint."""
-    return [regel(i, f"Regel {i % 3}", 10.0 + i * periode,
-                  10.0 + i * periode + periode * 0.9)
+def steady_song(n: int = 12, period: float = PERIOD) -> list[TimedLine]:
+    """A song that neatly starts a new line every ``period``."""
+    return [line(i, f"Regel {i % 3}", 10.0 + i * period,
+                 10.0 + i * period + period * 0.9)
             for i in range(n)]
 
 
 # --------------------------------------------------------------------------
-# B332: de fraseperiode meten
+# B332: measuring the phrase period
 # --------------------------------------------------------------------------
 
-def test_periode_van_een_strak_lied() -> None:
-    gemeten = T.phrase_period(strak_lied())
-    assert gemeten is not None
-    assert math.isclose(gemeten, PERIODE, abs_tol=0.05)
+def test_the_period_of_a_steady_song() -> None:
+    measured = T.phrase_period(steady_song())
+    assert measured is not None
+    assert math.isclose(measured, PERIOD, abs_tol=0.05)
 
 
-def test_grillig_lied_levert_geen_periode() -> None:
-    """Bij een lied met tussenwerpsels tussen de volle regels is de
-    afstand niet meetbaar (gemeten: Lied N 50%). Dan zet het hele
-    mechanisme zichzelf uit en blijft alles bij het oude."""
-    regels = []
+def test_an_erratic_song_yields_no_period() -> None:
+    """In a song with interjections between the full lines the spacing
+    cannot be measured (measured: Lied N 50%). The whole mechanism
+    then switches itself off and everything stays as it was."""
+    lines = []
     t = 10.0
-    for i, gat in enumerate([3.6, 0.9, 4.8, 1.1, 3.4, 0.8, 5.2, 1.3, 3.9]):
-        regels.append(regel(i, f"Regel {i}", t, t + gat * 0.8))
-        t += gat
-    assert T.phrase_period(regels) is None
+    for i, gap in enumerate([3.6, 0.9, 4.8, 1.1, 3.4, 0.8, 5.2, 1.3, 3.9]):
+        lines.append(line(i, f"Regel {i}", t, t + gap * 0.8))
+        t += gap
+    assert T.phrase_period(lines) is None
 
 
-def test_te_weinig_betrouwbare_regels_levert_geen_periode() -> None:
-    regels = strak_lied(4)
+def test_too_few_reliable_lines_yield_no_period() -> None:
+    lines = steady_song(4)
     for i in (1, 2):
-        regels[i] = regel(i, regels[i].text, regels[i].start, regels[i].end,
-                          kwaliteit="sentence")
-    assert T.phrase_period(regels) is None
+        lines[i] = line(i, lines[i].text, lines[i].start, lines[i].end,
+                        quality="sentence")
+    assert T.phrase_period(lines) is None
 
 
-def test_crowdregels_tellen_mee_bij_het_meten() -> None:
-    """In een parodie is een crowd-regel vaak een volwaardige frase. Ze
-    eruit filteren maakte de meting slechter (gemeten: MAD 6% -> 50%)."""
-    regels = strak_lied()
-    regels = [regel(r.index, r.text, r.start, r.end, crowd=(r.index % 2 == 0))
-              for r in regels]
-    assert T.phrase_period(regels) is not None
-
-
-# --------------------------------------------------------------------------
-# B329: de duur van gelijke zinnen
-# --------------------------------------------------------------------------
-
-def test_referentie_alleen_uit_gemeten_exemplaren() -> None:
-    """Een schatting als referentie bevestigt zijn eigen fout."""
-    regels = [regel(0, "Refrein", 10.0, 13.6),
-              regel(1, "Refrein", 20.0, 23.6),
-              regel(2, "Refrein", 30.0, 33.6),
-              regel(3, "Refrein", 40.0, 49.0, kwaliteit="sentence")]
-    ref = T.reference_durations(regels)
-    mediaan, _spreiding = ref["refrein"]
-    assert math.isclose(mediaan, 3.6, abs_tol=0.05)
-
-
-def test_te_grillige_tekst_levert_geen_referentie() -> None:
-    """Een haak die soms wordt aangehouden en soms geroepen ("Sunday
-    Bloody Sunday": 0,10 tot 8,50 s) geeft geen bruikbare mediaan."""
-    duren = [0.6, 4.1, 1.2, 5.3, 0.9]
-    regels = [regel(i, "Haak", 10.0 + i * 12, 10.0 + i * 12 + d)
-              for i, d in enumerate(duren)]
-    assert "haak" not in T.reference_durations(regels)
-
-
-def test_minder_dan_drie_keer_telt_niet() -> None:
-    regels = [regel(0, "Eenmalig", 10.0, 13.6),
-              regel(1, "Eenmalig", 20.0, 23.6)]
-    assert T.reference_durations(regels) == {}
+def test_crowd_lines_count_along_in_the_measurement() -> None:
+    """In a parody a crowd line is often a full phrase in its own right.
+    Filtering them out made the measurement worse (measured: MAD 6% ->
+    50%)."""
+    lines = steady_song()
+    lines = [line(ln.index, ln.text, ln.start, ln.end,
+                  crowd=(ln.index % 2 == 0))
+             for ln in lines]
+    assert T.phrase_period(lines) is not None
 
 
 # --------------------------------------------------------------------------
-# B329/B332: welke ankers zijn onmogelijk?
+# B329: the duration of identical sentences
 # --------------------------------------------------------------------------
 
-def test_dubbele_lengte_wordt_aangewezen() -> None:
-    """Het gemeten geval: "E viva Espagna" van 7,66 s tegen een mediaan
-    van 3,60 - 2,13x. Die ene zin verklaarde 8,8 s van de 9,4 s
-    verschuiving die daarna in het hele staartstuk zat."""
-    regels = strak_lied()
-    regels[6] = regel(6, regels[6].text, regels[6].start,
-                      regels[6].start + 7.66)
-    periode = T.phrase_period(regels)
-    verdacht = T.implausible_and_overlong(regels, periode,
-                                     T.reference_durations(regels))[0]
-    assert 6 in verdacht
+def test_the_reference_comes_from_measured_copies_only() -> None:
+    """An estimate used as a reference confirms its own mistake."""
+    lines = [line(0, "Refrein", 10.0, 13.6),
+             line(1, "Refrein", 20.0, 23.6),
+             line(2, "Refrein", 30.0, 33.6),
+             line(3, "Refrein", 40.0, 49.0, quality="sentence")]
+    ref = T.reference_durations(lines)
+    median, _spread = ref["refrein"]
+    assert math.isclose(median, 3.6, abs_tol=0.05)
 
 
-def test_platgeslagen_zin_wordt_aangewezen() -> None:
-    """De andere kant: zinnen van 0,02 en 0,90 s aan het eind, omdat
-    alles ervoor te laat stond."""
-    regels = strak_lied()
-    regels[9] = regel(9, regels[9].text, regels[9].start,
-                      regels[9].start + 0.02)
-    verdacht = T.implausible_and_overlong(regels, T.phrase_period(regels),
-                                     T.reference_durations(regels))[0]
-    assert 9 in verdacht
+def test_a_too_erratic_text_yields_no_reference() -> None:
+    """A hook that is sometimes held and sometimes shouted ("Sunday
+    Bloody Sunday": 0.10 up to 8.50 s) gives no usable median."""
+    durations = [0.6, 4.1, 1.2, 5.3, 0.9]
+    lines = [line(i, "Haak", 10.0 + i * 12, 10.0 + i * 12 + d)
+             for i, d in enumerate(durations)]
+    assert "haak" not in T.reference_durations(lines)
 
 
-def test_korte_maar_echte_regel_blijft_staan() -> None:
-    """Een lied heeft ook regels die een halve frase duren ("Rood
-    Witte Zangers", 1,42 s bij een periode van 3,72). Die mogen niet
-    sneuvelen: het losmaken kostte daar 2,27 s verschuiving."""
-    regels = strak_lied(periode=3.72)
-    regels[5] = regel(5, "Korte tag", regels[5].start,
-                      regels[5].start + 1.42)
-    verdacht = T.implausible_and_overlong(regels, T.phrase_period(regels),
-                                     T.reference_durations(regels))[0]
-    assert 5 not in verdacht
-
-
-def test_meer_dan_de_helft_verdacht_betekent_niets_doen() -> None:
-    """Is bijna alles verdacht, dan klopt de referentie niet en niet het
-    lied. Dan blijft de timing zoals hij was."""
-    regels = [regel(i, "Regel", 10.0 + i * 3.6,
-                    10.0 + i * 3.6 + (3.4 if i in (0, 1, 2, 3) else 0.1))
-              for i in range(10)]
-    verdacht = T.implausible_and_overlong(regels, 3.6,
-                                     T.reference_durations(regels))[0]
-    assert verdacht == set(), "zes van de tien is te veel om te vertrouwen"
-
-
-def test_zonder_periode_werkt_de_duurtoets_nog() -> None:
-    """De twee toetsen vangen verschillende dingen. Zonder meetbare
-    periode blijft de referentieduur over."""
-    regels = [regel(0, "Refrein", 10.0, 13.6),
-              regel(1, "Refrein", 25.0, 28.6),
-              regel(2, "Refrein", 44.0, 47.6),
-              regel(3, "Refrein", 60.0, 69.0)]
-    verdacht = T.implausible_and_overlong(regels, None,
-                                     T.reference_durations(regels))[0]
-    assert verdacht == {3}
+def test_fewer_than_three_times_does_not_count() -> None:
+    lines = [line(0, "Eenmalig", 10.0, 13.6),
+             line(1, "Eenmalig", 20.0, 23.6)]
+    assert T.reference_durations(lines) == {}
 
 
 # --------------------------------------------------------------------------
-# B332: de verdeling tussen twee ankers
+# B329/B332: which anchors are impossible?
 # --------------------------------------------------------------------------
 
-def test_verdeling_per_frase_in_plaats_van_per_lettergreep() -> None:
-    """Tussen twee ankers krijgt elke regel een eigen frase. Een regel
-    van vier lettergrepen krijgt dus niet een kwart van de tijd van een
-    regel van zestien."""
-    regels = strak_lied(10)
-    # regels 4..6 zijn geschat en verschillen sterk in lengte
+def test_a_double_length_is_pointed_out() -> None:
+    """The measured case: "E viva Espagna" at 7.66 s against a median of
+    3.60 - 2.13x. That single sentence accounted for 8.8 s of the 9.4 s
+    of drift that sat in the whole tail after it."""
+    lines = steady_song()
+    lines[6] = line(6, lines[6].text, lines[6].start,
+                    lines[6].start + 7.66)
+    period = T.phrase_period(lines)
+    suspect = T.implausible_and_overlong(lines, period,
+                                     T.reference_durations(lines))[0]
+    assert 6 in suspect
+
+
+def test_a_flattened_sentence_is_pointed_out() -> None:
+    """The other side: sentences of 0.02 and 0.90 s at the end, because
+    everything before them stood too late."""
+    lines = steady_song()
+    lines[9] = line(9, lines[9].text, lines[9].start,
+                    lines[9].start + 0.02)
+    suspect = T.implausible_and_overlong(lines, T.phrase_period(lines),
+                                     T.reference_durations(lines))[0]
+    assert 9 in suspect
+
+
+def test_a_short_but_real_line_is_left_standing() -> None:
+    """A song also has lines that last half a phrase ("Rood Witte
+    Zangers", 1.42 s at a period of 3.72). Those must not fall: cutting
+    them loose cost 2.27 s of drift there."""
+    lines = steady_song(period=3.72)
+    lines[5] = line(5, "Korte tag", lines[5].start,
+                    lines[5].start + 1.42)
+    suspect = T.implausible_and_overlong(lines, T.phrase_period(lines),
+                                     T.reference_durations(lines))[0]
+    assert 5 not in suspect
+
+
+def test_more_than_half_suspect_means_doing_nothing() -> None:
+    """If nearly everything is suspect, then the reference is wrong and
+    not the song. The timing then stays as it was."""
+    lines = [line(i, "Regel", 10.0 + i * 3.6,
+                  10.0 + i * 3.6 + (3.4 if i in (0, 1, 2, 3) else 0.1))
+             for i in range(10)]
+    suspect = T.implausible_and_overlong(lines, 3.6,
+                                     T.reference_durations(lines))[0]
+    assert suspect == set(), "six out of ten is too many to trust"
+
+
+def test_without_a_period_the_duration_check_still_works() -> None:
+    """The two checks catch different things. Without a measurable
+    period the reference duration is what is left."""
+    lines = [line(0, "Refrein", 10.0, 13.6),
+             line(1, "Refrein", 25.0, 28.6),
+             line(2, "Refrein", 44.0, 47.6),
+             line(3, "Refrein", 60.0, 69.0)]
+    suspect = T.implausible_and_overlong(lines, None,
+                                     T.reference_durations(lines))[0]
+    assert suspect == {3}
+
+
+# --------------------------------------------------------------------------
+# B332: the division between two anchors
+# --------------------------------------------------------------------------
+
+def test_the_division_is_per_phrase_and_not_per_syllable() -> None:
+    """Between two anchors every line gets a phrase of its own. A line
+    of four syllables therefore does not get a quarter of the time of a
+    line of sixteen."""
+    lines = steady_song(10)
+    # lines 4..6 are estimated and differ strongly in length
     for i, n in ((4, 3), (5, 18), (6, 4)):
-        regels[i] = regel(i, f"Geschat {i}", regels[i].start, regels[i].end,
-                          kwaliteit="sentence", lettergrepen=n)
-    uit = T.sanitize_timing(regels, song_duration=80.0)
-    afstanden = [uit[i + 1].start - uit[i].start for i in range(3, 7)]
-    assert max(afstanden) - min(afstanden) < 0.2, afstanden
+        lines[i] = line(i, f"Geschat {i}", lines[i].start, lines[i].end,
+                        quality="sentence", syllable_count=n)
+    out = T.sanitize_timing(lines, song_duration=80.0)
+    spacings = [out[i + 1].start - out[i].start for i in range(3, 7)]
+    assert max(spacings) - min(spacings) < 0.2, spacings
 
 
-def test_een_fout_anker_sleept_de_rest_niet_meer_mee() -> None:
-    """Het patroon van Lied S: een te lang anker halverwege, gevolgd
-    door een reeks geschatte regels. De verschuiving die daaruit volgde
-    liep op tot ruim negen seconden."""
-    regels = strak_lied(14)
-    regels[5] = regel(5, regels[5].text, regels[5].start,
-                      regels[5].start + 2 * PERIODE)
+def test_one_wrong_anchor_no_longer_drags_the_rest_along() -> None:
+    """The pattern of Lied S: an anchor that is too long halfway, then
+    a run of estimated lines. The drift that followed from it grew to
+    well over nine seconds."""
+    lines = steady_song(14)
+    lines[5] = line(5, lines[5].text, lines[5].start,
+                    lines[5].start + 2 * PERIOD)
     for i in range(6, 12):
-        regels[i] = regel(i, regels[i].text, regels[i].start, regels[i].end,
-                          kwaliteit="sentence")
-    uit = T.sanitize_timing(regels, song_duration=90.0)
+        lines[i] = line(i, lines[i].text, lines[i].start, lines[i].end,
+                        quality="sentence")
+    out = T.sanitize_timing(lines, song_duration=90.0)
     for i in range(6, 12):
-        assert abs(uit[i].start - regels[i].start) < 1.0, i
+        assert abs(out[i].start - lines[i].start) < 1.0, i
 
 
 # --------------------------------------------------------------------------
-# B330: op de zanginzet zetten
+# B330: putting a line on the vocal onset
 # --------------------------------------------------------------------------
 
-def test_geschatte_regel_gaat_naar_de_inzet() -> None:
-    regels = strak_lied(6)
-    regels[3] = regel(3, "Geschat", regels[3].start, regels[3].end,
-                      kwaliteit="sentence")
-    doel = regels[3].start + 0.7
-    uit = T.snap_to_onsets(regels, [doel], PERIODE)
-    assert math.isclose(uit[3].start, doel, abs_tol=0.01)
+def test_an_estimated_line_moves_to_the_onset() -> None:
+    lines = steady_song(6)
+    lines[3] = line(3, "Geschat", lines[3].start, lines[3].end,
+                    quality="sentence")
+    target = lines[3].start + 0.7
+    out = T.snap_to_onsets(lines, [target], PERIOD)
+    assert math.isclose(out[3].start, target, abs_tol=0.01)
 
 
-def test_gemeten_regel_wordt_nooit_verplaatst() -> None:
-    regels = strak_lied(6)
-    uit = T.snap_to_onsets(regels, [r.start + 0.6 for r in regels], PERIODE)
-    assert [r.start for r in uit] == [r.start for r in regels]
+def test_a_measured_line_is_never_moved() -> None:
+    lines = steady_song(6)
+    out = T.snap_to_onsets(lines, [ln.start + 0.6 for ln in lines], PERIOD)
+    assert [ln.start for ln in out] == [ln.start for ln in lines]
 
 
-def test_een_verschoven_regel_duwt_een_gemeten_regel_niet_vooruit() -> None:
-    """De lek uit de eerste versie: het BEGIN was begrensd, maar het
-    EINDE van de verschoven regel duwde de gemeten regel erna alsnog
-    weg - vijf regels die goed stonden, gingen zo mis."""
-    regels = strak_lied(6)
-    regels[2] = regel(2, "Geschat", regels[2].start, regels[2].end,
-                      kwaliteit="sentence")
-    vast = regels[3].start
-    uit = T.snap_to_onsets(regels, [regels[3].start - 0.2], PERIODE)
-    assert math.isclose(uit[3].start, vast, abs_tol=1e-6)
-    assert uit[2].end <= vast + 1e-6
+def test_a_moved_line_does_not_push_a_measured_line_forward() -> None:
+    """The leak in the first version: the START was bounded, but the END
+    of the moved line pushed the measured line after it away all the
+    same - five lines that stood right went wrong that way."""
+    lines = steady_song(6)
+    lines[2] = line(2, "Geschat", lines[2].start, lines[2].end,
+                    quality="sentence")
+    fixed = lines[3].start
+    out = T.snap_to_onsets(lines, [lines[3].start - 0.2], PERIOD)
+    assert math.isclose(out[3].start, fixed, abs_tol=1e-6)
+    assert out[2].end <= fixed + 1e-6
 
 
-def test_te_ver_weg_blijft_liggen() -> None:
-    """De reikwijdte staat ruim onder de halve frase; verder zou hij de
-    inzet van zijn buurregel pakken."""
-    regels = strak_lied(6)
-    regels[3] = regel(3, "Geschat", regels[3].start, regels[3].end,
-                      kwaliteit="sentence")
-    ver = regels[3].start + 0.9 * PERIODE
-    uit = T.snap_to_onsets(regels, [ver], PERIODE)
-    assert math.isclose(uit[3].start, regels[3].start, abs_tol=0.01)
+def test_an_onset_too_far_away_is_left_alone() -> None:
+    """The reach stays well under half a phrase; any further and it
+    would take the onset of its neighbouring line."""
+    lines = steady_song(6)
+    lines[3] = line(3, "Geschat", lines[3].start, lines[3].end,
+                    quality="sentence")
+    far = lines[3].start + 0.9 * PERIOD
+    out = T.snap_to_onsets(lines, [far], PERIOD)
+    assert math.isclose(out[3].start, lines[3].start, abs_tol=0.01)
 
 
-def test_zonder_inzetten_verandert_er_niets() -> None:
-    regels = strak_lied(6)
-    assert T.snap_to_onsets(regels, [], PERIODE) == tuple(regels)
+def test_without_onsets_nothing_changes() -> None:
+    lines = steady_song(6)
+    assert T.snap_to_onsets(lines, [], PERIOD) == tuple(lines)
 
 
-def test_volgorde_blijft_behouden() -> None:
-    regels = strak_lied(8)
+def test_the_order_is_kept() -> None:
+    lines = steady_song(8)
     for i in (3, 4, 5):
-        regels[i] = regel(i, f"Geschat {i}", regels[i].start, regels[i].end,
-                          kwaliteit="sentence")
-    uit = T.snap_to_onsets(regels, [regels[5].start - 0.5,
-                                    regels[3].start + 0.4], PERIODE)
-    starts = [r.start for r in uit]
+        lines[i] = line(i, f"Geschat {i}", lines[i].start, lines[i].end,
+                        quality="sentence")
+    out = T.snap_to_onsets(lines, [lines[5].start - 0.5,
+                                   lines[3].start + 0.4], PERIOD)
+    starts = [ln.start for ln in out]
     assert starts == sorted(starts)
 
 
 # --------------------------------------------------------------------------
-# B331: twee roepjes zijn twee inzetten
+# B331: two shouts are two onsets
 # --------------------------------------------------------------------------
 
 @pytest.fixture
-def twee_roepjes(tmp_path: Path) -> Path:
-    """Twee uitbarstingen van 2,5 s met een kort dal ertussen - het
-    patroon van de twee "Ole!"-roepen in de intro."""
+def two_shouts(tmp_path: Path) -> Path:
+    """Two bursts of 2.5 s with a short dip between them - the pattern
+    of the two "Ole!" shouts in the intro."""
     numpy = pytest.importorskip("numpy")
     soundfile = pytest.importorskip("soundfile")
     sr = 22050
-    duur = 8.0
-    t = numpy.arange(int(duur * sr)) / sr
-    toon = numpy.sin(2 * numpy.pi * 220 * t).astype("float32")
-    omhullende = numpy.zeros_like(toon)
-    for begin, eind in ((1.6, 4.2), (4.4, 6.8)):
-        masker = (t >= begin) & (t <= eind)
-        omhullende[masker] = 1.0
-    pad = tmp_path / "roepjes.wav"
-    soundfile.write(pad, toon * omhullende, sr)
-    return pad
+    duration = 8.0
+    t = numpy.arange(int(duration * sr)) / sr
+    tone = numpy.sin(2 * numpy.pi * 220 * t).astype("float32")
+    envelope = numpy.zeros_like(tone)
+    for start, end in ((1.6, 4.2), (4.4, 6.8)):
+        mask = (t >= start) & (t <= end)
+        envelope[mask] = 1.0
+    path = tmp_path / "shouts.wav"
+    soundfile.write(path, tone * envelope, sr)
+    return path
 
 
-def test_inzetten_vinden_beide_roepjes(twee_roepjes: Path) -> None:
+def test_the_onsets_find_both_shouts(two_shouts: Path) -> None:
     from modules import rhythm
 
     if not rhythm.is_available():
-        pytest.skip("librosa niet beschikbaar")
-    gevonden = rhythm.onsets(twee_roepjes)
-    assert len(gevonden) == 2, gevonden
-    assert abs(gevonden[0] - 1.6) < 0.4
-    assert abs(gevonden[1] - 4.4) < 0.4
+        pytest.skip("librosa not available")
+    found = rhythm.onsets(two_shouts)
+    assert len(found) == 2, found
+    assert abs(found[0] - 1.6) < 0.4
+    assert abs(found[1] - 4.4) < 0.4
 
 
-def test_actieve_vensters_smelten_ze_juist_samen(twee_roepjes: Path) -> None:
-    """Waarom de inzetten nodig waren: het bestaande venster overbrugt
-    het dal en levert één blok van ruim vijf seconden op, waar de twee
-    regels dan gelijkmatig over verdeeld werden."""
+def test_the_active_windows_do_merge_them_together(two_shouts: Path) -> None:
+    """Why the onsets were needed: the existing window bridges the dip
+    and delivers one block of well over five seconds, over which the two
+    lines were then spread evenly."""
     from modules import rhythm
 
     if not rhythm.is_available():
-        pytest.skip("librosa niet beschikbaar")
-    vensters = rhythm.active_windows(twee_roepjes)
-    assert len(vensters) == 1
-    assert vensters[0][1] - vensters[0][0] > 4.5
+        pytest.skip("librosa not available")
+    windows = rhythm.active_windows(two_shouts)
+    assert len(windows) == 1
+    assert windows[0][1] - windows[0][0] > 4.5
 
 
 # --------------------------------------------------------------------------
-# Samenhang: de volgorde van de stappen
+# Coherence: the order of the steps
 # --------------------------------------------------------------------------
 
-def test_structuur_eerst_dan_pas_verfijnen() -> None:
-    """Snappen vóór de structuur pakt de inzet van de buurregel. Op een
-    scheve structuur maakte het de uitslag slechter, op een rechte
-    structuur brengt het de regel tot binnen een fractie."""
-    regels = strak_lied(8)
+def test_structure_first_and_only_then_refining() -> None:
+    """Snapping before the structure takes the onset of the neighbouring
+    line. On a crooked structure it made the outcome worse; on a
+    straight structure it brings the line to within a fraction."""
+    lines = steady_song(8)
     for i in (4, 5):
-        regels[i] = regel(i, f"Geschat {i}", regels[i].start + 2.4,
-                          regels[i].end + 2.4, kwaliteit="sentence")
-    inzetten = [10.0 + i * PERIODE for i in range(8)]
+        lines[i] = line(i, f"Geschat {i}", lines[i].start + 2.4,
+                        lines[i].end + 2.4, quality="sentence")
+    onsets = [10.0 + i * PERIOD for i in range(8)]
 
-    scheef = T.snap_to_onsets(regels, inzetten, PERIODE)
-    recht = T.snap_to_onsets(
-        T.sanitize_timing(regels, song_duration=60.0), inzetten, PERIODE)
+    crooked = T.snap_to_onsets(lines, onsets, PERIOD)
+    straight = T.snap_to_onsets(
+        T.sanitize_timing(lines, song_duration=60.0), onsets, PERIOD)
 
-    waarheid = [10.0 + i * PERIODE for i in range(8)]
-    fout_scheef = sum(abs(r.start - w) for r, w in zip(scheef, waarheid))
-    fout_recht = sum(abs(r.start - w) for r, w in zip(recht, waarheid))
-    assert fout_recht < fout_scheef
+    truth = [10.0 + i * PERIOD for i in range(8)]
+    error_crooked = sum(abs(ln.start - w)
+                        for ln, w in zip(crooked, truth))
+    error_straight = sum(abs(ln.start - w)
+                         for ln, w in zip(straight, truth))
+    assert error_straight < error_crooked
 
 
 # --------------------------------------------------------------------------
-# B333: een gemeten begin wint van de minimumduur ervoor
+# B333: a measured start wins from the minimum duration before it
 # --------------------------------------------------------------------------
 
-def test_te_korte_zin_duwt_de_volgende_niet_vooruit() -> None:
-    """De zin ervoor moet minstens ~1 s duren, maar dat mag niet ten koste
-    gaan van het GEMETEN begin van de zin erna."""
-    regels = strak_lied(6)
-    kort = regel(2, "Kort", regels[2].start, regels[2].start + 0.2)
-    regels[2] = kort
-    uit = T.sanitize_timing(regels, song_duration=60.0)
-    assert math.isclose(uit[3].start, regels[3].start, abs_tol=0.01)
+def test_a_too_short_sentence_does_not_push_the_next_one_forward() -> None:
+    """The sentence before it has to last at least ~1 s, but that may
+    not come at the cost of the MEASURED start of the sentence after."""
+    lines = steady_song(6)
+    short = line(2, "Kort", lines[2].start, lines[2].start + 0.2)
+    lines[2] = short
+    out = T.sanitize_timing(lines, song_duration=60.0)
+    assert math.isclose(out[3].start, lines[3].start, abs_tol=0.01)
 
 
-def test_de_duwtjes_stapelen_niet_op_over_het_lied() -> None:
-    """Het gemeten geval: zes korte zinnen verspreid over een lied lieten
-    de rest oplopen tot 8,6 s te laat, terwijl de koppeling zelf tot op
-    0,34 s klopte."""
-    regels = strak_lied(24)
+def test_the_nudges_do_not_stack_up_over_the_song() -> None:
+    """The measured case: six short sentences spread over a song let the
+    rest run up to 8.6 s late, while the coupling itself was right to
+    within 0.34 s."""
+    lines = steady_song(24)
     for i in (2, 5, 9, 13, 17, 21):
-        regels[i] = regel(i, "Kort", regels[i].start, regels[i].start + 0.25)
-    uit = T.sanitize_timing(regels, song_duration=150.0)
-    afwijkingen = [abs(uit[i].start - regels[i].start) for i in range(24)]
-    assert max(afwijkingen) < 0.6, max(afwijkingen)
+        lines[i] = line(i, "Kort", lines[i].start, lines[i].start + 0.25)
+    out = T.sanitize_timing(lines, song_duration=150.0)
+    deviations = [abs(out[i].start - lines[i].start) for i in range(24)]
+    assert max(deviations) < 0.6, max(deviations)
 
 
-def test_een_geschatte_regel_mag_nog_wel_opschuiven() -> None:
-    """Alleen een GEMETEN begin is onaantastbaar; een schatting mag nog
-    steeds voor de vorige regel wijken."""
-    regels = strak_lied(6)
-    regels[2] = regel(2, "Lang", regels[2].start, regels[2].start + 6.0)
-    regels[3] = regel(3, "Geschat", regels[3].start, regels[3].end,
-                      kwaliteit="sentence")
-    uit = T.sanitize_timing(regels, song_duration=60.0)
-    assert uit[3].start >= uit[2].end - 1e-6
+def test_an_estimated_line_may_still_shift() -> None:
+    """Only a MEASURED start is untouchable; an estimate may still give
+    way to the line before it."""
+    lines = steady_song(6)
+    lines[2] = line(2, "Lang", lines[2].start, lines[2].start + 6.0)
+    lines[3] = line(3, "Geschat", lines[3].start, lines[3].end,
+                    quality="sentence")
+    out = T.sanitize_timing(lines, song_duration=60.0)
+    assert out[3].start >= out[2].end - 1e-6

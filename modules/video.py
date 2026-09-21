@@ -2,7 +2,7 @@
 
 All timing comes from ``timing.json``; this renderer contains no
 song-specific exceptions. Per song you only replace the logo, the
-audio and the timing file (see ``docs/karaokevideo_werkwijze.md``).
+audio and the timing file (see ``docs/video_standard.md``).
 
 Image build-up: logo at the top; at most two text lines - the active
 line (white -> green per syllable -> grey; crowd white -> red ->

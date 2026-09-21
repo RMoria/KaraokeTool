@@ -1,5 +1,5 @@
-"""Tests voor v0.86.0-fix (B265: stale woordkoppeling/uitlijning/timing na
-een échte nieuwe transcriptie bij "1 Detecteer woorden")."""
+"""Tests for v0.86.0-fix (B265: stale word pins/alignment/timing after a
+genuinely new transcription at "1 Detecteer woorden")."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -34,23 +34,24 @@ def _write_tone(path: Path, seconds: float = 2.0,
 
 
 # --------------------------------------------------------------------------
-# B265 - "1 Detecteer woorden" opnieuw draaien met een échte nieuwe
-# transcriptie (andere audio/model/taal/prompt, dus geen cache-hit) liet
-# oude, handmatige woordkoppeling ("2 Woorden koppelen") gewoon staan. Die
-# verwees daardoor naar transcript-posities die niets meer met de nieuwe
-# tekst te maken hadden, en werd alsnog toegepast op de nieuwe transcriptie.
-# Reproduceert de melding: "Ik heb de woorden gekoppeld. Er zat nog oude
+# B265 - running "1 Detecteer woorden" again with a genuinely new
+# transcription (other audio/model/language/prompt, so no cache hit) left
+# the old, hand-made word pins ("2 Woorden koppelen") standing. Those
+# pointed at transcript positions that had nothing to do with the new text
+# any more, and were applied to the new transcription all the same.
+# Reproduces the report: "Ik heb de woorden gekoppeld. Er zat nog oude
 # data in."
 # --------------------------------------------------------------------------
-def test_detect_track_wist_stale_koppeling_bij_nieuwe_transcriptie(
+def test_detect_track_clears_stale_pins_on_a_new_transcription(
         tmp_path: Path, monkeypatch) -> None:
-    """Een échte nieuwe transcriptie wist oude woordkoppeling/timing -
-    die verwijzen anders naar de oude tekst.
+    """A genuinely new transcription clears old word pins and timing -
+    those refer to the old text.
 
-    De UITLIJNING blijft sinds B311 bewust staan: die wordt uit de twee
-    audiobestanden berekend en heeft met de transcriptie niets te maken.
-    Hem toch weggooien betekende de (trage) offsetbepaling opnieuw doen
-    terwijl het antwoord ongewijzigd was."""
+    The ALIGNMENT has deliberately stayed put since B311: it is computed
+    from the two audio files and has nothing to do with the
+    transcription. Throwing it away anyway meant redoing the (slow)
+    offset search while the answer was unchanged.
+    """
     context = _context(tmp_path)
     monkeypatch.setattr(pipeline, "prepare_track",
                         lambda ctx, track: ctx.paths.input_dir / "o.wav")
@@ -59,7 +60,7 @@ def test_detect_track_wist_stale_koppeling_bij_nieuwe_transcriptie(
     monkeypatch.setattr(pipeline.whisper, "transcribe",
                         lambda *a, **k: segments)
 
-    # Oude (stale) koppel- en uitlijndata, zoals na een eerdere detectie.
+    # Old (stale) pin and alignment data, as left by an earlier detection.
     pipeline.set_word_pins(context, {0: [1]})
     context.store.set_step("align", {"regions": [], "updated": "eerder"})
     context.store.set_step("coupling", {"iets": True})
@@ -68,7 +69,7 @@ def test_detect_track_wist_stale_koppeling_bij_nieuwe_transcriptie(
     context.paths.timing_file.write_text("{}", encoding="utf-8")
     context.paths.timing_auto_file.write_text("{}", encoding="utf-8")
 
-    # Geen bestaande whisper_origineel-stap -> gegarandeerd geen cache-hit.
+    # No existing whisper_origineel step -> guaranteed no cache hit.
     result = pipeline.detect_track(context, pipeline.TRACK_ORIGINAL)
 
     assert result.from_cache is False
@@ -80,13 +81,25 @@ def test_detect_track_wist_stale_koppeling_bij_nieuwe_transcriptie(
     assert not context.paths.timing_auto_file.exists()
 
 
-def test_detect_track_cache_hit_behoudt_koppeling(
+def test_detect_track_cache_hit_keeps_the_pins(
         tmp_path: Path, monkeypatch) -> None:
-    """Een cache-hit (ongewijzigde herdetectie) mag handmatige woordkoppeling
-    NIET weggooien - alleen een echt nieuwe transcriptie doet dat."""
+    """A cache hit (an unchanged re-detection) may NOT throw away
+    hand-made word pins - only a genuinely new transcription does.
+
+    B545: Demucs off, otherwise there is nothing to hit. With Demucs on
+    the transcription runs on the separated vocal stem, whose checksum
+    is not the one this test writes into the step, and the cache miss
+    turns the test into a question about separation instead of about
+    the pins.
+    """
+    from dataclasses import replace
+
     from modules.filesystem import file_sha1
 
     context = _context(tmp_path)
+    context = replace(context, config=replace(
+        context.config, advanced=replace(context.config.advanced,
+                                         demucs=False)))
     _write_tone(context.paths.input_dir / "original.wav")
     monkeypatch.setattr(pipeline, "prepare_track",
                         lambda ctx, track: ctx.paths.input_dir /

@@ -27,7 +27,7 @@ described here. That last one is what keeps this map honest - a new step
 that nobody placed in the chain makes the test go red instead of
 silently causing stale data years later.
 
-``docs/afhankelijkheden.md`` is the readable side of this same map.
+``docs/dependencies.md`` is the readable side of this same map.
 """
 
 from __future__ import annotations
@@ -78,24 +78,26 @@ def _artefacts() -> dict[str, Artefact]:
                               paths=paths))
 
     # -- the sources -----------------------------------------------------
-    add("input:original", SOURCE, what="input/origineel.* (het origineel)")
-    add("input:karaoke", SOURCE, what="input/karaoke.* (de karaokeversie)")
+    add("input:original", SOURCE,
+        what="input/origineel.* (the original recording)")
+    add("input:karaoke", SOURCE, what="input/karaoke.* (the karaoke version)")
     add("input:lyrics", SOURCE, what="input/songtekst.txt")
     add("input:karaoke_text", SOURCE, what="input/karaoketekst.txt")
-    add("input:logo", SOURCE, what="input/logo.* (beeldmerk in de video)")
-    add("config:whisper", SOURCE, what="instelling: Whisper-model en taal")
+    add("input:logo", SOURCE,
+        what="input/logo.* (the logo shown in the video)")
+    add("config:whisper", SOURCE, what="setting: Whisper model and language")
     add("config:forced_alignment", SOURCE,
-        what="instelling: preciezere woordtijden (wav2vec2)")
+        what="setting: more precise word times (wav2vec2)")
     add("config:chunked", SOURCE,
-        what="instelling: transcriptie in stukken (gaten opvullen)")
-    add("config:analysis", SOURCE, what="instelling: analysedrempels")
-    add("config:cluster", SOURCE, what="instelling: clusterdrempels")
-    add("config:align", SOURCE, what="instelling: uitlijning")
-    add("config:karaoke", SOURCE, what="instelling: demping (gain, fades)")
+        what="setting: transcription in chunks (fills the gaps)")
+    add("config:analysis", SOURCE, what="setting: analysis thresholds")
+    add("config:cluster", SOURCE, what="setting: cluster thresholds")
+    add("config:align", SOURCE, what="setting: alignment")
+    add("config:karaoke", SOURCE, what="setting: damping (gain, fades)")
     add("config:timing", SOURCE,
-        what="instelling: zangstem-analyse, ankergewichten, fonetische "
+        what="setting: vocal analysis, anchor weights, phonetic "
              "timing")
-    add("config:video", SOURCE, what="instelling: video (kleuren, fonts)")
+    add("config:video", SOURCE, what="setting: video (colours, fonts)")
     # B387: this should have stood here since B361. The signature in
     # ``_config_signature`` knew "config:models", this map did not, and
     # ``dependents()`` raises a KeyError on an unknown name. As long as
@@ -103,24 +105,24 @@ def _artefacts() -> dict[str, Artefact]:
     # model was added (B380 in v0.121.0) every existing project reported
     # "config:models changed" and steps 1.1 and 1.3 fell over.
     add("config:models", SOURCE,
-        what="instelling: welke modellen aan of uit staan")
+        what="setting: which models are switched on")
 
     # -- fingerprints of the source files --------------------------------
     # These steps exist only to NOTICE that a source file was changed
     # outside the app (B311/G1): they keep the sha1 of what the program
     # saw the previous time.
     add("source_original", STEP, ["input:original"],
-        "sha1 + wav-pad van het voorbereide origineel")
+        "sha1 + wav path of the prepared original")
     add("source_karaoke", STEP, ["input:karaoke"],
-        "sha1 + wav-pad van de voorbereide karaoke")
+        "sha1 + wav path of the prepared karaoke")
     add("source_lyrics", STEP, ["input:lyrics"],
-        "sha1 van songtekst.txt zoals het programma die kent")
+        "sha1 of songtekst.txt as the program knows it")
     add("source_karaoke_text", STEP, ["input:karaoke_text"],
-        "sha1 van karaoketekst.txt zoals het programma die kent")
+        "sha1 of karaoketekst.txt as the program knows it")
     add("source_logo", STEP, ["input:logo"],
-        "sha1 van het beeldmerk zoals het programma dat kent")
+        "sha1 of the logo as the program knows it")
     add("config_signature", STEP, [],
-        "de gebruikte instellingen per groep (om een wijziging te merken)")
+        "the settings in use, per group (to notice a change)")
     add("cache:original_wav", FILE, ["source_original"],
         "cache/original.wav",
         lambda paths: [paths.cache_dir / "original.wav"])
@@ -128,29 +130,29 @@ def _artefacts() -> dict[str, Artefact]:
         "cache/karaoke.wav",
         lambda paths: [paths.cache_dir / "karaoke.wav"])
 
-    # -- zang scheiden ---------------------------------------------------
+    # -- separating the vocals -------------------------------------------
     add("cache:demucs_original", FILE, ["cache:original_wav"],
-        "cache/demucs_stems_original/ (zang + instrumentaal)",
+        "cache/demucs_stems_original/ (vocals + instrumental)",
         lambda paths: [paths.cache_dir / "demucs_stems_original"])
     add("cache:demucs_karaoke", FILE, ["cache:karaoke_wav"],
         "cache/demucs_stems_karaoke/",
         lambda paths: [paths.cache_dir / "demucs_stems_karaoke"])
     add("cache:original_vocals", FILE, ["cache:demucs_original"],
-        "cache/original_vocals.wav (zangstem voor de energie-analyse)",
+        "cache/original_vocals.wav (vocals for the energy analysis)",
         lambda paths: [paths.cache_dir / "original_vocals.wav"])
     add("cache:karaoke_generated", FILE, ["cache:demucs_original"],
-        "cache/karaoke_generated.wav (instrumentaal uit het origineel)",
+        "cache/karaoke_generated.wav (instrumental from the original)",
         lambda paths: [paths.cache_dir / "karaoke_generated.wav"])
     add("output:demucs_mp3", FILE, ["cache:demucs_original"],
-        "output/karaoke_demucs.mp3 en vocal_demucs.mp3",
+        "output/karaoke_demucs.mp3 and vocal_demucs.mp3",
         lambda paths: [paths.output_dir / "karaoke_demucs.mp3",
                        paths.output_dir / "vocal_demucs.mp3"])
     add("vocal_onset_s", META, ["cache:demucs_original"],
-        "het moment waarop de zang begint (anker voor de eerste zin)")
+        "where the singing starts (anchor for the first line)")
     add("vocal_end_s", META, ["cache:demucs_original"],
-        "het moment waarop de zang stopt (anker voor de staart, B319)")
+        "where the singing stops (anchor for the tail, B319)")
     add("karaoke_from_original", META, ["input:original", "input:karaoke"],
-        "of de karaoke uit het origineel is gemaakt (uitlijning overslaan)")
+        "whether the karaoke was made from the original (skips alignment)")
 
     # -- language ---------------------------------------------------------
     # Deliberately NOT dependent on the karaoke text: the user pins the
@@ -159,7 +161,7 @@ def _artefacts() -> dict[str, Artefact]:
     # line in his parody. The lyrics decide the language of the original,
     # and that is what this choice is about.
     add("language_choice", META, ["input:lyrics"],
-        "de handmatig vastgezette taal")
+        "the language pinned by hand")
 
     # -- step 1: detect words ---------------------------------------------
     # B316: deliberately NOT dependent on ``lyrics_override``. The lyrics
@@ -174,11 +176,11 @@ def _artefacts() -> dict[str, Artefact]:
     add("whisper_original", STEP,
         ["cache:demucs_original", "cache:original_wav", "input:lyrics",
          "config:whisper", "config:forced_alignment", "config:chunked"],
-        "transcriptie van het origineel (sha1, model, taal, prompt)")
+        "transcription of the original (sha1, model, language, prompt)")
     add("whisper_karaoke", STEP,
         ["cache:karaoke_wav", "config:whisper", "config:forced_alignment",
          "karaoke_from_original"],
-        "transcriptie van de karaoke (restzang)")
+        "transcription of the karaoke (leftover vocals)")
     add("cache:transcription_original", FILE, ["whisper_original"],
         "cache/transcription_original.json",
         lambda paths: [paths.cache_dir / "transcription_original.json"])
@@ -186,28 +188,28 @@ def _artefacts() -> dict[str, Artefact]:
         "cache/transcription_karaoke.json",
         lambda paths: [paths.cache_dir / "transcription_karaoke.json"])
 
-    # -- handmatige correcties op tekst en transcriptie ------------------
+    # -- hand corrections to the text and the transcription --------------
     add("transcript_override", STEP, ["whisper_original"],
-        "de geknipte/samengevoegde transcriptie (handwerk)")
+        "the cut and merged transcription (hand work)")
     add("lyrics_override", STEP, ["input:lyrics"],
-        "de geknipte/samengevoegde songtekstwoorden (handwerk)")
+        "the cut and merged lyric words (hand work)")
     add("word_coupling", STEP,
         ["whisper_original", "transcript_override", "lyrics_override",
          "input:lyrics", "config:models"],
-        "handmatige woordkoppelingen (songtekstwoord -> gevonden woord)")
+        "manual word couplings (lyric word -> detected word)")
     add("original_overrides", STEP, ["input:lyrics", "lyrics_override"],
-        "handmatig gecorrigeerde regeltijden van het origineel")
+        "hand-corrected line times of the original")
     add("stress_anchors", STEP,
         ["input:lyrics", "input:karaoke_text", "lyrics_override"],
-        "handmatig gekoppelde stukjes origineel <-> karaoke per zin")
+        "hand-coupled pieces of original <-> karaoke, per line")
 
-    # -- stap 2: analyse en clusters -------------------------------------
+    # -- step 2: analysis and clusters -----------------------------------
     for track in TRACKS:
         add(f"analysis_{track}", STEP,
             [f"whisper_{track}", "config:analysis"],
-            f"analysestatistiek van de {track}-transcriptie")
+            f"analysis figures for the {track} transcription")
         add(f"output:analysis_{track}", FILE, [f"analysis_{track}"],
-            f"output/{track}/statistics.json en de csv-rapporten",
+            f"output/{track}/statistics.json and the csv reports",
             lambda paths, _t=track: [
                 paths.output_dir / _t / "statistics.json",
                 paths.output_dir / _t / "frequency.csv",
@@ -216,13 +218,13 @@ def _artefacts() -> dict[str, Artefact]:
     add("clusters_original", STEP,
         ["whisper_original", "config:cluster", "input:lyrics",
          "lyrics_override"],
-        "gekozen klankclusters van het origineel")
+        "the chosen sound clusters of the original")
     add("clusters_karaoke", STEP,
         ["whisper_karaoke", "config:cluster"],
-        "gekozen klankclusters van de karaoke (restzang)")
+        "the chosen sound clusters of the karaoke (leftover vocals)")
     for track in TRACKS:
         add(f"output:clusters_{track}", FILE, [f"clusters_{track}"],
-            f"output/{track}/clusters.json en clusters.html",
+            f"output/{track}/clusters.json and clusters.html",
             lambda paths, _t=track: [
                 paths.output_dir / _t / "clusters.json",
                 paths.output_dir / _t / "clusters.html"])
@@ -232,23 +234,23 @@ def _artefacts() -> dict[str, Artefact]:
         lambda paths: [paths.output_dir / "original"
                        / "lyrics_alignment.txt"])
 
-    # -- stap 3: uitlijnen -----------------------------------------------
+    # -- step 3: aligning ------------------------------------------------
     add("align", STEP,
         ["cache:original_wav", "cache:karaoke_wav", "config:align",
          "karaoke_from_original"],
-        "de offsetregio's tussen origineel en karaoke")
+        "the offset regions between original and karaoke")
     add("output:alignment_json", FILE, ["align"],
-        "output/alignment.json (rapport)",
+        "output/alignment.json (report)",
         lambda paths: [paths.output_dir / "alignment.json"])
 
-    # -- zinkoppeling en timing ------------------------------------------
+    # -- line coupling and timing ----------------------------------------
     add("coupling", STEP,
         ["word_coupling", "align", "input:lyrics", "input:karaoke_text",
          "lyrics_override", "transcript_override", "original_overrides",
          "config:timing", "config:models"],
-        "origineelregels met tijden + welke karaokeregel bij welke hoort")
+        "original lines with times + which karaoke line goes with which")
     add("lyrics", STEP, ["clusters_original", "word_coupling"],
-        "aantal extra dempingsfragmenten uit de songtekst")
+        "how many extra damping fragments come from the lyrics")
     # B330: the line starts are laid on the vocal onsets, so the timing
     # now also hangs directly off the vocal stem itself and not only off
     # the first onset derived from it.
@@ -256,20 +258,20 @@ def _artefacts() -> dict[str, Artefact]:
         ["coupling", "input:karaoke_text", "vocal_onset_s", "align",
          "cache:original_vocals", "language_choice", "config:timing",
          "config:models"],
-        "de regel- en lettergreeptiming voor de video")
+        "the line and syllable timing for the video")
     add("output:timing", FILE, ["timing"],
-        "output/settings/timing.json en timing_auto.json",
+        "output/settings/timing.json and timing_auto.json",
         lambda paths: [paths.timing_file, paths.timing_auto_file])
     add("output:timing_diagnostics", FILE, ["timing"],
         "output/diagnostics/timing_diagnostics.txt",
         lambda paths: [paths.output_dir / "diagnostics"
                        / "timing_diagnostics.txt"])
 
-    # -- stap 4: dempen --------------------------------------------------
+    # -- step 4: damping -------------------------------------------------
     add("fragment_exclusions", STEP, ["cache:karaoke_wav"],
-        "uitgevinkte dempingsfragmenten (tijden op de karaoke-tijdlijn)")
+        "unticked damping fragments (times on the karaoke timeline)")
     add("restore_fragments", STEP, ["cache:karaoke_wav"],
-        "'terug uit origineel'-fragmenten (karaoke-tijdlijn)")
+        "'back from the original' fragments (karaoke timeline)")
     # B496: the sentences marked in the timing editor to be fetched back
     # from the original. Deliberately NOT hung on the timing: these are
     # line numbers, and those do not change when the timing shifts. The
@@ -277,14 +279,14 @@ def _artefacts() -> dict[str, Artefact]:
     # rest of step 4 treats the karaoke - a timing change deliberately
     # does not invalidate the edited karaoke.
     add("restore_lines", STEP, ["cache:karaoke_wav"],
-        "zinnen die uit het origineel worden teruggehaald (regelnummers)")
+        "lines fetched back from the original (line numbers)")
     # B499: and where such a piece was moved to by hand in 1.4. Hangs on
     # the same thing as the marking itself.
     add("restore_moved", STEP, ["restore_lines"],
-        "verplaatste 'terug uit origineel'-stukken (per regelnummer)")
+        "moved 'back from the original' pieces (per line number)")
     add("original_restore_resample", STEP,
         ["input:original", "cache:karaoke_wav"],
-        "sha1 + samplerate van het hergebruikte origineel")
+        "sha1 + sample rate of the reused original")
     add("cache:original_for_restore", FILE, ["original_restore_resample"],
         "cache/original_for_restore.wav",
         lambda paths: [paths.cache_dir / "original_for_restore.wav"])
@@ -293,12 +295,12 @@ def _artefacts() -> dict[str, Artefact]:
          "fragment_exclusions", "restore_fragments", "restore_lines",
          "restore_moved",
          "align", "config:karaoke"],
-        "de bewerkte karaoke (welke fragmenten gedempt zijn)")
+        "the edited karaoke (which fragments are damped)")
     add("cache:karaoke_edited", FILE, ["karaoke"],
         "cache/karaoke_edited.wav",
         lambda paths: [paths.cache_dir / "karaoke_edited.wav"])
     add("output:karaoke_edit", FILE, ["karaoke"],
-        "output/karaoke_edit.mp3 en karaoke_edit.wav",
+        "output/karaoke_edit.mp3 and karaoke_edit.wav",
         lambda paths: [paths.output_dir / "karaoke_edit.mp3",
                        paths.output_dir / "karaoke_edit.wav"])
 
@@ -306,13 +308,13 @@ def _artefacts() -> dict[str, Artefact]:
     # -- project data that is NOT a derivative ----------------------------
     # These deliberately belong to nothing: they describe the project
     # itself and stay valid however often you replace the content.
-    add("display_name", META, [], "de leesbare projectnaam")
+    add("display_name", META, [], "the readable project name")
     add("input_names", META, [],
-        "waar de invoerbestanden vandaan kwamen (voor de bestandskiezer)")
+        "where the input files came from (for the file chooser)")
     add("input_last_dir", META, [],
-        "de laatst gebruikte map van dit project, ongeacht welke invoer "
+        "the last folder used in this project, whatever the input "
         "(B413)")
-    add("video_titles", META, [], "artiest/titel voor in de video")
+    add("video_titles", META, [], "artist/title to show in the video")
     # -- step 5: video ------------------------------------------------------
     # B353: deliberately belongs to nothing. The rendered video is an end
     # product; changing the timing afterwards does not make the file
@@ -320,7 +322,7 @@ def _artefacts() -> dict[str, Artefact]:
     # call. The mp4 was never thrown away anyway (video is a STEP, not a
     # FILE), but the bookkeeping around it was, so after a restart the
     # app had forgotten that a video existed.
-    add("video", STEP, [], "de gemaakte video (pad + gebruikte audiobron)")
+    add("video", STEP, [], "the rendered video (path + audio source used)")
 
     return {item.name: item for item in items}
 
@@ -337,7 +339,7 @@ def _dependants_index() -> dict[str, tuple[str, ...]]:
         for source in artefact.sources:
             if source not in index:
                 raise KeyError(
-                    f"Onbekende bron {source!r} bij {artefact.name!r}")
+                    f"Unknown source {source!r} for {artefact.name!r}")
             index[source].append(artefact.name)
     return {name: tuple(children) for name, children in index.items()}
 
@@ -363,7 +365,7 @@ def dependents(changed: Iterable[str], include_self: bool = False
     start = list(changed)
     for name in start:
         if name not in ARTEFACTS:
-            raise KeyError(f"Onbekend artefact: {name!r}")
+            raise KeyError(f"Unknown artefact: {name!r}")
     seen: set[str] = set()
     queue = list(start)
     while queue:

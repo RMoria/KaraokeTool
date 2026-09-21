@@ -48,7 +48,7 @@ def test_rename_vocabulary_holds_no_python_builtin_as_source() -> None:
     ``test_no_builtin_is_shadowed_and_called_in_the_same_scope`` below
     guards the case where that shadowing actually bites.
     """
-    vocabulary = TOOLS / "b299_woordenboek.py"
+    vocabulary = TOOLS / "b299_dictionary.py"
     if not vocabulary.exists():          # tool is optional in a release zip
         return
     namespace: dict = {}

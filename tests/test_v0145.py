@@ -25,8 +25,8 @@ def _source_of(module) -> str:
 # --------------------------------------------------------------------------
 
 def test_the_karaoke_sentence_keeps_its_own_colour_and_text() -> None:
-    """De karaoketekst blauw maken en er [origineel] voor zetten verborg
-    juist de tekst waar hij mee bezig is."""
+    """Colouring the karaoke sentence blue and putting [origineel] in
+    front of it hid the very text he is working on."""
     editor = _source_of(__import__("modules.timing_editor",
                                    fromlist=["x"]))
     assert "[origineel] " not in editor
@@ -39,9 +39,9 @@ def test_the_original_block_turns_blue() -> None:
     source = _source_of(timing_editor)
     assert "fill_color = _ORIG_RESTORE" in source
     assert "border_color = (_RESTORE_BORDER if fetched" in source
-    # En de karaokezin houdt tekst en kleur, maar krijgt wel een rand -
-    # anders is een regel zonder blok in de originele baan (een hele
-    # [bg]-regel) te markeren zonder dat er iets van te zien is.
+    # And the karaoke sentence keeps its text and colour, but it does
+    # get a border - otherwise a line without a block in the original
+    # lane (a whole [bg] line) can be marked with nothing to show for it.
     assert "else _RESTORE_BORDER if haalt \\\n" in source
     assert "else _BG_BORDER if achtergrond else QColor(40, 40, 40)" in source
 
@@ -51,8 +51,8 @@ def test_a_moved_piece_gets_a_dotted_border() -> None:
 
     source = _source_of(timing_editor)
     assert "Qt.DotLine if moved" in source
-    # Een crowdregel is gestreept; verplaatst is gestippeld, zodat de
-    # twee uit elkaar te houden zijn.
+    # A crowd line is dashed; a moved one is dotted, so that the two can
+    # be told apart.
     assert "else Qt.DashLine if is_crowd else Qt.SolidLine" in source
 
 
@@ -73,7 +73,7 @@ def test_a_broken_span_is_ignored(tmp_path) -> None:
 
 
 def test_the_detection_compares_against_the_bare_derivation() -> None:
-    """Anders zegt hij na één keer opslaan dat er niets verplaatst is."""
+    """Otherwise it says nothing was moved after one save."""
     source = _source_of(pipeline)
     assert "_restore_from_lines(context,\n                                                   apply_moves=False)" \
         in source
@@ -115,15 +115,15 @@ def test_two_sentences_over_each_other_are_found() -> None:
 
 
 def test_a_crowd_line_may_lie_over_its_neighbour() -> None:
-    """Een kreet klinkt tegelijk met de zang (B346)."""
+    """A shout sounds at the same time as the singing (B346)."""
     found = timing_checks.line_checks([_line(0, 1.0, 3.0, crowd=True),
                                        _line(1, 2.0, 4.0)])
     assert not found["overlapping_lines"]
 
 
 def test_a_crowd_line_in_between_does_not_hide_an_overlap() -> None:
-    """Hij werd wél onthouden als "de vorige", en dan was de laatste
-    gewone zin vergeten."""
+    """It was remembered as "the previous one", and then the last
+    ordinary sentence was forgotten."""
     found = timing_checks.line_checks([_line(0, 0.0, 2.0),
                                        _line(1, 0.5, 1.0, crowd=True),
                                        _line(2, 0.6, 3.0)])
@@ -162,28 +162,30 @@ def test_the_checks_are_part_of_the_report() -> None:
 
 
 def test_the_automatic_timing_ends_with_the_logic() -> None:
-    """Halverwege wordt er opgeschoond, maar daarna verschuift er nog van
-    alles - en dat ging ongecontroleerd de editor en de render in."""
+    """Halfway through there is a clean-up, but plenty still shifts
+    after that - and that went into the editor and the render
+    unchecked."""
     source = inspect.getsource(pipeline.generate_timing)
     assert "timed, corrected = timing_module.repair_line_edges(timed)" in source
     assert "log_timing_corrected" in source
-    # Vóór de diagnose, anders beschrijft dat rapport iets anders dan wat
-    # er wordt opgeslagen.
+    # Before the diagnosis, otherwise that report describes something
+    # other than what gets saved.
     assert source.index("repair_line_edges(timed)") < source.index(
         "Token-thrifty diagnostics")
-    # En de aangehouden noten worden erna opnieuw gewogen.
-    na = source[source.index("repair_line_edges(timed)"):]
-    assert "timed = timing_module.mark_held(timed)" in na
+    # And the held notes are weighed again afterwards.
+    after = source[source.index("repair_line_edges(timed)"):]
+    assert "timed = timing_module.mark_held(timed)" in after
 
 
 def test_a_measured_start_is_never_pushed_forward() -> None:
-    """Een regelbegin is vaak gemeten (op de zanginzet gezet); dat
-    vooruit duwen zet de zin naast de zang én perst hem samen."""
+    """The start of a line is usually measured (set on the vocal onset);
+    pushing that forward puts the sentence beside the singing and
+    squeezes it together as well."""
     lines = (_line(0, 10.0, 14.0), _line(1, 13.0, 15.0))
     fixed, count = timing.repair_line_edges(lines)
     assert count == 1
     assert fixed[1].start == 13.0 and fixed[1].end == 15.0
-    assert abs(fixed[0].end - 13.0) < 0.01     # de vorige wordt ingekort
+    assert abs(fixed[0].end - 13.0) < 0.01     # the previous is shortened
     assert fixed[0].start == 10.0
 
 
@@ -213,7 +215,7 @@ def test_the_fade_runs_from_nothing_to_everything() -> None:
     assert video._eased_in(0.0) == 0.0
     assert video._eased_in(1.0) == 1.0
     assert 0.0 < video._eased_in(0.5) < 1.0
-    # Buiten bereik blijft binnen bereik.
+    # Out of range stays within range.
     assert video._eased_in(-1.0) == 0.0 and video._eased_in(2.0) == 1.0
 
 
@@ -310,8 +312,8 @@ def _context(tmp_path):
 # --------------------------------------------------------------------------
 
 def test_a_filtered_word_keeps_its_own_marking() -> None:
-    """Drie al gefilterde woorden plus één gemist woord maakten er een
-    'verdachte reeks' van; dan zakt de drempel tot één woord."""
+    """Three already filtered words plus one missed word turned it into
+    a 'suspect run'; that drops the threshold to a single word."""
     transcript = [(f"w{i}", float(i), i + 0.5) for i in range(5)]
     words = [{"index": 0, "transcript_indices": [4]}]
     status = pipeline._transcript_status(transcript, words, [0, 1, 2])
@@ -324,12 +326,12 @@ def test_unfiltering_a_word_makes_it_look_ordinary_again() -> None:
     from modules import coupling_editor
 
     source = _source_of(coupling_editor)
-    # B520: dezelfde functie als de pijplijn gebruikt, en de hele baan
-    # in één keer - anders wordt hij na een bewerking grover dan hij was.
+    # B520: the same function the pipeline uses, and the whole lane in
+    # one go - otherwise it comes out coarser after an edit than it was.
     assert "def _refresh_found_status(self, index: int | None = None)" in source
     assert "self._refresh_found_status(self._sel_top)" in source
     assert "pipeline.found_word_status(" in source
-    # En koppelen met de hand loopt via _emit.
+    # And coupling by hand runs through _emit.
     assert "self._refresh_found_status()" in source
 
 
@@ -341,8 +343,8 @@ def test_a_read_error_does_not_wipe_the_markings() -> None:
 
 
 def test_the_karaoke_sentence_shows_that_it_is_marked() -> None:
-    """Een hele [bg]-regel heeft geen blok in de originele baan, dus
-    zonder dit is hij te markeren zonder dat er iets van te zien is."""
+    """A whole [bg] line has no block in the original lane, so without
+    this it can be marked with nothing to show for it."""
     from modules import timing_editor
 
     source = _source_of(timing_editor)

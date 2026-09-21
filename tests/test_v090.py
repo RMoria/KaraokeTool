@@ -1,15 +1,16 @@
-"""Tests voor v0.90.0-fix.
+"""Tests for v0.90.0-fix.
 
-B272: tijdens een instrumenteel gat (>= GAP_MIN_S) liet de layout de
-al-gezongen regel op slot -1 nog staan naast de wachtende regels, met een
-groot leeg gat waar de 3-2-1-afteller los in moest passen. De regel op
-slot -1 verdwijnt nu helemaal tijdens het gat; de resterende 3 regels
-(net gezongen / eerstvolgende / daarna) en de afteller verdelen zich
-gelijkmatig over dezelfde verticale band.
+B272: during an instrumental gap (>= GAP_MIN_S) the layout still kept
+the already-sung line on slot -1 beside the waiting lines, with a wide
+empty hole the 3-2-1 countdown had to fit into on its own. The line on
+slot -1 now disappears altogether during the gap; the three remaining
+lines (just sung / next / the one after) and the countdown spread
+evenly over the same vertical band.
 
-B273: de gerenderde video krijgt nu het KaraokeTool-versienummer in de
-ffmpeg-metadata (``comment``-tag), zodat achteraf (bv. bij testen) te
-achterhalen is met welke versie een videobestand is gemaakt.
+B273: the rendered video now carries the KaraokeTool version number in
+the ffmpeg metadata (``comment`` tag), so that afterwards (when
+testing, for instance) it can be traced which version made a video
+file.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ import numpy as np
 
 
 def _color_top(frame, color, tol=40):
-    """Bovenste (kleinste) y-coördinaat waar ``kleur`` voorkomt, of None."""
+    """Topmost (smallest) y coordinate where ``color`` occurs, or None."""
     arr = np.asarray(frame)
     target = np.array(color)
     mask = np.abs(arr.astype(int) - target).sum(axis=2) < tol
@@ -25,20 +26,20 @@ def _color_top(frame, color, tol=40):
     return int(rows.min()) if len(rows) else None
 
 
-def _wittekst_linkerkant_op_y(frame, y, kleur_wit, tol=40):
-    """True als er ergens op rij ``y`` een pixel in ``kleur_wit`` staat."""
+def _white_text_on_row(frame, y, white, tol=40):
+    """True if row ``y`` holds a pixel anywhere in ``white``."""
     arr = np.asarray(frame)
     row = arr[y]
-    target = np.array(kleur_wit)
+    target = np.array(white)
     mask = np.abs(row.astype(int) - target).sum(axis=1) < tol
     return bool(mask.any())
 
 
-def test_slot_min1_verdwijnt_tijdens_gat() -> None:
-    """B272: de regel die normaal op slot -1 zou staan (hier: de allereerste
-    regel, twee regels vóór de wachtende regel) komt tijdens het gat nergens
-    meer in beeld - alleen de net-gezongen regel, de afteller en de twee
-    wachtende regels blijven over."""
+def test_slot_min1_disappears_during_the_gap() -> None:
+    """B272: the line that would normally sit on slot -1 (here: the very
+    first line, two lines before the waiting one) is nowhere on screen
+    during the gap - only the just-sung line, the countdown and the two
+    waiting lines are left."""
     from PIL import Image, ImageFont
 
     from modules.karaoke_text import TextLine
@@ -50,29 +51,31 @@ def test_slot_min1_verdwijnt_tijdens_gat() -> None:
     gap = GAP_MIN_S + 2.0
     width, height = 320, 180
 
-    # Regel 0 zou zonder B272 op slot -1 staan tijdens het gat ná regel 1.
+    # Without B272 line 0 would sit on slot -1 during the gap after
+    # line 1.
     lines = [TextLine(0, "eerste eerste eerste", False),
              TextLine(1, "tweede", False),
              TextLine(2, "derde", False)]
     spans = {0: (2.0, 4.0), 1: (5.0, 7.0), 2: (7.0 + gap, 9.0 + gap)}
     timed = generate_skeleton(lines, spans)
     vocal = [t for t in timed if not t.crowd]
-    moment = 7.0 + gap - 0.5   # binnen het aftelvenster naar regel 2
+    moment = 7.0 + gap - 0.5   # inside the countdown window to line 2
     frame = _compose_frame(moment, vocal, 1.0, 60.0, width, height,
                            font, font, logo, "T", _DEFAULT_COLORS)
 
-    # "eerste" (regel 0) zou normaal wit zijn (nog niet actief) op de oude
-    # slot -1-positie, vlak boven slot 0 (0.56). Die band moet nu leeg zijn.
-    oude_slot_min1_y = int(height * (2 * 0.34 - 0.56))
-    if 0 <= oude_slot_min1_y < height:
-        assert not _wittekst_linkerkant_op_y(
-            frame, oude_slot_min1_y, _DEFAULT_COLORS["voor"])
+    # "eerste" (line 0) would normally be white (not active yet) on the
+    # old slot -1 position, just above slot 0 (0.56). That band has to
+    # be empty now.
+    old_slot_min1_y = int(height * (2 * 0.34 - 0.56))
+    if 0 <= old_slot_min1_y < height:
+        assert not _white_text_on_row(
+            frame, old_slot_min1_y, _DEFAULT_COLORS["voor"])
 
 
-def test_afteller_staat_op_de_plek_van_de_gezongen_regel() -> None:
-    """B474: de vier gelijk verdeelde posities zijn eruit. Tijdens het gat
-    verdwijnt de net gezongen regel en neemt de afteller precies zijn plek
-    (slot 0) in; de wachtende regels blijven staan waar ze staan."""
+def test_the_countdown_sits_where_the_sung_line_was() -> None:
+    """B474: the four evenly spread positions are gone. During the gap
+    the just-sung line disappears and the countdown takes exactly its
+    place (slot 0); the waiting lines stay where they are."""
     from PIL import Image, ImageFont
 
     from modules.karaoke_text import TextLine
@@ -96,17 +99,17 @@ def test_afteller_staat_op_de_plek_van_de_gezongen_regel() -> None:
 
     y_digit = _color_top(frame, _DEFAULT_COLORS["zang"])
     assert y_digit is not None
-    # Binnen een paar pixels (afronding/font-metrics), niet exact gelijk.
+    # Within a few pixels (rounding, font metrics), not exactly equal.
     assert abs(y_digit - int(height * 0.34)) <= 6
 
 
-def test_video_metadata_bevat_versienummer(tmp_path) -> None:
-    """B273: de gerenderde .mp4 krijgt het KaraokeTool-versienummer in de
-    ffmpeg-``comment``-metadata."""
+def test_the_video_metadata_carries_the_version_number(tmp_path) -> None:
+    """B273: the rendered .mp4 gets the KaraokeTool version number in
+    the ffmpeg ``comment`` metadata."""
     from modules import ffmpeg
     import pytest
     if not ffmpeg.is_available():
-        pytest.skip("ffmpeg niet beschikbaar")
+        pytest.skip("ffmpeg not available")
 
     import json as json_module
     import subprocess

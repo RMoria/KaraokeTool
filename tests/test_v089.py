@@ -1,20 +1,20 @@
-"""Tests voor v0.89.0-fix (B271: bestandsnaam-achtervoegsel voor
-niet-standaard videorenders, zodat meerdere varianten naast elkaar kunnen
-bestaan zonder elkaar te overschrijven)."""
+"""Tests for the v0.89.0 fix (B271: a file-name suffix for non-standard
+video renders, so that several variants can sit side by side without
+overwriting each other)."""
 from __future__ import annotations
 
 
-def test_standaardcombinatie_geen_achtervoegsel() -> None:
-    """Karaoke-muziek + karaoketekst (de standaard) levert de kale
-    bestandsnaam op - geen wijziging in bestaand gedrag."""
+def test_the_standard_combination_gets_no_suffix() -> None:
+    """Karaoke music plus karaoke text - the standard - gives the bare
+    file name; no change to existing behaviour."""
     from modules.pipeline import render_filename_suffix
 
     assert render_filename_suffix("karaoke", "karaoke") == ""
 
 
-def test_afwijkende_combinaties_krijgen_muziek_dan_tekst_code() -> None:
-    """Achtervoegsel is ``_<muziek>_<tekst>`` met 3-letter-codes; muziek
-    eerst, tekst tweede (zoals gevraagd)."""
+def test_other_combinations_get_a_music_then_text_code() -> None:
+    """The suffix is ``_<music>_<text>`` in three-letter codes: music
+    first, text second, as asked for."""
     from modules.pipeline import render_filename_suffix
 
     assert render_filename_suffix("vocals", "original") == "_voc_ori"
@@ -23,17 +23,18 @@ def test_afwijkende_combinaties_krijgen_muziek_dan_tekst_code() -> None:
     assert render_filename_suffix("karaoke", "original") == "_kar_ori"
 
 
-def test_demucs_code_voor_toekomstig_gebruik() -> None:
-    """Het 'demucs'-codepad in _render_audio (niet in de GUI-dialoog, maar
-    wel bestaand) krijgt ook een nette 3-letter-code."""
+def test_the_demucs_code_for_future_use() -> None:
+    """The 'demucs' path in _render_audio - not in the GUI dialog, but
+    there all the same - gets a proper three-letter code too."""
     from modules.pipeline import render_filename_suffix
 
     assert render_filename_suffix("demucs", "original") == "_dem_ori"
 
 
-def test_onbekende_bron_valt_terug_op_eerste_3_letters() -> None:
-    """Een onbekende bron (zou niet via de GUI moeten voorkomen) crasht niet
-    maar valt terug op de eerste 3 letters van de brontekst zelf."""
+def test_an_unknown_source_falls_back_to_three_letters() -> None:
+    """An unknown source - the GUI should never produce one - does not
+    crash but falls back on the first three letters of the source text
+    itself."""
     from modules.pipeline import render_filename_suffix
 
     assert render_filename_suffix("onbekend", "karaoke") == "_onb_kar"

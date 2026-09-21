@@ -1,20 +1,20 @@
-"""Tests voor v0.115.0: B360 (1.5.10 struikelde over de melder).
+"""Tests for v0.115.0: B360 (1.5.10 tripped over the reporter).
 
-B357 gaf de melder een andere vorm - van ``melden(naam)`` naar
-``melden(plek, naam, klaar, totaal)``, omdat elke werkplek zijn eigen
-balk kreeg. Alle acties gingen mee, behalve ``omission_trial``, die op één
-plek nog de oude vorm gebruikte. 1.5.10 viel daardoor na achtentwintig
-milliseconden om met een ``TypeError``.
+B357 gave the reporter a different shape - from one argument to
+``(slot, name, done, total)``, because every workplace got a bar of its
+own. Every action went along, except ``omission_trial``, which still
+used the old shape in one place. That is why 1.5.10 fell over with a
+``TypeError`` after twenty-eight milliseconds.
 
-Het venijn zit niet in die ene regel maar in waarom 827 tests hem niet
-zagen. Twee dingen wezen nog naar het oude contract: de typeaanduiding
-``Reporter`` bovenin ``test_panel.py`` stond nog op ``Callable[[str],
-None]``, en de tests riepen de acties aan met ``lambda _t: None`` - een
-melder met één argument. De test bevestigde dus het oude contract in
-plaats van het echte, en kon deze fout per definitie nooit vinden.
+The sting is not in that one line but in why 827 tests did not see it.
+Two things still pointed at the old contract: the type hint ``Reporter``
+at the top of ``test_panel.py`` still read ``Callable[[str], None]``, and
+the tests called the actions with ``lambda _t: None`` - a reporter with
+one argument. So the test confirmed the old contract instead of the real
+one, and could not possibly find this fault.
 
-Vandaar dat hieronder één melder staat die exact de vorm van de loper
-heeft, plus een bewaking die die twee vormen aan elkaar vastlegt.
+Hence one reporter below with exactly the shape the runner has, plus a
+guard that pins those two shapes to each other.
 """
 from __future__ import annotations
 
@@ -30,26 +30,26 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from modules import test_panel  # noqa: E402
 from modules.translations import TRANSLATIONS  # noqa: E402
 
-WORTEL = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
 
-#: De namen die de loper aan zijn melder geeft, in deze volgorde.
-MELDERVORM = ["slot", "name", "done", "total"]
+#: The names the runner gives its reporter, in this order.
+REPORTER_SHAPE = ["slot", "name", "done", "total"]
 
 
-def melder(gezien: list | None = None):
-    """Precies de melder die de loper meegeeft (B357/B360).
+def reporter(seen: list | None = None):
+    """Exactly the reporter the runner hands over (B357/B360).
 
-    Géén ``*args``: een melder die alles slikt zou deze bug juist
-    verbergen, en dat is exact wat er gebeurde.
+    No ``*args``: a reporter that swallows everything would hide this
+    very bug, and that is exactly what happened.
     """
     def report(slot: int, name: str, done: int = 0,
                total: int = 0) -> None:
-        if gezien is not None:
-            gezien.append((slot, name, done, total))
+        if seen is not None:
+            seen.append((slot, name, done, total))
     return report
 
 
-def _context(tmp_path: Path, naam: str = "Proef"):
+def _context(tmp_path: Path, name: str = "Proef"):
     from dataclasses import replace
 
     from modules import pipeline
@@ -57,142 +57,145 @@ def _context(tmp_path: Path, naam: str = "Proef"):
     from modules.filesystem import (ProjectPaths, ProjectStore,
                                     ensure_directories)
 
-    paths = ProjectPaths(root=tmp_path, song=naam)
+    paths = ProjectPaths(root=tmp_path, song=name)
     ensure_directories(paths)
     config = default_config()
-    config = replace(config, song=replace(config.song, title=naam))
+    config = replace(config, song=replace(config.song, title=name))
     return pipeline.AppContext(paths=paths, config=config,
                                store=ProjectStore(paths.project_file))
 
 
 # --------------------------------------------------------------------------
-# De reparatie zelf
+# The repair itself
 # --------------------------------------------------------------------------
 
-def test_de_weglaatproef_meldt_met_de_nieuwe_vorm(tmp_path) -> None:
-    """Dit is de regel die omviel; hij moet nu gewoon lopen."""
-    gezien: list = []
-    uitkomst = test_panel.omission_trial(_context(tmp_path), melder(gezien),
+def test_the_omission_trial_reports_in_the_new_shape(tmp_path) -> None:
+    """This is the line that fell over; it simply has to run now."""
+    seen: list = []
+    outcome = test_panel.omission_trial(_context(tmp_path), reporter(seen),
                                        lambda: False)
-    assert isinstance(uitkomst, str)
-    assert gezien, "1.5.9 moet zijn varianten melden"
-    for plek, naam, klaar, totaal in gezien:
-        assert plek == 0, "de variantnaam hoort op de eerste balk"
-        assert isinstance(naam, str) and naam.strip()
-        assert (klaar, totaal) == (0, 0)
+    assert isinstance(outcome, str)
+    assert seen, "1.5.9 has to report its variants"
+    for slot, name, done, total in seen:
+        assert slot == 0, "the variant name belongs on the first bar"
+        assert isinstance(name, str) and name.strip()
+        assert (done, total) == (0, 0)
 
 
-def test_de_weglaatproef_noemt_zijn_varianten(tmp_path) -> None:
-    """B361: de varianten komen uit het register, met hun B-nummer."""
+def test_the_omission_trial_names_its_variants(tmp_path) -> None:
+    """B361: the variants come from the register, with their B number."""
     from modules import model_register
 
-    gezien: list = []
-    test_panel.omission_trial(_context(tmp_path), melder(gezien),
+    seen: list = []
+    test_panel.omission_trial(_context(tmp_path), reporter(seen),
                             lambda: False)
-    namen = [naam for _plek, naam, _k, _t in gezien]
-    assert len(namen) == len(set(namen)), "elke variant maar één keer"
-    meetbaar = [m.label for m in model_register.register()
-                if m.level in ("blok", "zin", "koppeling")]
-    for label in meetbaar:
-        assert label in namen, label
+    names = [name for _slot, name, _d, _t in seen]
+    assert len(names) == len(set(names)), "every variant only once"
+    measurable = [m.label for m in model_register.register()
+                  if m.level in ("blok", "zin", "koppeling")]
+    for label in measurable:
+        assert label in names, label
 
 
 # --------------------------------------------------------------------------
-# Het contract vastleggen, zodat dit niet nog eens kan
+# Pinning the contract down, so this cannot happen twice
 # --------------------------------------------------------------------------
 
-def test_de_loper_geeft_de_melder_die_wij_hier_gebruiken() -> None:
-    """Legt de vorm in de loper vast aan de vorm in deze tests.
+def test_the_runner_hands_over_the_reporter_we_use_here() -> None:
+    """Pins the shape in the runner to the shape in these tests.
 
-    Verandert de melder nóg een keer, dan valt deze test om in plaats
-    van één vergeten actie in beeld.
+    If the reporter changes once more, this test falls over instead of
+    one forgotten action showing up on screen.
     """
     from modules import gui
 
-    boom = ast.parse(inspect.getsource(gui.MainWindow._do_fill_cache).lstrip())
-    binnenin = [k for k in ast.walk(boom)
-                if isinstance(k, ast.FunctionDef) and k.name == "report"]
-    assert len(binnenin) == 1, "waar is de melder van de loper gebleven?"
-    namen = [a.arg for a in binnenin[0].args.args]
-    assert namen[:len(MELDERVORM)] == MELDERVORM
-    assert list(inspect.signature(melder()).parameters) == MELDERVORM
+    tree = ast.parse(inspect.getsource(gui.MainWindow._do_fill_cache).lstrip())
+    inside = [k for k in ast.walk(tree)
+              if isinstance(k, ast.FunctionDef) and k.name == "report"]
+    assert len(inside) == 1, "where has the runner's reporter gone?"
+    names = [a.arg for a in inside[0].args.args]
+    assert names[:len(REPORTER_SHAPE)] == REPORTER_SHAPE
+    assert list(inspect.signature(reporter()).parameters) == REPORTER_SHAPE
 
 
-def test_geen_actie_roept_de_melder_nog_met_een_argument_aan() -> None:
-    """De structurele bewaking: ``melden(naam)`` mag nergens meer staan.
+def test_no_action_calls_the_reporter_with_one_argument() -> None:
+    """The structural guard: a one-argument call may not stand anywhere.
 
-    Goedkoper en scherper dan wachten tot een zware actie omvalt.
+    Cheaper and sharper than waiting for a heavy action to fall over.
     """
-    fout = []
-    for pad in (WORTEL / "modules" / "test_panel.py",
-                WORTEL / "modules" / "gui.py"):
-        boom = ast.parse(pad.read_text(encoding="utf-8"))
-        for knoop in ast.walk(boom):
-            if not isinstance(knoop, ast.Call):
+    wrong = []
+    for path in (ROOT / "modules" / "test_panel.py",
+                 ROOT / "modules" / "gui.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
                 continue
-            if not (isinstance(knoop.func, ast.Name)
-                    and knoop.func.id == "melden"):
+            if not (isinstance(node.func, ast.Name)
+                    and node.func.id == "melden"):
                 continue
-            if len(knoop.args) < 2:
-                fout.append(f"{pad.name}:{knoop.lineno}")
-    assert fout == [], "melden() met te weinig argumenten: " + ", ".join(fout)
+            if len(node.args) < 2:
+                wrong.append(f"{path.name}:{node.lineno}")
+    assert wrong == [], ("melden() with too few arguments: "
+                         + ", ".join(wrong))
 
 
-def test_de_typeaanduiding_wijst_niet_meer_de_verkeerde_kant_op() -> None:
-    """``Callable[[str], None]`` beschreef de melder van vóór B357."""
-    bron = (WORTEL / "modules" / "test_panel.py").read_text(encoding="utf-8")
-    assert "Reporter = Callable[[str], None]" not in bron
-    assert "Reporter = Callable[..., None]" in bron
+def test_the_type_hint_no_longer_points_the_wrong_way() -> None:
+    """``Callable[[str], None]`` described the reporter from before B357."""
+    source = (ROOT / "modules" / "test_panel.py").read_text(encoding="utf-8")
+    assert "Reporter = Callable[[str], None]" not in source
+    assert "Reporter = Callable[..., None]" in source
 
 
 # --------------------------------------------------------------------------
-# Alle elf, met de echte melder
+# All eleven, with the real reporter
 # --------------------------------------------------------------------------
 
-def test_elke_actie_verdraagt_de_echte_melder(tmp_path, monkeypatch) -> None:
-    """Alle elf, niet de vier die toevallig nooit iets melden.
+def test_every_action_copes_with_the_real_reporter(tmp_path,
+                                                   monkeypatch) -> None:
+    """All eleven, not the four that happen never to report anything.
 
-    ``test_rapporten_draaien_op_een_leeg_project`` liep alleen 1.5.2 t/m
-    1.5.5 af, en juist die vier roepen de melder nooit aan. Daardoor kon
-    1.5.10 groen staan terwijl hij in beeld meteen omviel.
+    ``test_the_reports_run_on_an_empty_project`` only walked 1.5.2 up to
+    1.5.5, and those four are precisely the ones that never call the
+    reporter. That is how 1.5.10 could stand green while it fell over on
+    screen straight away.
     """
     monkeypatch.setattr(test_panel, "MATRIX_REPORT",
                         tmp_path / "modelmatrix.md")
     context = _context(tmp_path)
-    for actie in test_panel.ACTIONS:
-        uitkomst = actie.function(context, melder(), lambda: False)
-        assert isinstance(uitkomst, str), actie.code
+    for action in test_panel.ACTIONS:
+        outcome = action.function(context, reporter(), lambda: False)
+        assert isinstance(outcome, str), action.code
 
 
-def test_elke_actie_stopt_netjes_op_de_stopknop(tmp_path,
-                                                monkeypatch) -> None:
+def test_every_action_stops_cleanly_on_the_stop_button(tmp_path,
+                                                       monkeypatch) -> None:
     monkeypatch.setattr(test_panel, "MATRIX_REPORT",
                         tmp_path / "modelmatrix.md")
     context = _context(tmp_path)
-    for actie in test_panel.ACTIONS:
-        assert isinstance(actie.function(context, melder(), lambda: True),
-                          str), actie.code
+    for action in test_panel.ACTIONS:
+        assert isinstance(action.function(context, reporter(), lambda: True),
+                          str), action.code
 
 
 # --------------------------------------------------------------------------
-# "Liep vast" betekende iets anders geworden
+# "Hung" had come to mean something else
 # --------------------------------------------------------------------------
 
-def test_een_gestruikelde_actie_heet_niet_meer_vastgelopen() -> None:
-    """Sinds B359 is "vastlopen" een andere storing: een dood venster.
+def test_a_tripped_action_is_no_longer_called_hung() -> None:
+    """Since B359 "hanging" is a different failure: a dead window.
 
-    1.5.10 hing niet, hij viel om na achtentwintig milliseconden - en de
-    melding stuurde precies de verkeerde kant op bij het zoeken.
+    1.5.10 did not hang, it fell over after twenty-eight milliseconds -
+    and the message sent the search in exactly the wrong direction.
     """
-    for sleutel in ("log_test_failed", "test_failed", "test_project_failed"):
-        tekst = TRANSLATIONS["nl"][sleutel]
-        assert "vast" not in tekst, f"{sleutel}: {tekst!r}"
-        assert "struikel" in tekst, f"{sleutel}: {tekst!r}"
+    for key in ("log_test_failed", "test_failed", "test_project_failed"):
+        text = TRANSLATIONS["nl"][key]
+        assert "vast" not in text, f"{key}: {text!r}"
+        assert "struikel" in text, f"{key}: {text!r}"
     assert set(TRANSLATIONS["nl"]) == set(TRANSLATIONS["en"])
 
 
-@pytest.mark.parametrize("sleutel", ["test_failed", "test_project_failed"])
-def test_de_meldingen_houden_hun_invulplek(sleutel) -> None:
-    for taal in ("nl", "en"):
-        tekst = TRANSLATIONS[taal][sleutel]
-        assert "{code}" in tekst or "{name}" in tekst, f"{sleutel} ({taal})"
+@pytest.mark.parametrize("key", ["test_failed", "test_project_failed"])
+def test_the_messages_keep_their_placeholder(key) -> None:
+    for language in ("nl", "en"):
+        text = TRANSLATIONS[language][key]
+        assert "{code}" in text or "{name}" in text, f"{key} ({language})"

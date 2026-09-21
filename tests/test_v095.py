@@ -1,10 +1,10 @@
-"""Tests voor v0.95 (B288 t/m B302).
+"""Tests for v0.95 (B288 up to and including B302).
 
-Een opruim- en correctheidsronde, voortgekomen uit een volledige review van
-de codebase op logica, dode code en vertaalbaarheid. De bugs hieronder
-waren geen van alle door de gebruiker gemeld: ze kwamen uit de review en
-zijn stuk voor stuk met een concreet faalscenario gereproduceerd voordat ze
-zijn gefixt.
+A clean-up and correctness round, born out of a full review of the code
+base on logic, dead code and translatability. Not one of the bugs below
+was reported by the user: they came out of the review and every one of
+them was reproduced with a concrete failing scenario before it was
+fixed.
 """
 
 from __future__ import annotations
@@ -33,15 +33,15 @@ def _context(tmp_path: Path) -> AppContext:
 
 
 # --------------------------------------------------------------------------
-# B288 - priority_lines vergeleek een woordindex met een regelnummer
+# B288 - priority_lines compared a word index with a line number
 # --------------------------------------------------------------------------
 
 def _viva_segments() -> tuple:
-    """Transcriptie waarin het vulwoord "oh" als "hoa" gehoord is.
+    """Transcription in which the filler word "oh" was heard as "hoa".
 
-    similarity("oh", "hoa") = 0.5: onder de normale vulwoorddrempel (0.6),
-    maar boven de voorrangsdrempel (0.5). Zo is aan de koppeling af te lezen
-    of de voorrang wel of niet is toegepast.
+    similarity("oh", "hoa") = 0.5: under the normal filler threshold
+    (0.6), but above the priority threshold (0.5). That way the
+    coupling shows whether the priority was applied or not.
     """
     return (
         Segment(0, "niets veranderd hoa het voelt", 0.0, 5.0, (
@@ -54,101 +54,105 @@ def _viva_segments() -> tuple:
     )
 
 
-def test_priority_lines_werkt_op_regelnummer_niet_op_woordindex() -> None:
-    """B288: alle woorden staan op regel 5. Geef je regel 5 als
-    voorrangsregel, dan MOET de soepelere drempel gelden en wordt "oh"
-    alsnog gekoppeld. Vóór de fix werd ``i in priority`` getoetst - met
-    ``i`` de woordindex - en gebeurde er niets."""
+def test_priority_lines_works_on_the_line_number_not_the_word_index(
+) -> None:
+    """B288: every word sits on line 5. Give line 5 as a priority line
+    and the gentler threshold MUST apply, so that "oh" is coupled after
+    all. Before the fix ``i in priority`` was tested - with ``i`` the
+    word index - and nothing happened."""
     lyrics = tuple(LyricWord(i, t, 5) for i, t in enumerate(
         ["niets", "veranderd", "oh", "het", "voelt"]))
     aligned = align_lyrics(lyrics, _viva_segments(), skip_filler=True,
                            priority_lines=frozenset({5}))
     oh = aligned[2]
-    assert oh.matched_text == "hoa", "voorrangsregel verlaagde de drempel niet"
+    assert oh.matched_text == "hoa", \
+        "the priority line did not lower the threshold"
 
 
-def test_priority_lines_raakt_niet_de_verkeerde_woorden() -> None:
-    """B288, andere kant: regelnummer 2 is hier GEEN regel van deze woorden
-    (die staan allemaal op regel 5). Vóór de fix koppelde dat toevallig het
-    derde woord (index 2), puur omdat het nummer samenviel."""
+def test_priority_lines_does_not_touch_the_wrong_words() -> None:
+    """B288, the other way round: line number 2 is NOT a line of these
+    words (they all sit on line 5). Before the fix that coupled the
+    third word (index 2) by coincidence, purely because the number
+    matched."""
     lyrics = tuple(LyricWord(i, t, 5) for i, t in enumerate(
         ["niets", "veranderd", "oh", "het", "voelt"]))
     aligned = align_lyrics(lyrics, _viva_segments(), skip_filler=True,
                            priority_lines=frozenset({2}))
     assert aligned[2].matched_text is None, \
-        "woordindex werd nog steeds als regelnummer gebruikt"
+        "the word index was still used as a line number"
 
 
 # --------------------------------------------------------------------------
-# B289 - lang="nl" in een booleaans veld
+# B289 - lang="nl" in a boolean field
 # --------------------------------------------------------------------------
 
-def test_timedline_from_text_zet_lang_niet_op_een_string() -> None:
-    """B289: ``Syllable.lang`` betekent "lang aangehouden noot" en stuurt de
-    onderstreping in de render aan. Er stond ``lang="nl"`` (verwarring met
-    de taalparameter); een niet-lege string is truthy, dus élke lettergreep
-    werd onderstreept."""
+def test_timedline_from_text_does_not_set_lang_to_a_string() -> None:
+    """B289: ``Syllable.lang`` means "long held note" and drives the
+    underlining in the render. It read ``lang="nl"`` (confusion with the
+    language parameter); a non-empty string is truthy, so EVERY syllable
+    was underlined."""
     line = timing.timedline_from_text(0, "hallo wereld", 0.0, 2.0)
     assert [s.held for s in line.syllables] == [False, False, False, False]
     assert not any(s.held for s in line.syllables)
 
 
 # --------------------------------------------------------------------------
-# B290 - distribute_over_windows crashte bij meer vensters dan woorden
+# B290 - distribute_over_windows crashed on more windows than words
 # --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("n_words,n_windows",
                          [(2, 4), (2, 9), (3, 5), (4, 6), (2, 12)])
-def test_distribute_over_windows_crasht_niet_bij_veel_vensters(
+def test_distribute_over_windows_does_not_crash_on_many_windows(
     n_words: int, n_windows: int,
 ) -> None:
-    """B290: zodra een regel ``n_woorden + 2`` of meer zangvensters bevatte,
-    liep de klem voorbij het laatste woord en gaf ``woord_spans[wi]`` een
-    IndexError. Die werd door het vangnet in
-    ``pipeline._apply_energy_word_timing`` opgeslokt, waardoor de
-    energie-woordtiming van het HELE lied stilzwijgend uitviel."""
+    """B290: as soon as a line held ``n_words + 2`` or more sung
+    windows, the clamp ran past the last word and ``word_spans[wi]``
+    raised an IndexError. That was swallowed by the safety net in
+    ``pipeline._apply_energy_word_timing``, which silently dropped the
+    energy word timing of the WHOLE song."""
     text_value = " ".join(f"woord{i}" for i in range(n_words))
     line = timing.timedline_from_text(0, text_value, 0.0, 20.0)
     usable_windows = [(i * 1.5, i * 1.5 + 1.0) for i in range(n_windows)]
-    uit = timing.distribute_over_windows(line, usable_windows)
-    assert len(uit.syllables) == len(line.syllables)
+    out = timing.distribute_over_windows(line, usable_windows)
+    assert len(out.syllables) == len(line.syllables)
 
 
-def test_distribute_over_windows_behoudt_volgorde_en_lettergrepen() -> None:
-    """B290: na het samenvoegen van overtollige vensters moeten de
-    lettergrepen nog steeds compleet, oplopend en niet-overlappend zijn."""
+def test_distribute_over_windows_keeps_the_order_and_the_syllables(
+) -> None:
+    """B290: after merging the surplus windows the syllables still have
+    to be complete, ascending and non-overlapping."""
     line = timing.timedline_from_text(0, "een twee drie", 0.0, 20.0)
     usable_windows = [(i * 2.0, i * 2.0 + 1.0) for i in range(8)]
-    uit = timing.distribute_over_windows(line, usable_windows)
-    assert len(uit.syllables) == len(line.syllables)
-    times = [(s.start, s.end) for s in uit.syllables]
+    out = timing.distribute_over_windows(line, usable_windows)
+    assert len(out.syllables) == len(line.syllables)
+    times = [(s.start, s.end) for s in out.syllables]
     assert all(a <= b for a, b in times)
     assert all(times[i][1] <= times[i + 1][0] + 1e-6
                for i in range(len(times) - 1))
 
 
-def test_distribute_over_windows_houdt_de_grootste_pauzes() -> None:
-    """B290: overtollige vensters worden samengevoegd op de KLEINSTE
-    tussenpauze, zodat juist de duidelijke pauzes (waar B234 om draait)
-    blijven staan en de buitenspan van de regel intact blijft."""
+def test_distribute_over_windows_keeps_the_biggest_pauses() -> None:
+    """B290: surplus windows are merged on the SMALLEST pause between
+    them, so that exactly the clear pauses (what B234 is about) stay
+    standing and the outer span of the line stays intact."""
     line = timing.timedline_from_text(0, "een twee", 0.0, 20.0)
-    # Twee vensters dicht bij elkaar, dan een groot gat, dan nog een.
+    # Two windows close together, then a wide gap, then one more.
     usable_windows = [(0.0, 1.0), (1.1, 2.0), (10.0, 11.0)]
-    uit = timing.distribute_over_windows(line, usable_windows)
-    assert uit.syllables[0].start == pytest.approx(0.0, abs=0.05)
-    assert uit.syllables[-1].end == pytest.approx(11.0, abs=0.05)
+    out = timing.distribute_over_windows(line, usable_windows)
+    assert out.syllables[0].start == pytest.approx(0.0, abs=0.05)
+    assert out.syllables[-1].end == pytest.approx(11.0, abs=0.05)
 
 
 # --------------------------------------------------------------------------
-# B291 - blok en uitgeschakeld gingen verloren bij een tekstwijziging
+# B291 - block and disabled were lost on a text change
 # --------------------------------------------------------------------------
 
-def test_sync_timing_behoudt_blok_en_uitgeschakeld(tmp_path: Path) -> None:
-    """B291: bij het doorvoeren van een gecorrigeerde karaoketekst werden
-    ``blok`` en ``uitgeschakeld`` niet meegegeven aan de nieuwe
-    ``TimedLine``, waardoor ze terugvielen op 0/False. Een regel die de
-    gebruiker had uitgeschakeld (B180) stond na een typefoutcorrectie dus
-    weer gewoon in de video."""
+def test_sync_timing_keeps_block_and_disabled(tmp_path: Path) -> None:
+    """B291: when a corrected karaoke text was carried through,
+    ``block`` and ``disabled`` were not passed to the new
+    ``TimedLine``, so they fell back to 0/False. A line the user had
+    switched off (B180) was therefore simply back in the video after a
+    typo correction."""
     from modules.karaoke_text import TextLine
 
     context = _context(tmp_path)
@@ -174,24 +178,24 @@ def test_sync_timing_behoudt_blok_en_uitgeschakeld(tmp_path: Path) -> None:
         context, old, new)
     assert updated is True
 
-    na = timing.load_timing(context.paths.timing_file)
-    assert na[1].text == "tweede regels"          # de wijziging is door
-    assert na[1].disabled is True, "uitgeschakeld ging verloren"
-    assert na[1].block == 1, "blok ging verloren"
-    assert na[1].quality == "word"             # bestond al, blijft
-    assert na[0].block == 0                        # ongewijzigde regel intact
+    after = timing.load_timing(context.paths.timing_file)
+    assert after[1].text == "tweede regels"        # the change came through
+    assert after[1].disabled is True, "disabled was lost"
+    assert after[1].block == 1, "block was lost"
+    assert after[1].quality == "word"          # existed already, stays
+    assert after[0].block == 0                     # untouched line intact
 
 
 # --------------------------------------------------------------------------
-# B292 - losse eindjes uit v0.93/v0.94
+# B292 - loose ends from v0.93/v0.94
 # --------------------------------------------------------------------------
 
-def test_word_in_lyrics_heeft_geen_dode_floor_parameter() -> None:
-    """B292: ``_word_in_lyrics`` had een ``floor``-parameter die nooit
-    anders dan met de default werd aangeroepen, terwijl de docstring
-    suggereerde dat de brede B285-check hem gebruikte. Die check gaat via
-    ``_best_lyrics_match``; wie op de docstring afging, stelde het verkeerde
-    bij."""
+def test_word_in_lyrics_has_no_dead_floor_parameter() -> None:
+    """B292: ``_word_in_lyrics`` had a ``floor`` parameter that was
+    never called with anything but the default, while the docstring
+    suggested the wide B285 check used it. That check goes through
+    ``_best_lyrics_match``; whoever went by the docstring tuned the
+    wrong thing."""
     import inspect
 
     params = inspect.signature(pipeline._word_in_lyrics).parameters
@@ -199,31 +203,31 @@ def test_word_in_lyrics_heeft_geen_dode_floor_parameter() -> None:
     assert list(params) == ["word", "lyric_keys"]
 
 
-def test_dode_restore_interval_helpers_zijn_weg() -> None:
-    """B292: ``restore_intervals_to_dicts``/``_from_dicts`` (B282) werden
-    nergens aangeroepen én beschreven een ander formaat dan er werkelijk
-    wordt opgeslagen (``restore_fragmenten`` bewaart drietallen)."""
+def test_the_dead_restore_interval_helpers_are_gone() -> None:
+    """B292: ``restore_intervals_to_dicts``/``_from_dicts`` (B282) were
+    called nowhere AND described a different format from what is really
+    stored (``restore_fragments`` keeps triples)."""
     assert not hasattr(karaoke, "restore_intervals_to_dicts")
     assert not hasattr(karaoke, "restore_intervals_from_dicts")
 
 
 # --------------------------------------------------------------------------
-# B301 - ongecontroleerde drempel en misleidend samengevoegd label
+# B301 - unchecked threshold and a misleading merged label
 # --------------------------------------------------------------------------
 
-def test_align_min_confidence_wordt_gecontroleerd(tmp_path: Path) -> None:
-    """B301: ``align.min_confidence`` was de enige drempel zonder controle,
-    terwijl 0.0 de gewogen middeling in ``align._build_regions`` door nul
-    laat delen."""
+def test_align_min_confidence_is_checked(tmp_path: Path) -> None:
+    """B301: ``align.min_confidence`` was the only threshold without a
+    check, while 0.0 makes the weighted averaging in
+    ``align._build_regions`` divide by zero."""
     import json
     from dataclasses import replace
 
     cfg = default_config()
-    kapot = replace(cfg, align=replace(cfg.align, min_confidence=0.0))
+    broken = replace(cfg, align=replace(cfg.align, min_confidence=0.0))
     with pytest.raises(config.ConfigError, match="align.min_confidence"):
-        config._validate(kapot)
+        config._validate(broken)
 
-    # En via het echte laadpad (config.json op schijf).
+    # And through the real loading path (config.json on disk).
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"align": {"min_confidence": 0.0}}),
                    encoding="utf-8")
@@ -231,35 +235,36 @@ def test_align_min_confidence_wordt_gecontroleerd(tmp_path: Path) -> None:
         config.load_config(path)
 
 
-def test_build_regions_overleeft_nulgewichten() -> None:
-    """B301: dit is precies het pad dat de configcontrole hierboven nu
-    afsluit, maar ``_build_regions`` is ook los aanroepbaar. Met
-    ``min_confidence=0.0`` glippen vensters met confidence 0.0 door de
-    filter heen en kwamen ze bij ``np.average(..., weights=...)`` terecht -
-    dat deelt door de gewichtensom en gaf een ZeroDivisionError. Nu valt hij
-    terug op het ongewogen gemiddelde."""
+def test_build_regions_survives_zero_weights() -> None:
+    """B301: this is exactly the path the config check above now closes
+    off, but ``_build_regions`` can also be called on its own. With
+    ``min_confidence=0.0`` windows with confidence 0.0 slip through the
+    filter and ended up at ``np.average(..., weights=...)`` - which
+    divides by the sum of the weights and raised a ZeroDivisionError.
+    It now falls back on the unweighted mean."""
     from dataclasses import replace
 
     settings = replace(default_config().align, min_confidence=0.0)
-    # Beide offsets binnen de tolerantie (40 ms), zodat ze één groep vormen
-    # en dus samen door de gewogen middeling gaan.
+    # Both offsets within the tolerance (40 ms), so that they form one
+    # group and therefore go through the weighted averaging together.
     usable_windows = [align.WindowOffset(start=0.0, end=1.0, offset=0.10,
                                    confidence=0.0),
                 align.WindowOffset(start=1.0, end=2.0, offset=0.12,
                                    confidence=0.0)]
-    regios = align._build_regions(usable_windows, duration=2.0, fallback_offset=0.0,
+    regions = align._build_regions(usable_windows, duration=2.0, fallback_offset=0.0,
                                   fallback_confidence=0.0,
                                   settings=settings)
-    assert regios, "geen regio's opgeleverd"
-    # Ongewogen gemiddelde van 0.10 en 0.12; vóór de fix een ZeroDivisionError.
-    assert regios[0].offset == pytest.approx(0.11)
+    assert regions, "no regions produced"
+    # Unweighted mean of 0.10 and 0.12; before the fix a
+    # ZeroDivisionError.
+    assert regions[0].offset == pytest.approx(0.11)
 
 
-def test_merge_intervals_noemt_alle_samengevoegde_klanken() -> None:
-    """B301: een samengevoegd dempingsvak hield alleen het label van het
-    eerste fragment, terwijl het in werkelijkheid meerdere clusters dempte -
-    misleidend bij het aan-/uitvinken in de dempingseditor. De demping zelf
-    wordt de sterkste van de twee."""
+def test_merge_intervals_names_every_sound_it_merged() -> None:
+    """B301: a merged damping span kept only the label of the first
+    fragment, while in reality it damped several clusters - misleading
+    when ticking them on and off in the damping editor. The damping
+    itself becomes the stronger of the two."""
     merged = karaoke.merge_intervals((
         karaoke.DampingInterval(label="oe", start=0.0, end=1.0,
                                 gain_db=-20.0),
@@ -268,13 +273,13 @@ def test_merge_intervals_noemt_alle_samengevoegde_klanken() -> None:
     ))
     assert len(merged) == 1
     assert merged[0].label == "oe+woo"
-    assert merged[0].gain_db == -30.0          # sterkste demping wint
+    assert merged[0].gain_db == -30.0          # strongest damping wins
     assert merged[0].start == 0.0 and merged[0].end == 2.0
 
 
-def test_merge_intervals_herhaalt_hetzelfde_label_niet() -> None:
-    """B301: drie aaneengesloten fragmenten van dezelfde klank leveren
-    "oe", niet "oe+oe+oe"."""
+def test_merge_intervals_does_not_repeat_the_same_label() -> None:
+    """B301: three adjacent fragments of the same sound give "oe", not
+    "oe+oe+oe"."""
     merged = karaoke.merge_intervals(tuple(
         karaoke.DampingInterval(label="oe", start=float(i), end=float(i) + 1,
                                 gain_db=-25.0)
@@ -283,9 +288,9 @@ def test_merge_intervals_herhaalt_hetzelfde_label_niet() -> None:
     assert merged[0].label == "oe"
 
 
-def test_merge_intervals_laat_losse_fragmenten_met_rust() -> None:
-    """B301: fragmenten die niet overlappen blijven onveranderd - label en
-    demping van elk apart."""
+def test_merge_intervals_leaves_separate_fragments_alone() -> None:
+    """B301: fragments that do not overlap stay unchanged - the label
+    and the damping of each on its own."""
     merged = karaoke.merge_intervals((
         karaoke.DampingInterval(label="oe", start=0.0, end=1.0,
                                 gain_db=-20.0),
@@ -297,64 +302,64 @@ def test_merge_intervals_laat_losse_fragmenten_met_rust() -> None:
 
 
 # --------------------------------------------------------------------------
-# B293/B295 - dode code en dode vertaalsleutels
+# B293/B295 - dead code and dead translation keys
 # --------------------------------------------------------------------------
 
-def test_dode_functies_en_constanten_zijn_weg() -> None:
-    """B293: opgeruimd omdat niets ze aanriep. ``detect_words`` deed
-    bovendien exact hetzelfde als ``detect_tracks(parallel=False)`` - twee
-    ingangen naar dezelfde stap 1 betekent dat een wijziging in de ene
-    stilzwijgend langs de andere gaat."""
+def test_the_dead_functions_and_constants_are_gone() -> None:
+    """B293: cleared out because nothing called them. ``detect_words``
+    did exactly the same as ``detect_tracks(parallel=False)`` on top of
+    that - two doors into the same step 1 means a change to one of them
+    silently passes the other by."""
     from modules import phonetics
 
     assert not hasattr(phonetics, "_lang_dir_name")
     assert not hasattr(pipeline, "TrackProgressCallback")
     assert not hasattr(pipeline, "detect_words")
-    assert hasattr(pipeline, "detect_tracks")       # de overgebleven ingang
+    assert hasattr(pipeline, "detect_tracks")       # the door that is left
 
 
-def test_smooth_regions_heeft_geen_dode_parameter() -> None:
-    """B293: ``fallback_offset`` werd nergens in de body gebruikt sinds de
-    overstap op trend-detectie (B249)."""
+def test_smooth_regions_has_no_dead_parameter() -> None:
+    """B293: ``fallback_offset`` was used nowhere in the body since the
+    move to trend detection (B249)."""
     import inspect
 
     params = inspect.signature(align._smooth_regions).parameters
     assert list(params) == ["regions"]
 
 
-def test_format_time_staat_maar_op_een_plek() -> None:
-    """B293: ``gui.py`` had een letterlijk identieke privékopie van
-    ``cluster._format_time``. Nu is er één publieke bron."""
+def test_format_time_stands_in_only_one_place() -> None:
+    """B293: ``gui.py`` had a literally identical private copy of
+    ``cluster._format_time``. Now there is one public source."""
     from modules import cluster, gui
 
     assert cluster.format_time(75.25) == "1:15.2"
     assert gui._format_time is cluster.format_time
 
 
-def test_geen_dode_vertaalsleutels_meer() -> None:
-    """B295: 14 sleutels stonden nog in beide woordenboeken maar werden
-    nergens meer aangeroepen (o.a. de wezen van een dialoog die door een
-    foutmelding is vervangen)."""
+def test_no_dead_translation_keys_left() -> None:
+    """B295: 14 keys were still in both dictionaries but were called
+    nowhere any more (among them the orphans of a dialogue that an error
+    message replaced)."""
     from modules.translations import TRANSLATIONS
 
-    for weg in ("options_group", "analyse_on", "analyse_hint",
-                "render_audio_demucs", "analyse_toggle_log",
-                "track_required_body", "alignment_remade", "mark_ok",
-                "mark_missing", "video_input_incomplete_title",
-                "video_input_incomplete_body", "video_input_complete_title",
-                "video_input_complete_body", "open"):
-        assert weg not in TRANSLATIONS["nl"], f"{weg} nog in nl"
-        assert weg not in TRANSLATIONS["en"], f"{weg} nog in en"
+    for gone in ("options_group", "analyse_on", "analyse_hint",
+                 "render_audio_demucs", "analyse_toggle_log",
+                 "track_required_body", "alignment_remade", "mark_ok",
+                 "mark_missing", "video_input_incomplete_title",
+                 "video_input_incomplete_body", "video_input_complete_title",
+                 "video_input_complete_body", "open"):
+        assert gone not in TRANSLATIONS["nl"], f"{gone} still in nl"
+        assert gone not in TRANSLATIONS["en"], f"{gone} still in en"
 
 
 # --------------------------------------------------------------------------
-# B296/B297/B298 - vertaalbaarheid en juiste stapverwijzingen
+# B296/B297/B298 - translatability and correct step references
 # --------------------------------------------------------------------------
 
-def test_pipeline_foutmeldingen_zijn_vertaalbaar(tmp_path: Path) -> None:
-    """B296: de foutmeldingen uit de pijplijn komen via ``_on_failed`` in een
-    QMessageBox terecht; ze stonden allemaal hardgecodeerd in het
-    Nederlands. Nu volgen ze de ingestelde taal."""
+def test_the_pipeline_error_messages_are_translatable(tmp_path: Path) -> None:
+    """B296: the error messages out of the pipeline end up in a
+    QMessageBox through ``_on_failed``; they were all hard-coded in
+    Dutch. They now follow the language that is set."""
     from modules import translations
     from modules.pipeline import PipelineError
 
@@ -364,7 +369,8 @@ def test_pipeline_foutmeldingen_zijn_vertaalbaar(tmp_path: Path) -> None:
         with pytest.raises(PipelineError) as error:
             pipeline.load_segments(context, "original")
         assert "No transcription" in str(error.value)
-        # B325: de knopnaam komt uit dezelfde vertaalsleutel als de knop.
+        # B325: the button name comes from the same translation key as
+        # the button itself.
         assert translations.TRANSLATIONS["en"]["step_detect"] \
             in str(error.value)
 
@@ -376,20 +382,21 @@ def test_pipeline_foutmeldingen_zijn_vertaalbaar(tmp_path: Path) -> None:
         translations.set_language("nl")
 
 
-def test_geen_hardgecodeerde_pipelinefouten_meer() -> None:
-    """B296: regressiewacht - elke ``raise PipelineError`` gaat via ``t()``
-    of geeft een bestaande uitzondering door, niet een letterlijke tekst."""
+def test_no_hard_coded_pipeline_errors_left() -> None:
+    """B296: a regression guard - every ``raise PipelineError`` goes
+    through ``t()`` or passes an existing exception on, not a literal
+    text."""
     import re
 
     source = (Path(__file__).parent.parent / "modules" / "pipeline.py").read_text(
         encoding="utf-8")
-    letterlijk = re.findall(r'raise PipelineError\("', source)
-    assert not letterlijk, f"{len(letterlijk)} hardgecodeerde foutmelding(en)"
+    literal = re.findall(r'raise PipelineError\("', source)
+    assert not literal, f"{len(literal)} hard-coded error message(s)"
 
 
-def test_html_rapport_volgt_de_taal() -> None:
-    """B296: het HTML-clusterrapport was volledig hardgecodeerd Nederlands,
-    inclusief de titel en de kopjes."""
+def test_the_html_report_follows_the_language() -> None:
+    """B296: the HTML cluster report was hard-coded Dutch from top to
+    bottom, the title and the headings included."""
     from modules import cluster, translations
     from modules.whisper import Segment, Word
 
@@ -414,28 +421,28 @@ def test_html_rapport_volgt_de_taal() -> None:
         translations.set_language("nl")
 
 
-def test_stapnummers_in_teksten_kloppen_met_de_knoppen() -> None:
-    """B297: teksten verwezen naar "stap 2 (Analyse)" en "stap 3
-    (Uitlijnen)", terwijl de knoppen anders heten - en een aparte
-    Uitlijnen-stap bestaat niet meer (die loopt automatisch).
+def test_the_step_numbers_in_texts_match_the_buttons() -> None:
+    """B297: texts pointed at "step 2 (Analyse)" and "step 3 (Align)",
+    while the buttons are called something else - and a separate Align
+    step does not exist any more (it runs by itself).
 
-    B325: de nummering is <tab>.<knop>. geworden en een tekst noemt de
-    knop niet meer bij naam maar bij sleutel, zodat hij niet opnieuw uit
-    de pas kan lopen.
+    B325: the numbering has become <tab>.<button>. and a text no longer
+    names the button but its key, so that it cannot fall out of step
+    again.
     """
     from modules import translations as translations_module
     from modules.translations import TRANSLATIONS
 
-    for taalcode in ("nl", "en"):
-        translations = TRANSLATIONS[taalcode]
+    for code in ("nl", "en"):
+        translations = TRANSLATIONS[code]
         assert translations["step_analyse"].startswith("1.3. ")
         assert "{step_analyse}" in translations["prereq_need_analyse"]
-        # Nergens meer een verwijzing naar een niet-bestaande Uitlijnen-stap.
+        # Nowhere a reference left to an Align step that does not exist.
         for key, text_value in translations.items():
             assert "Uitlijnen'" not in text_value, key
             assert "stap 2 (Analyse)" not in text_value, key
 
-    # De ingevulde tekst bevat de actuele knopnaam.
+    # The filled-in text carries the current button name.
     try:
         translations_module.set_language("nl")
         assert "1.3. Analyse" in translations_module.t("prereq_need_analyse")
@@ -445,22 +452,22 @@ def test_stapnummers_in_teksten_kloppen_met_de_knoppen() -> None:
         translations_module.set_language("nl")
 
 
-def test_geen_interne_bugreferenties_in_zichtbare_teksten() -> None:
-    """B298: de tooltip van de regel-schakelaar eindigde op "(B180)" - een
-    interne bevindingsnummering die de gebruiker niets zegt."""
+def test_no_internal_bug_references_in_visible_texts() -> None:
+    """B298: the tooltip of the line switch ended on "(B180)" - an
+    internal finding number that says nothing to the user."""
     import re
 
     from modules.translations import TRANSLATIONS
 
-    for taalcode, translations in TRANSLATIONS.items():
+    for code, translations in TRANSLATIONS.items():
         for key, text_value in translations.items():
             assert not re.search(r"\bB\d{2,3}\b", text_value), \
-                f"{taalcode}/{key} bevat een interne bugreferentie: {text_value}"
+                f"{code}/{key} holds an internal bug reference: {text_value}"
 
 
-def test_taalsleutels_blijven_in_balans() -> None:
-    """De nl- en en-woordenboeken moeten exact dezelfde sleutels houden,
-    ook na het toevoegen van ~45 nieuwe en het schrappen van 14."""
+def test_the_language_keys_stay_in_balance() -> None:
+    """The nl and en dictionaries have to keep exactly the same keys,
+    also after adding ~45 new ones and striking 14."""
     from modules.translations import TRANSLATIONS
 
     assert set(TRANSLATIONS["nl"]) == set(TRANSLATIONS["en"])

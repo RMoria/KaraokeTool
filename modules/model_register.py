@@ -33,7 +33,7 @@ Not to be confused with :mod:`modules.models`, which is about the large
 optional libraries (Demucs, wav2vec2).
 
 The measured value per model is in ``docs/modelmatrix.md``; the
-reasoning behind a state is in ``docs/doorontwikkeling.md``.
+reasoning behind a state is in ``docs/development_log.md``.
 """
 from __future__ import annotations
 

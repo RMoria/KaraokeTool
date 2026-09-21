@@ -1,16 +1,17 @@
-"""Tests voor v0.88.0-fix (B270: de 3-2-1-afteller stond op een vaste
-beeldpositie en kon overlappen met een regel die over 2 rijen loopt) en
-v0.90.0-fix (B272: tijdens een gat schuift de regel op slot -1 er nu
-helemaal uit i.p.v. gewoon zichtbaar te blijven - zie test_v090.py voor de
-nieuwe compacte 4-posities-layout zelf; deze twee tests zijn hier herschreven
-zodat ze de B270-marge-logica tegen díe nieuwe layout blijven toetsen)."""
+"""Tests for the v0.88.0 fix (B270: the 3-2-1 countdown sat at a fixed
+position on screen and could overlap a line that runs over 2 rows) and
+the v0.90.0 fix (B272: during a gap the line in slot -1 now slides out
+of view entirely instead of simply staying visible - see test_v090.py
+for the new compact 4-position layout itself; these two tests are
+rewritten here so that they keep checking the B270 margin logic against
+that new layout)."""
 from __future__ import annotations
 
 import numpy as np
 
 
 def _color_top(frame, color, tol=40):
-    """Bovenste (kleinste) y-coördinaat waar ``kleur`` voorkomt, of None."""
+    """Topmost (smallest) y coordinate where ``color`` occurs, or None."""
     arr = np.asarray(frame)
     target = np.array(color)
     mask = np.abs(arr.astype(int) - target).sum(axis=2) < tol
@@ -19,15 +20,15 @@ def _color_top(frame, color, tol=40):
 
 
 # --------------------------------------------------------------------------
-# B270/B272/B474 - tijdens een instrumentaal gat valt slot -1 helemaal weg
-# (B272) en neemt de afteller de PLEK in van de net gezongen regel (B474).
-# Die regel wordt dan niet meer getekend, dus de afteller kan er ook niet
-# meer door omlaag geduwd worden; wat blijft is dat hij nooit in de tekst
-# van slot 1 mag komen.
+# B270/B272/B474 - during an instrumental gap slot -1 drops out entirely
+# (B272) and the countdown takes the PLACE of the line just sung (B474).
+# That line is no longer drawn, so it can no longer push the countdown
+# down either; what is left to check is that the countdown never lands
+# in the text of slot 1.
 # --------------------------------------------------------------------------
-def test_gat_afteller_blijft_boven_slot1(tmp_path) -> None:
-    """Ook bij een extreem lange regel op slot 0 komt het cijfer nooit in
-    slot 1's tekst terecht (harde marge, B270/B272)."""
+def test_gap_countdown_stays_above_slot1(tmp_path) -> None:
+    """Even with an extremely long line in slot 0 the digit never ends
+    up in slot 1's text (hard margin, B270/B272)."""
     from PIL import Image, ImageFont
 
     from modules.karaoke_text import TextLine
@@ -40,7 +41,7 @@ def test_gat_afteller_blijft_boven_slot1(tmp_path) -> None:
     width, height = 320, 180
 
     lines = [TextLine(0, "eerste", False),
-             TextLine(1, "a " * 200, False),   # extreem lang, staat op slot 0
+             TextLine(1, "a " * 200, False),   # very long, sits in slot 0
              TextLine(2, "derde", False)]
     spans = {0: (2.0, 4.0), 1: (5.0, 7.0), 2: (7.0 + gap, 9.0 + gap)}
     timed = generate_skeleton(lines, spans)
@@ -49,20 +50,20 @@ def test_gat_afteller_blijft_boven_slot1(tmp_path) -> None:
     frame = _compose_frame(moment, vocal, 1.0, 60.0, width, height,
                            font, font, logo, "T", _DEFAULT_COLORS)
     y_digit = _color_top(frame, _DEFAULT_COLORS["zang"])
-    # B474: slot 1 (de wachtende regel "derde") houdt tijdens het gat
-    # gewoon zijn eigen plek; de afteller staat op die van slot 0 en dus
-    # erboven.
+    # B474: slot 1 (the waiting line "derde") simply keeps its own place
+    # during the gap; the countdown sits in slot 0's place and therefore
+    # above it.
     slot1_y = int(height * 0.56)
     assert y_digit is not None
     assert y_digit < slot1_y
 
 
 # --------------------------------------------------------------------------
-# B270 - de intro-aftelling vóór de allereerste regel heeft geen slot -1 (er
-# is geen regel vóór regel 0), dus de vaste basispositie is hier altijd al
-# veilig, ook als regel 0 zelf lang is en over 2 rijen loopt.
+# B270 - the intro countdown before the very first line has no slot -1
+# (there is no line before line 0), so the fixed base position is always
+# safe here, even when line 0 itself is long and runs over 2 rows.
 # --------------------------------------------------------------------------
-def test_intro_afteller_ongewijzigd_bij_lange_eerste_regel() -> None:
+def test_intro_countdown_unchanged_on_a_long_first_line() -> None:
     from PIL import Image, ImageFont
 
     from modules.karaoke_text import TextLine
@@ -77,13 +78,13 @@ def test_intro_afteller_ongewijzigd_bij_lange_eerste_regel() -> None:
         lines = [TextLine(0, text_value, False)]
         timed = generate_skeleton(lines, {0: (10.0, 12.0)})
         vocal = [t for t in timed if not t.crowd]
-        moment = 9.0   # binnen COUNTDOWN_S=3s vóór regel 0 (start 10.0)
+        moment = 9.0   # within COUNTDOWN_S=3s before line 0 (starts 10.0)
         first_text = 5.0
         return _compose_frame(moment, vocal, first_text, 60.0, width,
                               height, font, font, logo, "T", _DEFAULT_COLORS)
 
     short = render("kort")
-    held = render("a " * 60)
+    long_line = render("a " * 60)
     y_short = _color_top(short, _DEFAULT_COLORS["zang"])
-    y_lang = _color_top(held, _DEFAULT_COLORS["zang"])
-    assert y_short == y_lang
+    y_long = _color_top(long_line, _DEFAULT_COLORS["zang"])
+    assert y_short == y_long

@@ -9,24 +9,26 @@ temporary code on the publication list, ``SystemExit`` only in
 ``main()``). This one did not. That is the difference between a rule and
 a habit.
 
-Two guards here, and the second is the one that matters:
+As of B543 the rule is the whole tree, not two folders: identifiers,
+prose (comments, docstrings, documents) and file names. Three guards,
+each with its own TODO list, and each list may only ever shrink - a file
+that is cleaned up has to disappear from it, and a test enforces that.
+The lists were filled once, from what the tree actually contained on the
+day the rule widened; nothing may be added to them afterwards.
 
-* files that are already converted may never regress;
-* files still on the TODO list must ACTUALLY still contain Dutch. The
-  moment one is cleaned up, this test demands it be struck from the
-  list. So the list can only shrink, and it cannot quietly rot into a
-  permanent exemption.
+Deliberate Dutch stays out of scope, because it is content and not the
+language of the code: the ``nl`` half of ``translations.py``, the file
+``languages/nl.json``, and the markup the user types in his own lyrics
+(``[pauze]`` beside ``[pause]``). The data files his projects are built
+from - ``songtekst.txt``, ``karaoketekst.txt`` and the keys of the same
+name in ``project.json`` - are Dutch too, but those are waiting on a
+migration rather than on a translation: renaming them rewrites every
+project on his disk.
 
-As of v0.122.0 the TODO list is empty and the first guard reads more than
-``def`` lines: arguments and assigned variables count too. Both of those
-followed from finishing the job rather than preceding it - a wide guard
-over a wide backlog is a wall of red that gets switched off, and a list
-of exemptions with nothing ever struck from it is the same thing more
-politely.
-
-Dutch that is deliberate stays out of scope: the ``nl`` texts in
-``translations.py``, the documents in ``docs/``, project names and the
-song text files. Those are what the user reads.
+The prose guard is the weakest of the three and says so out loud. It
+weighs Dutch function words against English ones, which is a heuristic,
+not a fact. A short file can fall the wrong way, so a file with too few
+countable words gets no verdict at all.
 """
 from __future__ import annotations
 
@@ -49,20 +51,61 @@ DUTCH = re.compile(
     r"varianten|huidig|ruimer|terugval|nulmeting|opnieuw|gekozen|"
     r"zichtbare|acties|actie|vinkjes|knop)(_|$)", re.I)
 
-#: Files that are known to be still Dutch, with the reason. This list may
-#: only ever get shorter. A file that is cleaned up has to disappear from
-#: here, and the test below enforces that.
-#:
-#: It is EMPTY as of v0.122.0, and that is the point: ``modules/`` and
-#: ``tools/`` are done. What is left lives in ``tests/`` - the test names
-#: themselves plus the docstrings under them, which carry the reasoning
-#: for why a test exists and usually the measurement with it. That is the
-#: largest stack and it gets its own release, with nothing else in it, so
-#: a regression stays visible. Until then it is deliberately out of scope
-#: here rather than parked on this list, because an entry that can never
-#: be struck is exactly the permanent exemption this guard exists to
-#: prevent.
-TODO: dict[str, str] = {}
+#: Words that exist in Dutch and not in English. Function words only:
+#: they are what prose is made of, they are too common to avoid, and
+#: unlike nouns they do not turn up as identifiers or product names.
+DUTCH_WORDS = re.compile(
+    r"\b(de|het|een|niet|geen|maar|want|dus|omdat|zodat|terwijl|wordt|"
+    r"worden|werd|werden|blijft|blijven|staat|staan|gaat|gaan|heeft|"
+    r"hebben|zijn|wij|hij|zij|jij|jou|jouw|nog|ook|wel|toch|daar|hier|"
+    r"waar|hoe|wie|met|voor|naar|van|bij|aan|uit|onder|tussen|zonder|"
+    r"tegen|door|dat|die|deze|dit|als|dan|ze|je|er|om|te|zo|al|elke|"
+    r"elk|alle|meer|minder|eerst|daarna|nu|zelf|weer|altijd|nooit|"
+    r"soms|vaak|omhoog|omlaag|erbij|eruit|erin|ervan)\b", re.I)
+
+#: And the other way round. Both lists are needed: a file with neither
+#: is a table of numbers, not prose, and gets no verdict.
+ENGLISH_WORDS = re.compile(
+    r"\b(the|and|of|to|this|that|with|from|for|not|but|because|which|"
+    r"when|where|what|how|does|should|must|will|would|there|their|they|"
+    r"are|was|were|been|being|have|has|had|its|only|also|each|every|"
+    r"both|more|less|first|then|than|into|over|under|between|without|"
+    r"against|through|after|before|while|about|again|still|never|"
+    r"always|already|enough|instead|rather)\b", re.I)
+
+#: Below this many countable words a file gets no verdict. A one-line
+#: comment is not evidence of anything, and a guard that fires on it is
+#: a guard that gets switched off.
+PROSE_FLOOR = 25
+
+#: Dutch words that turn up in file names here. A deny-list again, for
+#: the same reason as :data:`DUTCH`.
+DUTCH_NAMES = re.compile(
+    r"(songtekst|karaoketekst|woorduitlijning|woordenboek|taal|talen|"
+    r"modellen|afhankelijkheden|handleiding|doorontwikkeling|werkwijze|"
+    r"hernoeming|verslag|verslagen|meting|metingen|knipwoorden|"
+    r"instelling|instellingen|uitlijning|origineel|leesmij|licentie|"
+    r"plaats_fonts_hier|woorden)", re.I)
+
+#: Files that still have Dutch identifiers. ``modules/`` and ``tools/``
+#: were emptied off this list at v0.122.0; what stands here now came in
+#: with B543, when ``tests/`` entered the rule - helper functions and
+#: local variables inside the tests, not the tests themselves.
+TODO: dict[str, str] = {
+}
+
+#: Files whose prose (comments, docstrings, or the document itself) is
+#: still Dutch. Filled once at B543 from what the tree contained; it can
+#: only shrink from here. The documents are the heavy end: the log alone
+#: is four hundred kilobytes of reasoning that has to be carried over by
+#: hand, not by a dictionary.
+PROSE_TODO: dict[str, str] = {
+}
+
+#: Files whose name is still Dutch. Same rule. Empty as of B543: the
+#: twelve that were on it have been renamed, which is why this guard
+#: could start life with nothing to forgive.
+NAME_TODO: dict[str, str] = {}
 
 
 def _dutch_identifiers(path: Path) -> list[str]:
@@ -92,9 +135,93 @@ def _dutch_identifiers(path: Path) -> list[str]:
     return sorted(set(found))
 
 
+def _prose(path: Path) -> str:
+    """The human-readable text of a file.
+
+    For a document that is the whole thing. For a module it is the
+    comments and the docstrings: the code itself is guarded by
+    :func:`_dutch_identifiers`, and string literals are excluded on
+    purpose - they carry lyrics, markup and the ``nl`` translations,
+    which are supposed to be Dutch.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix != ".py":
+        return text
+    pieces = re.findall(r"#.*", text)
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            doc = ast.get_docstring(node)
+            if doc:
+                pieces.append(doc)
+    return "\n".join(pieces)
+
+
+def _verdict(text: str) -> str:
+    """``"nl"``, ``"en"``, or ``""`` when there is too little to judge."""
+    dutch = len(DUTCH_WORDS.findall(text))
+    english = len(ENGLISH_WORDS.findall(text))
+    if dutch + english < PROSE_FLOOR:
+        return ""
+    return "nl" if dutch > english else "en"
+
+
+def _dutch_name(path: Path) -> str:
+    """The Dutch word in this file's name, or ``""``."""
+    found = DUTCH_NAMES.search(path.name)
+    return found.group(0) if found else ""
+
+
+#: Folders that hold the user's own material rather than this program:
+#: his recordings and projects, his settings, the measurement work, and
+#: the binaries he drops in himself. Deliberately a copy of what the
+#: publication tool leaves out, and not an import of it - that tool does
+#: not travel to the public repository, so importing it would make this
+#: test fail everywhere except on one machine.
+OUTSIDE_FOLDERS = {"venv", "__pycache__", ".pytest_cache", ".git", ".idea",
+                   ".vscode", "input", "output", "cache", "logs", "config",
+                   "bin", "verslagen"}
+
+#: The measurement files and the finished internal work orders. Same
+#: reasoning: they belong to one reference collection on one machine and
+#: never leave it, so the language of this project does not govern them.
+OUTSIDE_FILES = {"testhistorie.json", "modelmatrix.md",
+                 "modelcombinaties.md", "metingen.md", "testverslag.md",
+                 "knipwoorden.txt", "hernoeming_B299_B300.md",
+                 "pakketversies.json", "updates.json"}
+
+
+def _inside(path: Path) -> bool:
+    """Whether this project's language rule governs this file."""
+    if path.name in OUTSIDE_FILES:
+        return False
+    return not any(part in OUTSIDE_FOLDERS
+                   for part in path.relative_to(ROOT).parts)
+
+
 def _sources() -> list[Path]:
-    return sorted(p for folder in ("modules", "tools")
-                  for p in (ROOT / folder).glob("*.py"))
+    """Every Python file that carries code of this project."""
+    return sorted(p for p in [ROOT / "KaraokeTool.py"]
+                  + [q for folder in ("modules", "tools", "tests")
+                     for q in (ROOT / folder).glob("*.py")]
+                  if _inside(p))
+
+
+def _documents() -> list[Path]:
+    """Every document that is meant to be read."""
+    return sorted(p for p in [ROOT / "README.md"]
+                  + list((ROOT / "docs").glob("*.md")) if _inside(p))
+
+
+def _named() -> list[Path]:
+    """Every file whose name this project chooses itself.
+
+    The fonts are excluded: those names come from Google, not from here.
+    """
+    return sorted(p for p in ROOT.rglob("*")
+                  if p.is_file() and _inside(p)
+                  and p.suffix.lower() not in {".ttf", ".otf"})
 
 
 def test_converted_files_stay_english() -> None:
@@ -128,6 +255,73 @@ def test_the_todo_list_can_only_shrink() -> None:
     assert not stale, "TODO list is out of date: " + "; ".join(stale)
 
 
+def test_the_prose_is_english() -> None:
+    """Comments, docstrings and documents, outside PROSE_TODO."""
+    offenders = []
+    for path in _sources() + _documents():
+        relative = path.relative_to(ROOT).as_posix()
+        if relative in PROSE_TODO:
+            continue
+        if _verdict(_prose(path)) == "nl":
+            offenders.append(relative)
+    assert not offenders, ("Dutch prose in files that should be English: "
+                           + ", ".join(offenders))
+
+
+def test_the_prose_todo_can_only_shrink() -> None:
+    """Same rule as the identifier list, for the same reason."""
+    stale = []
+    for relative in PROSE_TODO:
+        path = ROOT / relative
+        if not path.exists():
+            stale.append(f"{relative} (file is gone)")
+        elif _verdict(_prose(path)) != "nl":
+            stale.append(f"{relative} (reads as English - strike it)")
+    assert not stale, "PROSE_TODO is out of date: " + "; ".join(stale)
+
+
+def test_the_file_names_are_english() -> None:
+    """Names are the most visible Dutch of all: they are in every path."""
+    offenders = []
+    for path in _named():
+        relative = path.relative_to(ROOT).as_posix()
+        if relative in NAME_TODO:
+            continue
+        word = _dutch_name(path)
+        if word:
+            offenders.append(f"{relative} ({word})")
+    assert not offenders, ("Dutch file names: " + ", ".join(offenders))
+
+
+def test_the_name_todo_can_only_shrink() -> None:
+    """Same rule again."""
+    stale = []
+    for relative in NAME_TODO:
+        path = ROOT / relative
+        if not path.exists():
+            stale.append(f"{relative} (file is gone)")
+        elif not _dutch_name(path):
+            stale.append(f"{relative} (is clean - strike it)")
+    assert not stale, "NAME_TODO is out of date: " + "; ".join(stale)
+
+
+def test_a_short_file_gets_no_verdict() -> None:
+    """The floor under the prose guard, tested rather than trusted.
+
+    Without it a two-line Dutch comment in an otherwise English file
+    would turn the suite red, and a guard with false alarms is a guard
+    that gets switched off.
+    """
+    assert _verdict("De regel telt niet mee.") == ""
+    assert _verdict("Not enough words here either.") == ""
+    assert _verdict("de het een niet geen maar want dus omdat zodat "
+                    "terwijl wordt worden werd blijft staat gaat heeft "
+                    "zijn nog ook wel toch daar hier waar hoe wie") == "nl"
+    assert _verdict("the and of to this that with from for not but "
+                    "because which when where what how does should must "
+                    "will would there their they are was were been") == "en"
+
+
 def test_the_command_line_options_are_english() -> None:
     """These are what the user types, so they were the most visible."""
     for name in ("whisper_probe.py", "timing_regression.py"):
@@ -151,8 +345,8 @@ def test_the_probe_variants_are_english() -> None:
 def test_the_rule_is_written_down() -> None:
     """A guard without the reasoning beside it gets deleted by the next
     person who finds it annoying."""
-    document = (ROOT / "docs" / "doorontwikkeling.md").read_text(
+    document = (ROOT / "docs" / "development_log.md").read_text(
         encoding="utf-8")
-    assert "Engels is de interne voertaal" in document
+    assert "English is the working language of this project" in document
     assert "tests/test_language_guard.py" in document, \
         "the guard has to be named in the working agreement"

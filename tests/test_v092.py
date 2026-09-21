@@ -1,62 +1,62 @@
-"""Tests voor v0.92.0-fixes.
+"""Tests for the v0.92.0 fixes.
 
-B277-herziening: de v0.91-aanpak (~0.1s glijdend gemiddelde) bleek bij
-vergelijking tegen ÉCHTE handmatig gecorrigeerde ``timing.json``-bestanden
-(vs. ``timing_auto.json`` van dezelfde projecten) nauwelijks te helpen - de
-werkelijke hoofdoorzaak was dat het analysevenster van een regel vaak
-doorloopt tot de start van de volgende regel, en "het laatste steekpunt
-boven drempel" dan de OPBOUW van die volgende regel pakt, ook met een lang
-stil gat ertussen. ``held_note_end``/``active_end`` gebruiken nu een
-gedeelde helper die van rechts naar links het eerste aaneengesloten stille
-gat (~0.3s) herkent en het laatste echte actieve moment daarvóór teruggeeft,
-op de RUWE RMS-steekpunten (geen smoothing meer - dat presteerde juist
-slechter, zie ``docs/doorontwikkeling.md``). Concreet gemeten op "Lied B
-" (47 regels, 31 met verschil >0.3s tussen auto en handmatig):
-gemiddelde afwijking 1.63s -> 0.28s, mediaan 1.47s -> 0.25s.
+B277 revisited: the v0.91 approach (~0.1s sliding average) turned out,
+when compared against REAL hand-corrected ``timing.json`` files (against
+the ``timing_auto.json`` of the same projects), to help hardly at all -
+the real root cause was that the analysis window of a line often runs on
+until the start of the next line, and "the last sample above threshold"
+then picks up the ONSET of that next line, even with a long silent gap
+in between. ``held_note_end``/``active_end`` now use a shared helper
+that walks from right to left, recognises the first contiguous silent
+gap (~0.3s) and hands back the last really active moment before it, on
+the RAW RMS samples (no smoothing any more - that performed worse, see
+``docs/development_log.md``). Measured on "Lied B" (47
+lines, 31 of them off by >0.3s between auto and hand): mean deviation
+1.63s -> 0.28s, median 1.47s -> 0.25s.
 
-Knoplabel-fix: de renderknop op het Karaokevideo-tabblad heette "4. Video
-maken (eerste render)", ook al gebruikt dezelfde knop/functie evengoed een
-herrender na een handmatige timing-correctie (leest altijd ``timing.json``,
-nooit ``timing_auto.json``). Hernoemd naar "4. Video maken".
+Button label fix: the render button on the Karaoke video tab was called
+"4. Video maken (eerste render)", even though the same button and the
+same function serve a re-render after a manual timing correction just as
+well (it always reads ``timing.json``, never ``timing_auto.json``).
+Renamed to "4. Video maken".
 
-B280: alleen ``.wav``/``.mp3`` werden als invoerformaat herkend
-(``filesystem.SUPPORTED_EXTENSIONS``), ook al verwerken ffmpeg/ffprobe
-elk containerformaat even generiek. Aanleiding: de gebruiker voegde een
-``.m4a``-fragment (via Clipchamp samengevoegd) toe aan de originele
-audio van "Lied J". Uitgebreid met ``.m4a``/``.flac``/``.ogg``/
-``.aac`` als invoerformaat; de UITVOER blijft ongewijzigd altijd mp3
-(of wav voor een wav-bron) - ``export.export_result`` behandelt de
-nieuwe formaten net als een mp3-bron (encodeert naar
-``karaoke_edit.mp3``).
+B280: only ``.wav``/``.mp3`` were recognised as an input format
+(``filesystem.SUPPORTED_EXTENSIONS``), even though ffmpeg/ffprobe handle
+any container just as generically. Cause for it: the user added an
+``.m4a`` fragment (merged in Clipchamp) to the original audio of "Lied
+J". Widened with ``.m4a``/``.flac``/``.ogg``/``.aac`` as an input
+format; the OUTPUT is unchanged and stays mp3 (or wav for a wav source)
+- ``export.export_result`` treats the new formats like an mp3 source
+(encodes to ``karaoke_edit.mp3``).
 
-B281: bij "Lied J" ("Waylon Jennings - Good Ol' Boys") liep de
-songtekstregel "Than the law will allow" in de video zo'n 0.6s te lang
-door. Oorzaak: ``_align_core``'s DP-uitlijning koppelde het songtekstwoord
-"allow" via een 1:2-koppeling (m12) aan de transcriptiewoorden "land"
-gevolgd door het publieksgeluid "Whoo!" (gelijkenis slechts 0.333) - dat
-scoorde toevallig goedkoper dan "allow" onverklaard te laten, ook al is de
-gelijkenis zwak. Het (RMS-verfijnde) regeleinde volgt de gekoppelde tijd,
-dus "Whoo!" werd zo per ongeluk het einde van de zangregel. Vergelijkbaar
-gebeurde dit met "will" <-> "of the" (gelijkenis 0.250). Nieuwe ondergrens
-(``_MIN_MULTI_HALF_SIM``) op de BESTE van de twee losse helft-gelijkenissen
-bij zo'n meervoudige (m21/m12) koppeling repareert dit: "allow" heeft met
-geen van beide transcriptiewoorden ("land" 0.0, "Whoo!" 0.25) een redelijke
-match, dus wordt de koppeling geweigerd en valt "allow" terug op een
-losse (m11) koppeling aan alleen "of". Een grens op de GECOMBINEERDE
-gelijkenis in plaats van de beste helft bleek de bestaande, bedoelde
-koppeling "Kedeng Kedeng" <-> "de trein" te breken (scoort net als de
-Lied J-koppelingen 0.333 gecombineerd) - vandaar de per-helft-grens.
+B281: in "Lied J" ("Waylon Jennings - Good Ol' Boys") the lyric
+line "Than the law will allow" ran about 0.6s too long in the video.
+Cause: the DP alignment in ``_align_core`` coupled the lyric word
+"allow" through a 1:2 coupling (m12) to the transcribed word "land"
+followed by the crowd noise "Whoo!" (similarity only 0.333) - which
+happened to score cheaper than leaving "allow" unexplained, weak as the
+similarity is. The (RMS-refined) line end follows the coupled time, so
+"Whoo!" became the end of the sung line by accident. The same thing
+happened with "will" <-> "of the" (similarity 0.250). A new floor
+(``_MIN_MULTI_HALF_SIM``) on the BEST of the two separate half
+similarities of such a multiple (m21/m12) coupling repairs this: "allow"
+has a reasonable match with neither transcribed word ("land" 0.0,
+"Whoo!" 0.25), so the coupling is refused and "allow" falls back on a
+single (m11) coupling to "of" alone. A floor on the COMBINED similarity
+instead of on the best half broke the existing, intended coupling
+"Kedeng Kedeng" <-> "de trein" (which scores 0.333 combined, exactly
+like the Lied J couplings) - hence the per-half floor.
 """
 from __future__ import annotations
 
 
 # -- B277 --------------------------------------------------------------
 
-def test_last_active_time_negeert_uitschieter_na_lang_stil_gat() -> None:
-    """B277: een korte uitschieter (bv. de opbouw van de volgende regel)
-    die pas ná een lang stil gat (>=0.3s) komt, mag het einde niet
-    optrekken - het antwoord blijft het laatste actieve moment vóór dat
-    gat, ongeacht wat er ná het gat weer opleeft."""
+def test_last_active_time_ignores_a_spike_after_a_long_silence() -> None:
+    """B277: a short spike (the onset of the next line, say) that only
+    comes AFTER a long silent gap (>=0.3s) may not pull the end up - the
+    answer stays the last active moment before that gap, whatever revives
+    after it."""
     import numpy as np
     from modules import rhythm
 
@@ -64,55 +64,55 @@ def test_last_active_time_negeert_uitschieter_na_lang_stil_gat() -> None:
     n = 100
     times = np.arange(n, dtype=np.float32) * step
     rms = np.zeros(n, dtype=np.float32)
-    rms[:40] = 1.0        # echte zang
-    rms[40:] = 0.02        # (bijna) stilte erna
-    rms[70] = 0.5          # uitschieter ver na de zang (bv. volgende regel)
+    rms[:40] = 1.0         # the real singing
+    rms[40:] = 0.02        # (near) silence after it
+    rms[70] = 0.5          # spike far past the singing (next line, say)
 
     mask = np.ones(n, dtype=bool)
     threshold = 1.0 * 0.15
     end = rhythm._last_active_time(rms, times, mask, threshold)
-    # Het stille gat tussen index 39 en 70 is ruim >=0.3s, dus de
-    # uitschieter op index 70 telt niet mee: het antwoord is het einde van
-    # de echte zang zelf (index 39).
+    # The silent gap between index 39 and 70 is well over 0.3s, so the
+    # spike at index 70 does not count: the answer is the end of the
+    # real singing itself (index 39).
     assert end is not None
     assert end == times[39]
 
 
-def test_last_active_time_zonder_lang_gat_pakt_laatste_punt() -> None:
-    """B277: is er geen enkel lang stil gat (alles blijft aaneengesloten
-    boven de drempel of de gaten zijn te kort), dan blijft het oude
-    gedrag gelden - het allerlaatste boven-drempel-moment."""
+def test_last_active_time_without_a_long_gap_takes_the_last_point() -> None:
+    """B277: with no long silent gap at all (everything stays contiguous
+    above the threshold, or the gaps are too short) the old behaviour
+    still holds - the very last above-threshold moment."""
     import numpy as np
     from modules import rhythm
 
     step = rhythm._HOP / rhythm._SR
     n = 50
     times = np.arange(n, dtype=np.float32) * step
-    rms = np.full(n, 1.0, dtype=np.float32)   # aaneengesloten actief
+    rms = np.full(n, 1.0, dtype=np.float32)   # contiguously active
 
     mask = np.ones(n, dtype=bool)
     end = rhythm._last_active_time(rms, times, mask, 1.0 * 0.15)
     assert end == times[-1]
 
 
-def test_held_note_end_en_active_end_gebruiken_gedeelde_helper() -> None:
-    """B277: beide functies geven nog steeds zinnige, geclampte waarden."""
+def test_held_note_end_and_active_end_share_one_helper() -> None:
+    """B277: both functions still give sensible, clamped answers."""
     from modules import rhythm
 
-    # We testen hier alleen dat de functies bestaan en op ontbrekende
-    # analyse netjes None teruggeven (geen audio beschikbaar in deze test
-    # -> _rms_envelope faalt op het niet-bestaande pad).
+    # All we test here is that the functions exist and return None
+    # neatly on a missing analysis (no audio available in this test ->
+    # _rms_envelope fails on the non-existent path).
     path = "/nonexistent/pad/audio.wav"
     assert rhythm.held_note_end(path, 0.0, 1.0, 2.0) is None
     assert rhythm.active_end(path, 0.0, 1.0) is None
 
 
-# -- Knoplabel-fix -------------------------------------------------------
+# -- Button label fix ----------------------------------------------------
 
-def test_video_render_label_zonder_eerste_render_tekst() -> None:
-    """De renderknop wordt ook voor herrenders gebruikt (leest altijd
-    timing.json); het label mag dus geen "(eerste render)"-tekst meer
-    suggereren dat dit een eenmalige actie zou zijn."""
+def test_the_video_render_label_has_no_first_render_text() -> None:
+    """The render button serves re-renders as well (it always reads
+    timing.json), so the label may no longer suggest with a "(first
+    render)" text that this is a one-off action."""
     from modules.translations import TRANSLATIONS
 
     for language_code, texts in TRANSLATIONS.items():
@@ -123,9 +123,9 @@ def test_video_render_label_zonder_eerste_render_tekst() -> None:
 
 # -- B280 ----------------------------------------------------------------
 
-def test_supported_extensions_bevat_nieuwe_containers() -> None:
-    """B280: m4a/flac/ogg/aac zijn als invoerformaat toegevoegd naast de
-    oorspronkelijke wav/mp3; wav blijft eerst (geen conversie nodig)."""
+def test_supported_extensions_holds_the_new_containers() -> None:
+    """B280: m4a/flac/ogg/aac have been added as an input format next to
+    the original wav/mp3; wav stays first (no conversion needed)."""
     from modules import filesystem
 
     assert filesystem.SUPPORTED_EXTENSIONS[0] == ".wav"
@@ -133,8 +133,8 @@ def test_supported_extensions_bevat_nieuwe_containers() -> None:
         assert ext in filesystem.SUPPORTED_EXTENSIONS
 
 
-def test_find_audio_file_vindt_m4a(tmp_path) -> None:
-    """B280: een los .m4a-bestand wordt nu ook gevonden (voorheen None)."""
+def test_find_audio_file_finds_an_m4a(tmp_path) -> None:
+    """B280: a lone .m4a file is found now too (it used to be None)."""
     from modules.filesystem import find_audio_file
 
     (tmp_path / "original.m4a").write_bytes(b"m4a")
@@ -142,9 +142,9 @@ def test_find_audio_file_vindt_m4a(tmp_path) -> None:
     assert found is not None and found.suffix == ".m4a"
 
 
-def test_find_audio_file_wav_wint_van_nieuwe_containers(tmp_path) -> None:
-    """B280: staan er meerdere varianten, dan wint nog altijd .wav (geen
-    conversie nodig) - ook als er ook een .flac/.m4a naast bestaat."""
+def test_find_audio_file_lets_wav_beat_the_new_containers(tmp_path) -> None:
+    """B280: with several variants in place .wav still wins (no
+    conversion needed) - also when a .flac/.m4a sits beside it."""
     from modules.filesystem import find_audio_file
 
     (tmp_path / "original.flac").write_bytes(b"flac")
@@ -161,11 +161,11 @@ def _word(text: str, start: float, duration: float = 0.4):
     return Word(text=text, start=start, end=start + duration, confidence=0.9)
 
 
-def test_meervoudige_koppeling_negeert_publieksgeluid(tmp_path) -> None:
-    """B281: "allow" mag niet aan "land Whoo!" plakken (Lied J) - de
-    interjectie "Whoo!" heeft met "allow" geen redelijke gelijkenis (beide
-    helft-gelijkenissen <0.3), dus de m12-koppeling moet geweigerd worden en
-    "allow" moet op de losse ("of") koppeling terugvallen."""
+def test_a_multiple_coupling_ignores_a_crowd_noise(tmp_path) -> None:
+    """B281: "allow" may not stick to "land Whoo!" (Lied J) - the
+    interjection "Whoo!" has no reasonable similarity with "allow" (both
+    half similarities <0.3), so the m12 coupling has to be refused and
+    "allow" has to fall back on the single ("of") coupling."""
     from modules.song_text import align_lyrics, load_lyrics
     from modules.whisper import Segment
 
@@ -181,17 +181,17 @@ def test_meervoudige_koppeling_negeert_publieksgeluid(tmp_path) -> None:
 
     aligned = align_lyrics(lyrics, (segment,))
     by_text = {w.lyric.text: w for w in aligned}
-    # "allow" mag niet gekoppeld zijn aan "Whoo!" (los of gecombineerd).
+    # "allow" may not be coupled to "Whoo!" (alone or combined).
     allow = by_text["allow"]
     assert allow.matched_text is None or "Whoo" not in allow.matched_text
 
 
-def test_meervoudige_koppeling_kedeng_de_trein_blijft_werken(tmp_path) -> None:
-    """B281: de bestaande, bedoelde 1:2-koppeling "Kedeng"<->"de trein"
-    (zie moduledocstring) mag niet breken - scoort gecombineerd exact
-    hetzelfde (0.333) als de geweigerde Lied J-koppelingen, maar heeft
-    (in tegenstelling tot die koppelingen) voor BEIDE helften een redelijke
-    losse gelijkenis (Kedeng<->de en Kedeng<->trein, allebei 0.333)."""
+def test_the_multiple_coupling_of_kedeng_keeps_working(tmp_path) -> None:
+    """B281: the existing, intended 1:2 coupling "Kedeng"<->"de trein"
+    (see the module docstring) may not break - it scores combined exactly
+    the same (0.333) as the refused Lied J couplings, but it does
+    have (unlike those) a reasonable separate similarity for BOTH halves
+    (Kedeng<->de and Kedeng<->trein, both 0.333)."""
     from modules.song_text import align_lyrics, load_lyrics
     from modules.whisper import Segment
 
@@ -207,17 +207,17 @@ def test_meervoudige_koppeling_kedeng_de_trein_blijft_werken(tmp_path) -> None:
     lyrics = load_lyrics(path)
 
     aligned = align_lyrics(lyrics, segments)
-    # Minstens één van de vier "Kedeng"-woorden moet nog steeds aan
-    # "de"/"trein" gekoppeld worden (via m12, net als vóór B281).
+    # At least one of the four "Kedeng" words still has to be coupled to
+    # "de"/"trein" (through m12, just as before B281).
     assert any(w.matched_text in ("de", "trein", "de trein")
               for w in aligned if w.lyric.text == "Kedeng")
 
 
-def test_min_multi_half_sim_alleen_op_meervoudige_koppelingen(tmp_path) -> None:
-    """B281: een zwakke ENKELVOUDIGE (m11) koppeling mag niet worden
-    geraakt door de nieuwe grens - alleen 1:2/2:1-koppelingen worden
-    getoetst. Whisper hoort geregeld een fonetisch verwant maar net ander
-    woord (hier: "nu" -> "niet"); dat moet gewoon gekoppeld blijven."""
+def test_min_multi_half_sim_only_judges_multiple_couplings(tmp_path) -> None:
+    """B281: a weak SINGLE (m11) coupling may not be hit by the new floor
+    - only 1:2 and 2:1 couplings are judged by it. Whisper regularly
+    hears a phonetically related but slightly different word (here: "nu"
+    -> "niet"); that has to stay coupled as it was."""
     from modules.song_text import align_lyrics, load_lyrics
     from modules.whisper import Segment
 

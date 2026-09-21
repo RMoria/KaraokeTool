@@ -7,4 +7,4 @@ and a second text can be laid over exactly the same timing. Words left
 behind in a bought karaoke track can be damped instead of removed.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.4"

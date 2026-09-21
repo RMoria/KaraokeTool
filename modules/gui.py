@@ -201,7 +201,7 @@ class WaveformWidget(QWidget):
 class MainWindow(QMainWindow):
     """Main window of Karaoke Tool."""
 
-    #: Progress of one work slot in the test panel (B357, TIJDELIJK).
+    #: Progress of one work slot in the test panel (B357, TEMPORARY).
     #: A signal and not a direct call: the message comes from a worker
     #: thread and Qt widgets may only be touched from the GUI thread.
     _test_progress = Signal(int, str, int, int)
@@ -1791,13 +1791,13 @@ class MainWindow(QMainWindow):
         pipeline.set_project_title(self._context, key, field_value)
 
     def _build_help_tab(self) -> QWidget:
-        """Tab with the manual (renders docs/handleiding.md) (B165)."""
+        """Tab with the manual (renders docs/manual.md) (B165)."""
         from pathlib import Path as _Path
         tab = QWidget()
         outer = QVBoxLayout(tab)
         browser = QTextBrowser()
         browser.setOpenExternalLinks(True)
-        path = _Path(__file__).resolve().parents[1] / "docs" / "handleiding.md"
+        path = _Path(__file__).resolve().parents[1] / "docs" / "manual.md"
         try:
             text_value = path.read_text(encoding="utf-8")
             browser.setMarkdown(text_value)
@@ -2182,7 +2182,7 @@ class MainWindow(QMainWindow):
             (t("step_couple"), self._open_word_couple),
             (t("step_analyse"), self._do_analyse),
             (t("step_karaoke"), self._do_karaoke),
-            # TIJDELIJK (1.5): fills the transcription cache file of
+            # TEMPORARY (1.5): fills the transcription cache file of
             # projects whose copy is gone, without throwing anything
             # away. May go once the benchmark set is complete again.
             (t("step_fill_cache"), self._do_fill_cache),
@@ -2195,11 +2195,11 @@ class MainWindow(QMainWindow):
         return group
 
     def _do_fill_cache(self) -> None:
-        """Het testpaneel achter 1.5 (TIJDELIJK).
+        """The test panel behind 1.5 (TEMPORARY).
 
-        Heette eerst "Cache vullen"; dat is nu actie 1.5.1 in een lijst.
-        De naam van deze methode blijft zoals hij is - de knop verwijst
-        ernaar en het hele paneel gaat er ooit weer uit.
+        It used to be called "Cache vullen"; that is action 1.5.1 in a
+        list now. The name of this method stays as it is - the button
+        refers to it, and the whole panel goes out again one day.
         """
         self._commit_pending_field()
         context = self._context
@@ -2322,11 +2322,11 @@ class MainWindow(QMainWindow):
         for chip in getattr(self, "_slot_chips", ()):
             chip.setText("")
             chip.setStyleSheet(self._CHIP_IDLE)
-        """Twee balken tijdens het testen (TIJDELIJK).
+        """Two bars while testing (TEMPORARY).
 
-        Dezelfde machinerie als de parallelle detectie van B90; alleen
-        staat er nu een actienummer plus projectnaam boven in plaats van
-        een spoornaam.
+        The same machinery as the parallel detection of B90; the only
+        difference is that an action number plus a project name stands
+        above them instead of a track name.
         """
         for index, bar in enumerate(self._progress_bars):
             actief = index < max(1, len(labels))

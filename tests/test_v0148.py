@@ -83,12 +83,12 @@ def _raw_readers() -> dict[str, set[str]]:
     return found
 
 
-def test_alleen_de_leespad_leest_het_ruwe_bestand():
+def test_only_the_reading_path_reads_the_raw_file():
     """B518: numbering on the raw file cost 82 correct couplings."""
     assert _raw_readers() == RAW_READERS
 
 
-def test_leespad_haalt_woorden_weg():
+def test_the_reading_path_takes_words_away():
     """B518: the file on disk really does hold more words than the app."""
     def word(text: str, start: float, end: float, conf: float = 0.9) -> Word:
         return Word(text=text, start=start, end=end, confidence=conf)
@@ -117,14 +117,14 @@ def _line(index: int, text: str, start: float, end: float,
             for i, word in enumerate(words)))
 
 
-def test_blokken_per_regel_negeren_overgeslagen_bg_regel():
+def test_the_blocks_per_line_ignore_a_skipped_bg_line():
     """B375/B523: a skipped [bg] line is not a block boundary."""
     assert pipeline._line_blocks([0, 1, 2], frozenset()) == [0, 0, 0]
     assert pipeline._line_blocks([0, 1, 3], frozenset()) == [0, 0, 1]
     assert pipeline._line_blocks([0, 1, 3], frozenset({2})) == [0, 0, 0]
 
 
-def test_blokgrens_ligt_bij_de_langste_stilte():
+def test_the_block_boundary_lies_at_the_longest_silence():
     """B523: the instrumental between two blocks is the longest silence.
 
     Both edges come back: where the singing before it stops and where
@@ -135,14 +135,14 @@ def test_blokgrens_ligt_bij_de_langste_stilte():
     assert pipeline._block_gap(active, 65.4, 83.3) == (68.4, 74.0)
 
 
-def test_blokgrens_zonder_lange_stilte_is_geen_grens():
+def test_without_a_long_silence_there_is_no_block_boundary():
     """B523: continuous singing has nothing to clip."""
     active = [(66.0, 68.4), (68.8, 70.0)]
     assert pipeline._block_gap(active, 65.4, 70.0) is None
     assert pipeline._block_gap(active, 65.4, 68.0) is None
 
 
-def test_regelreeks_wordt_op_de_blokgrens_geknipt():
+def test_a_run_of_lines_is_clipped_at_the_block_boundary():
     """B523: the line of the block before stays before the instrumental."""
     active = [(66.0, 68.4), (74.0, 83.3)]
     parts = pipeline._filler_parts(3, 4, 65.4, 83.3, [0, 0, 0, 0, 1],
@@ -150,7 +150,7 @@ def test_regelreeks_wordt_op_de_blokgrens_geknipt():
     assert parts == [(3, 1, 65.4, 68.4)]
 
 
-def test_reeks_over_de_grens_krijgt_aan_elke_kant_zijn_eigen_ruimte():
+def test_a_run_over_the_boundary_gets_its_own_room_on_each_side():
     """B523: two lines, one from each block, each in its own part."""
     active = [(66.0, 68.4), (74.0, 83.3)]
     parts = pipeline._filler_parts(2, 4, 65.4, 84.0, [0, 0, 0, 1, 1],
@@ -160,7 +160,7 @@ def test_reeks_over_de_grens_krijgt_aan_elke_kant_zijn_eigen_ruimte():
     assert parts == [(2, 1, 65.4, 68.4), (3, 1, 74.0, 84.0)]
 
 
-def test_zonder_blokgrens_verandert_er_niets():
+def test_without_a_block_boundary_nothing_changes():
     """B523: within one block the whole window stays available."""
     active = [(66.0, 68.4), (74.0, 83.3)]
     whole = [(3, 1, 65.4, 83.3)]
@@ -169,14 +169,14 @@ def test_zonder_blokgrens_verandert_er_niets():
     assert pipeline._filler_parts(3, 4, 65.4, 83.3, None, active, 5) == whole
 
 
-def test_reeks_aan_het_eind_wordt_niet_geknipt():
+def test_a_run_at_the_end_of_the_song_is_not_clipped():
     """B523: without a line after it there is no boundary to speak of."""
     active = [(66.0, 68.4), (74.0, 83.3)]
     assert pipeline._filler_parts(3, 5, 65.4, 83.3, [0, 0, 0, 1, 1],
                                   active, 5) == [(3, 2, 65.4, 83.3)]
 
 
-def test_vastgehouden_noot_stopt_op_de_blokgrens():
+def test_a_held_note_stops_at_the_block_boundary():
     """B523: a held note may not run on over the instrumental."""
     active = [(66.0, 68.4), (74.0, 83.3)]
     blocks = [0, 0, 1]
@@ -191,7 +191,7 @@ def test_vastgehouden_noot_stopt_op_de_blokgrens():
     assert pipeline._held_ceiling(active, blocks, 2, 84.0, 87.0, 3) == 87.0
 
 
-def test_te_lange_regel_houdt_zijn_gemeten_start():
+def test_an_overlong_line_keeps_its_measured_start():
     """B522: an over-long line is not re-interpolated but capped."""
     lines = tuple([
         _line(0, "een twee drie vier", 10.0, 12.0, block=0),
@@ -217,7 +217,7 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-def test_knippen_laat_de_koppeling_zichtbaar(qapp) -> None:
+def test_a_cut_leaves_the_coupling_visible(qapp) -> None:
     """B519: a cut used to wipe found/sim/status of every lyrics word."""
     from modules.coupling_editor import CouplingCanvas
     transcript = [("OEREND", 0.0, 2.0), ("HARD", 2.0, 3.0)]
@@ -235,7 +235,7 @@ def test_knippen_laat_de_koppeling_zichtbaar(qapp) -> None:
     assert entry["status"] == "coupled"      # was missing altogether
 
 
-def test_niet_gekoppeld_woord_houdt_zijn_reden(qapp) -> None:
+def test_an_uncoupled_word_keeps_its_reason(qapp) -> None:
     """B519: an uncoupled word says WHY it is uncoupled."""
     from modules.coupling_editor import CouplingCanvas
     transcript = [("OEREND", 0.0, 2.0)]
@@ -250,7 +250,7 @@ def test_niet_gekoppeld_woord_houdt_zijn_reden(qapp) -> None:
     assert canvas._word_entry(1, "hard", 0)["status"] == "no_match"
 
 
-def test_gevonden_baan_wordt_in_zijn_geheel_herzien():
+def test_the_found_lane_is_reconsidered_as_a_whole():
     """B520: the run rule needs the whole lane, not one word."""
     count = 2 + pipeline.SUSPECT_RUN
     status = pipeline.found_word_status(count, {0, 1}, filtered=(),
@@ -264,7 +264,7 @@ def test_gevonden_baan_wordt_in_zijn_geheel_herzien():
     assert "suspect_run" not in set(after.values())
 
 
-def test_herhaling_uit_de_songtekst_is_geen_verdachte_reeks():
+def test_a_repeat_from_the_lyrics_is_not_a_suspect_run():
     """B521: a chorus Whisper heard twice is not a hallucination."""
     run = tuple(range(2, 2 + pipeline.SUSPECT_RUN))
     count = 2 + pipeline.SUSPECT_RUN
@@ -283,7 +283,7 @@ class _Lyric:
         self.text = text
 
 
-def test_woorden_uit_de_songtekst_worden_fonetisch_herkend():
+def test_words_from_the_lyrics_are_recognised_phonetically():
     """B521: 'doe' in the lyrics recognises 'DOE' among the found words."""
     transcript = [("DOE", 0.0, 0.4), ("MAAR", 0.4, 0.8), ("IETS", 0.8, 1.2)]
     lyrics = [_Lyric("Doe"), _Lyric("maar")]
@@ -295,7 +295,7 @@ def test_woorden_uit_de_songtekst_worden_fonetisch_herkend():
 # B524 - every test action leaves its lines in a file
 # --------------------------------------------------------------------------
 
-def test_testverslag_beschrijft_precies_een_draai(monkeypatch) -> None:
+def test_the_report_describes_exactly_one_run(monkeypatch) -> None:
     """B524: a new run STARTS the report, it does not add to it.
 
     Steered onto one file on purpose, so that this test still catches a
@@ -303,36 +303,36 @@ def test_testverslag_beschrijft_precies_een_draai(monkeypatch) -> None:
     (B534) is tested in test_v0149.
     """
     from modules import test_panel
-    # Allebei de draaien in HETZELFDE bestand, zodat deze toets nog
-    # steeds betrapt dat een draai er niet bij mag schrijven maar
-    # opnieuw moet beginnen (B534 gaf ze anders elk hun eigen naam).
+    # Both runs into the SAME file, so that this check still catches a
+    # run that adds to the report instead of starting it again (B534
+    # would otherwise give each of them a name of its own).
     monkeypatch.setattr(test_panel, "_free_path", lambda path: path)
     monkeypatch.setattr(
         test_panel, "report_name",
         lambda codes, version="", scope="", moment=None: "eenzelfde.md")
     test_panel.start_trial_report(["1.5.3"], "alle projecten", "0.148.0")
-    eerste = test_panel.TRIAL_REPORT
+    first = test_panel.TRIAL_REPORT
     test_panel.add_trial_result("1.5.3", "Tekstrijen", "regel een\nregel twee",
                                 12.5, 11.0)
-    tekst = eerste.read_text(encoding="utf-8")
-    assert "1.5.3" in tekst and "regel twee" in tekst and "0.148.0" in tekst
+    text = first.read_text(encoding="utf-8")
+    assert "1.5.3" in text and "regel twee" in text and "0.148.0" in text
     test_panel.start_trial_report(["1.5.7"], "alle projecten", "0.148.0")
-    assert test_panel.TRIAL_REPORT == eerste       # zelfde bestand
-    tweede = eerste.read_text(encoding="utf-8")
-    assert "regel twee" not in tweede and "1.5.7" in tweede
+    assert test_panel.TRIAL_REPORT == first        # the same file
+    second = first.read_text(encoding="utf-8")
+    assert "regel twee" not in second and "1.5.7" in second
 
 
-def test_testverslag_neemt_de_alarmen_mee() -> None:
+def test_the_report_carries_the_alarms_along() -> None:
     """B524: an alarm belongs in the report, not only in the window."""
     from modules import test_panel
     test_panel.start_trial_report(["1.5.9"], "alle projecten")
     test_panel.add_trial_result("1.5.9", "Proef", "uitkomst", 1.0, 1.0,
                                 ["let op: iets klopt niet"])
-    tekst = test_panel.TRIAL_REPORT.read_text(encoding="utf-8")
-    assert "let op: iets klopt niet" in tekst
+    text = test_panel.TRIAL_REPORT.read_text(encoding="utf-8")
+    assert "let op: iets klopt niet" in text
 
 
-def test_testverslag_valt_niet_over_een_onschrijfbare_map(tmp_path,
+def test_the_report_does_not_fall_over_an_unwritable_folder(tmp_path,
                                                           monkeypatch) -> None:
     """B524: a test may never fall over its own report."""
     from modules import test_panel
@@ -350,7 +350,7 @@ def _word(text: str, start: float, end: float, conf: float = 0.9) -> dict:
     return {"text": text, "start": start, "end": end, "probability": conf}
 
 
-def test_de_grensovergang_is_uit_de_toetsen(tmp_path) -> None:
+def test_the_boundary_crossing_is_out_of_the_checks(tmp_path) -> None:
     """B525: it compared the parody's words with the original's
     measured boundaries, and reported 44 to 76 per cent on every
     project - a number that is always high measures nothing."""
@@ -360,7 +360,7 @@ def test_de_grensovergang_is_uit_de_toetsen(tmp_path) -> None:
     assert "boundary_crossings" not in timing_checks.Findings().as_dict()
 
 
-def test_de_overgebleven_tellers_staan_er_nog(tmp_path) -> None:
+def test_the_counters_that_were_kept_are_still_there(tmp_path) -> None:
     """B525: pruning is not the same as throwing away."""
     from modules import timing_checks
     keys = timing_checks.Findings().as_dict()
@@ -369,7 +369,7 @@ def test_de_overgebleven_tellers_staan_er_nog(tmp_path) -> None:
         assert name in keys, name
 
 
-def test_afstand_tot_regelbegin_is_de_mediaan(qapp) -> None:
+def test_the_distance_to_the_line_start_is_the_median(qapp) -> None:
     """B527: one wholly missed line may not decide the table."""
     from modules import test_panel
     spans = [(10.0, 12.0), (20.0, 22.0), (30.0, 32.0)]
@@ -381,7 +381,7 @@ def test_afstand_tot_regelbegin_is_de_mediaan(qapp) -> None:
     assert test_panel.line_start_distance(late, spans) == 0.2
 
 
-def test_de_tabel_staat_op_afstand_gesorteerd(qapp) -> None:
+def test_the_table_is_sorted_on_that_distance(qapp) -> None:
     """B527: closest to the hand work stands at the top."""
     from modules import test_panel
     windows = [(0.0, 40.0)]
@@ -397,7 +397,7 @@ def test_de_tabel_staat_op_afstand_gesorteerd(qapp) -> None:
                or "Closest" in line)
 
 
-def test_zonder_handwerk_zegt_de_tabel_het_erbij(qapp) -> None:
+def test_without_hand_work_the_table_says_so(qapp) -> None:
     """B527: no reference, no claim about the hand work."""
     from modules import test_panel
     lines = test_panel.search_table([("een", [_word("a", 1.0, 2.0)])],
@@ -407,10 +407,10 @@ def test_zonder_handwerk_zegt_de_tabel_het_erbij(qapp) -> None:
 
 
 # --------------------------------------------------------------------------
-# B528 - wat de kritische herlezing vóór de oplevering nog vond
+# B528 - what the critical re-read before delivery still turned up
 # --------------------------------------------------------------------------
 
-def test_een_knip_verplaatst_ook_het_filter(qapp) -> None:
+def test_a_cut_moves_the_filter_along_as_well(qapp) -> None:
     """B528: `_filtered` and `_in_lyrics` are transcript indexes too.
 
     They stayed behind at a cut, so everything after the cut pointed one
@@ -433,7 +433,7 @@ def test_een_knip_verplaatst_ook_het_filter(qapp) -> None:
     assert canvas._in_lyrics == {3}
 
 
-def test_een_handmatige_markering_overleeft_een_knip(qapp) -> None:
+def test_a_marking_made_by_hand_survives_a_cut(qapp) -> None:
     """B528: a marking that lives only in the view is gone after a remap."""
     from modules.coupling_editor import CouplingCanvas
     transcript = [("AA", 0.0, 1.0)]
@@ -450,7 +450,7 @@ def test_een_handmatige_markering_overleeft_een_knip(qapp) -> None:
     assert canvas._words[0]["status"] == "filler_skipped"
 
 
-def test_een_lege_draai_wint_de_tabel_niet(qapp) -> None:
+def test_an_empty_run_does_not_win_the_table(qapp) -> None:
     """B528: 0.00 s is the score of a perfect run, not of an empty one."""
     from modules import test_panel
     spans = [(10.0, 12.0), (20.0, 22.0)]
@@ -465,7 +465,7 @@ def test_een_lege_draai_wint_de_tabel_niet(qapp) -> None:
     assert best and "echt" in best[0]
 
 
-def test_de_ankertoets_zit_op_de_functie_die_echt_gedraaid_wordt() -> None:
+def test_the_anchor_check_sits_on_the_function_that_really_runs() -> None:
     """B528: the switch sat on a wrapper nobody called any more, so the
     matrix reported 0.00 s for this model - a measuring error, not a
     measurement."""
@@ -479,7 +479,7 @@ def test_de_ankertoets_zit_op_de_functie_die_echt_gedraaid_wordt() -> None:
     assert not hasattr(timing_module, "implausible_anchors")
 
 
-def test_een_scheefgekoppeld_anker_geldt_niet_als_alleen_te_lang(
+def test_a_crookedly_coupled_anchor_is_not_merely_too_long(
         monkeypatch) -> None:
     """B528: a packed anchor stands in the wrong PLACE.
 

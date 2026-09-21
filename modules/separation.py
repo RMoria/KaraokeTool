@@ -115,7 +115,8 @@ def separate_cached(audio_path: Path, cache_root: Path, key: str,
     marker = store / "source.sha1"
     checksum = _source_checksum(audio_path)
     if vocals.exists() and instrumental.exists():
-        if _marker_matches(marker, checksum):
+        if _marker_matches(marker, checksum, model):
+            _write_marker(marker, checksum, model)   # upgrade, B548
             logger.info(t("log_demucs_reused"),
                         key, store)
             return {"vocals": vocals, "instrumental": instrumental}
@@ -141,11 +142,7 @@ def separate_cached(audio_path: Path, cache_root: Path, key: str,
         return fresh
     # Clean up the (large) work folder; the stems are now in the fixed place.
     shutil.rmtree(cache_root / f"demucs_work_{key}", ignore_errors=True)
-    if checksum:
-        try:
-            marker.write_text(checksum, encoding="utf-8")
-        except OSError as exc:      # marker is a bonus, not a condition
-            logger.warning(t("log_demucs_marker_failed"), exc)
+    _write_marker(marker, checksum, model)
     logger.info(t("log_demucs_cached"), key, store)
     return {"vocals": vocals, "instrumental": instrumental}
 
@@ -159,21 +156,76 @@ def _source_checksum(audio_path: Path) -> str:
         return ""
 
 
-def _marker_matches(marker: Path, checksum: str) -> bool:
-    """Do the cached stems belong to this audio? (B311)
+def _demucs_version() -> str:
+    """The installed Demucs version, or empty when it cannot be read."""
+    from importlib.metadata import version
 
-    Stems without a marker come from before this check. Those we accept:
-    throwing away a separation that is probably fine costs minutes per
-    song, and from the next run onwards there IS a marker.
+    try:
+        return str(version("demucs"))
+    except Exception:  # noqa: BLE001 - a marker may never break a run
+        return ""
+
+
+def _stamp(checksum: str, model: str) -> str:
+    """What the stems were made from: audio, model, Demucs (B548)."""
+    return "\n".join([checksum, model, _demucs_version()])
+
+
+def _write_marker(marker: Path, checksum: str, model: str) -> None:
+    """Note beside the stems what they were made from.
+
+    Also upgrades a marker from before B548, which held the checksum
+    alone: writing the full stamp costs nothing and the next run then
+    has the whole answer.
+    """
+    if not checksum:
+        return
+    try:
+        marker.write_text(_stamp(checksum, model), encoding="utf-8")
+    except OSError as exc:          # marker is a bonus, not a condition
+        logger.warning(t("log_demucs_marker_failed"), exc)
+
+
+def _marker_matches(marker: Path, checksum: str, model: str) -> bool:
+    """Do the cached stems belong to this audio, model and Demucs?
+
+    B311 asked the first of those three. B548 added the other two: the
+    ``model`` argument of :func:`separate_cached` was accepted, passed
+    on and never written down, so ``htdemucs_ft`` silently got
+    ``htdemucs`` stems back. And a Demucs upgrade - which
+    ``install.bat`` invites - leaves stems whose marker still matches,
+    so the old model's separation would be reused for ever and Whisper
+    would keep transcribing it. That is the B311 failure through
+    another door.
+
+    Stems without a marker at all come from before B311. Those are
+    still accepted: throwing away a separation that is probably fine
+    costs minutes per song, and from the next run onwards there IS a
+    marker.
+
+    A marker of ONE line is from before B548 and is not accepted. The
+    first thought was to let it pass on its checksum, since the stems
+    under it were probably made by the Demucs that is installed now -
+    but "probably" is exactly wrong here: a marker from before this
+    check is precisely the one that may predate an upgrade, and
+    passing it would then also stamp those stems as belonging to the
+    new version, so the mistake would never be findable again. It
+    costs one separation per project, once.
+
+    A torn write lands in the same branch, which is the second reason:
+    half a marker says nothing, and this way it says nothing loudly.
     """
     if not checksum:
         return True
     if not marker.exists():
         return True
     try:
-        return marker.read_text(encoding="utf-8").strip() == checksum
+        written = marker.read_text(encoding="utf-8").strip()
     except OSError:
         return True
+    if "\n" not in written:     # from before B548, or half written
+        return False
+    return written == _stamp(checksum, model).strip()
 
 
 def warmup(model: str = "htdemucs") -> None:
