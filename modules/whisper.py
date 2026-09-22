@@ -594,7 +594,7 @@ def _package_version(name: str) -> str:
         from importlib.metadata import version
         return version(name)
     except Exception:  # noqa: BLE001
-        return "onbekend"
+        return t("value_unknown")
 
 
 def _write_transcript(segments: tuple[Segment, ...], path: Path) -> None:

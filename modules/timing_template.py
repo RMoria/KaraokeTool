@@ -262,8 +262,8 @@ def repair(lines, windows, templates: dict[str, Template] | None = None):
         if len(template.profile) != len(line.syllables):
             continue
         start = float(line.syllables[0].start)
-        eind = float(line.syllables[-1].end)
-        window = _best_window(windows, start, eind)
+        line_end = float(line.syllables[-1].end)
+        window = _best_window(windows, start, line_end)
         if window is None:
             new_end = start + template.duration
         else:

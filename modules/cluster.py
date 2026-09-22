@@ -208,9 +208,9 @@ def phonetic_key(text: str) -> str:
     """
     digits = "".join(ch for ch in text if ch.isdigit())
     if digits and digits == "".join(ch for ch in text if ch.isalnum()):
-        vormen = number_word_forms(int(digits))
-        if vormen:
-            text = vormen[0]
+        shapes = number_word_forms(int(digits))
+        if shapes:
+            text = shapes[0]
     letters = "".join(ch for ch in text.lower() if ch.isalpha())
     letters = letters.replace("sch", "sk").replace("ch", "k")
     for old, new in _VOWEL_DIGRAPHS:
@@ -276,11 +276,11 @@ def number_key_best_match(text: str, other_key: str) -> str:
     if not is_pure_number(text):
         return phonetic_key(text)
     digits = "".join(ch for ch in text if ch.isdigit())
-    vormen = number_word_forms(int(digits))
-    if not vormen:
+    shapes = number_word_forms(int(digits))
+    if not shapes:
         return phonetic_key(text)
-    kandidaten = [phonetic_key(shape) for shape in vormen]
-    return max(kandidaten, key=lambda k: similarity(k, other_key))
+    candidates = [phonetic_key(shape) for shape in shapes]
+    return max(candidates, key=lambda k: similarity(k, other_key))
 
 
 def build_tokens(

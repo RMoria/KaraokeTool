@@ -17,16 +17,23 @@ Agreements that hold for every action:
 * An action returns text; that lands in the log window. The
   measurement history in ``docs/testhistorie.json`` is updated by every
   action that has a code (B362).
-* B563: about writing into the PROJECTS this text used to promise more
-  than it kept. It said "nothing, with exactly two exceptions". Two of
-  the five parts of 1.5.2 - the project reports and the syllable
-  checks - go through ``pipeline.build_coupling``, and that writes a
-  ``word_coupling`` step into ``project.json`` of every project it
-  touches. That is the user's hand-made pin work, and the relocation
-  path inside it can drop pins. Measured, not assumed: 114 bytes
-  before, 426 after. It has always done that; only the promise was
-  wrong. Written down here until the day the reports can ask for a
-  coupling without saving one.
+* About writing into the PROJECTS this text used to promise more than
+  it kept. It said "nothing, with exactly two exceptions", while three
+  of the five parts of 1.5.2 saved a ``word_coupling`` step into the
+  ``project.json`` of every project they touched - the user's
+  hand-made pin work, over a path that can drop a pin (B563: 114 bytes
+  before, 426 after). Not because they wanted to write: reading a
+  coupling runs the pin conversions of B309/B417/B506, and those write
+  their result back so it happens once. B571 splits those two apart.
+  The reports ask for their projects through ``pipeline.read_only``,
+  so the conversions still run and the report sees what the program
+  sees, but nothing reaches the disk. What is left of the promise is
+  exact and held by ``tests/test_project_safety.py``: only 1.5.1
+  (fills the cache) and 1.5.12 (renders the videos) write into the
+  PROJECTS, because that IS their job; everything else leaves them
+  byte for byte as they were, folders included. What every action with
+  a code does write is the measurement history in ``docs/``, one line
+  above.
 """
 from __future__ import annotations
 
@@ -474,6 +481,7 @@ def project_report(context, report: Reporter, cancelled) -> str:
     take less than a minute. The maximum under 1.5 is ten, so small tests
     belong together.
     """
+    context = pipeline.read_only(context)        # B571
     parts = ((t("test_part_texts"), _text_rows),
              (t("test_part_filters"), _filter_rows),
              (t("test_part_structure"), _structure_rows))
@@ -488,6 +496,8 @@ def project_report(context, report: Reporter, cancelled) -> str:
 
 def missing_repetitions(context, report: Reporter, cancelled) -> str:
     """1.5.4 - heard but not in the lyrics, across all projects."""
+    context = pipeline.read_only(context)        # B571
+
     def per_project(song: str) -> list[str]:
         other = pipeline.context_for_project(context, song)
         lines = []
@@ -646,6 +656,8 @@ def syllable_checks(context, report: Reporter, cancelled) -> str:
     from . import __version__, test_history
     from . import timing as timing_module
     from . import timing_checks
+
+    context = pipeline.read_only(context)        # B571
 
     def per_project(song: str):
         other = pipeline.context_for_project(context, song)
@@ -3133,7 +3145,7 @@ def heavy_trial(context, report: Reporter, cancelled) -> str:
         if cancelled():
             break
         steps.tick()
-        steps.name(trial.code)          # B409: de letter op de bovenste rij
+        steps.name(trial.code)          # B409: the letter on the top row
         head = ["", f"## {trial.code} {t(trial.name_key)}", ""]
         if trial.off:                                    # B454
             lines += head + [t("heavy_switched_off").format(

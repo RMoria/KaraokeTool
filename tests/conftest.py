@@ -13,15 +13,30 @@ Redirecting per test is exactly the kind of thing you remember fourteen
 times and forget the fifteenth, so it is not done per test any more. The
 constants that point into ``docs/`` are moved aside for EVERY test here.
 A test that really wants to read the real file can still do so by path.
+
+B566: keeping that list complete is the same forgetting one step up. It
+had a hole - ``docs/metingen.md``, written by ``tools/timing_regression
+.py``, which is loaded by file path and therefore has no module in the
+list at all - and a test that called its ``main(--record)`` rewrote the
+user's real measurement file from inside pytest. So the list is no
+longer the rule but a convenience: the rule is
+:func:`_the_documents_stay_as_they_were`, which reads every file under
+``docs/`` before the suite and says at the end which ones changed. A
+list can have a hole; a snapshot of the whole folder cannot.
 """
 from __future__ import annotations
 
+import functools
+import hashlib
 import sys
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+#: The user's own documents folder. Nothing the suite does may reach it.
+DOCS = Path(__file__).resolve().parents[1] / "docs"
 
 
 #: ``(module name, attribute, file name under the temporary folder)`` for
@@ -35,6 +50,48 @@ _REDIRECTED = (
     ("modules.versions", "VERSION_LOG", "pakketversies.json"),
     ("modules.versions", "UPDATE_FILE", "updates.json"),
 )
+
+
+def _documents_now() -> dict:
+    """``path -> (size, sha1)`` for every file under ``docs/`` (B566)."""
+    state: dict[str, tuple[int, str]] = {}
+    if not DOCS.is_dir():                    # pragma: no cover - published
+        return state
+    for path in sorted(DOCS.rglob("*")):
+        if path.is_file():
+            data = path.read_bytes()
+            state[str(path.relative_to(DOCS))] = (
+                len(data), hashlib.sha1(data).hexdigest())
+    return state
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _the_documents_stay_as_they_were():
+    """Nothing under ``docs/`` may differ after the suite (B566).
+
+    The net under the redirect list. B440 cost a night of measuring
+    because one constant was not on the list, and B566 showed the same
+    hole again for ``docs/metingen.md``: the tool that writes it is
+    loaded by file path, so there was no module to put on the list.
+    Keeping a list complete is handwork and handwork gets forgotten -
+    so the whole folder is read before the suite and held against
+    itself afterwards, and the names of the files that moved are in the
+    failure. Size AND sha1: a report that is rewritten with the output
+    of an empty test project can be exactly as long as it was.
+
+    At teardown, so a test that writes into ``docs/`` still runs and is
+    still green; this says what it cost. Finding out WHICH test did it
+    is then one ``-p no:randomly`` bisect away, and that is a better
+    trade than a check per test over a folder of megabytes.
+    """
+    before = _documents_now()
+    yield
+    after = _documents_now()
+    changed = sorted(set(before) | set(after))
+    moved = [name for name in changed if before.get(name) != after.get(name)]
+    assert not moved, (
+        "the suite changed the user's own documents: "
+        + ", ".join(moved))
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +114,63 @@ def _keep_the_real_documents(tmp_path, monkeypatch):
         panel = None
     if panel is not None:
         monkeypatch.setattr(panel, "TRIAL_REPORT", None)
+        _move_the_yardstick_note(panel, tmp_path, monkeypatch)
     yield
+
+
+def _move_the_yardstick_note(panel, tmp_path, monkeypatch) -> None:
+    """Send ``docs/metingen.md`` to the throwaway folder too (B566).
+
+    ``tools/timing_regression.py`` is the one writer into ``docs/`` that
+    :data:`_REDIRECTED` cannot reach. It is not imported but loaded by
+    file path (``test_panel._regression_module``), so it has no name in
+    ``sys.modules`` to hang a constant on - and it has no constant
+    either: ``main(--record)`` builds ``<root>/docs/metingen.md`` on the
+    spot and hands it to :func:`note`. Proven this week: a test that
+    calls that ``main`` rewrites the user's real measurement file.
+
+    So what is moved aside here is the function instead of the
+    constant. ``note`` is the only thing on that module that writes the
+    file, which makes it the same kind of redirect as the others: one
+    attribute on a module, pointed at ``tmp_path``. A path that is NOT
+    inside ``docs/`` is passed through untouched, so a test may still
+    hand the tool a file of its own and read back what it wrote.
+
+    Through the loader, not through the loaded module: the module is
+    made on first use and cached in ``test_panel._REGRESSION``, and the
+    test that triggers that first load is exactly the test that would
+    otherwise write. A test that loads its own private copy of the tool
+    by path is not covered here - that one is what
+    :func:`_the_documents_stay_as_they_were` is for.
+    """
+    def redirect(module) -> None:
+        real_note = getattr(module, "note", None)
+        if real_note is None or getattr(real_note, "_kept_away", False):
+            return
+
+        def note(rows, path, version, stamp):
+            path = Path(path)
+            if DOCS in path.resolve().parents:
+                path = tmp_path / path.name
+            return real_note(rows, path, version, stamp)
+
+        note._kept_away = True
+        monkeypatch.setattr(module, "note", note)
+
+    real_loader = panel._regression_module
+
+    # ``wraps`` for ``__wrapped__``: a test that reads the source of
+    # ``_regression_module`` (v0.116.0) has to see the real loader, not
+    # this redirect.
+    @functools.wraps(real_loader)
+    def loader():
+        module = real_loader()
+        redirect(module)
+        return module
+
+    if panel._REGRESSION is not None:        # already loaded, patch it now
+        redirect(panel._REGRESSION)
+    monkeypatch.setattr(panel, "_regression_module", loader)
 
 
 @pytest.fixture(autouse=True)

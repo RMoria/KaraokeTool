@@ -27,7 +27,7 @@ if TYPE_CHECKING:      # only for type annotations (B293)
 
 from . import __version__ as _APP_VERSION
 from . import align, analysis, ffmpeg, filesystem, fonts, karaoke, proc, separation
-from . import dependencies, word_alignment
+from . import dependencies, history, word_alignment
 from . import song_text, whisper
 from . import cluster as cluster_module
 from . import export as export_module
@@ -270,6 +270,14 @@ def ensure_original_vocals(context: AppContext) -> Path | None:
     cache = context.paths.cache_dir / "original_vocals.wav"
     if cache.exists():
         return cache
+    # B571: a report uses what is lying there and makes nothing. Without
+    # this, the syllable checks of 1.5.2 - an action that promises to
+    # read files that are there anyway, in under a minute - start Demucs
+    # per project and write two mp3s and a wav into the user's folders.
+    # Filling that cache is 1.5.1, a button of its own, on purpose.
+    if context.store.quiet:
+        logger.debug(t("log_vocals_not_made_for_a_report"))
+        return None
     if not separation.is_available():
         return None
     if filesystem.find_audio_file(context.paths.input_dir,
@@ -464,7 +472,7 @@ def relocate_output_base(context: AppContext,
     project folders to the new main folder, rewrites the path
     references in each ``project.json``, and keeps the choice globally in
     the config. If ``new_base`` points to ``<root>/output``, the default
-    applies again (no own folder). Returns ``(ok, melding, nieuwe_context)``.
+    applies again (no own folder). Returns ``(ok, message, new_context)``.
     """
     import shutil
     from dataclasses import replace as _r
@@ -474,13 +482,14 @@ def relocate_output_base(context: AppContext,
     new_root = Path(new_base)
     old_root = context.paths.output_root
 
-    ok, reden = output_writable(new_root)
+    ok, reason = output_writable(new_root)
     if not ok:
-        return False, f"Kan niet schrijven in {new_root}: {reden}", context
+        return False, t("err_output_not_writable").format(
+            folder=new_root, reason=reason), context
     if new_root.resolve() == old_root.resolve():
-        return False, "Dit is al de huidige output-map.", context
+        return False, t("err_output_same_folder"), context
 
-    verplaatst: list[str] = []
+    moved: list[str] = []
     if old_root.exists():
         for child in sorted(old_root.iterdir()):
             if not child.is_dir():
@@ -491,16 +500,14 @@ def relocate_output_base(context: AppContext,
                 continue
             try:
                 shutil.move(str(child), str(target))
-                verplaatst.append(child.name)
+                moved.append(child.name)
             except OSError:
                 logger.exception(t("log_move_failed"), child)
-                return (False,
-                        f"Verplaatsen van '{child.name}' mislukt; "
-                        "controleer of er geen bestanden open staan.",
-                        context)
+                return (False, t("err_output_move_failed").format(
+                    name=child.name), context)
 
     # Rewrite the path references in each moved project.json.
-    for item_name in verplaatst:
+    for item_name in moved:
         pj = new_root / item_name / "settings" / "project.json"
         if pj.exists():
             try:
@@ -517,8 +524,8 @@ def relocate_output_base(context: AppContext,
     new_config = _r(context.config, advanced=_r(
         context.config.advanced, output_dir=output_dir))
     config_module.save_config(new_config, new_paths.config_file)
-    message = (f"Output-map ingesteld op {new_root} "
-               f"({len(verplaatst)} project(en) verplaatst).")
+    message = t("output_base_set").format(folder=new_root,
+                                          count=len(moved))
     logger.info(message)
     return True, message, _r(context, config=new_config, paths=new_paths,
                              store=new_store)
@@ -801,8 +808,8 @@ def _strip_filler_for_language(text: str) -> str:
     can still be detected.
     """
     kept = [ln for ln in text.splitlines() if not _is_filler_line(ln)]
-    schoon = "\n".join(kept).strip()
-    return schoon or text
+    cleaned = "\n".join(kept).strip()
+    return cleaned or text
 
 
 #: B495: a second language only counts as a second language once there
@@ -936,8 +943,8 @@ def language_candidates(context: AppContext,
     path = _text_for_language(context, track)
     if not path.exists():
         return []
-    schoon = _strip_filler_for_language(path.read_text(encoding="utf-8"))
-    return _detect_language_probs(schoon)
+    cleaned = _strip_filler_for_language(path.read_text(encoding="utf-8"))
+    return _detect_language_probs(cleaned)
 
 
 def word_pins(context: AppContext) -> dict[int, list[int]]:
@@ -1066,7 +1073,12 @@ def set_word_pins(context: AppContext, pins: dict[int, list[int]]) -> None:
         "pins": {str(k): list(v) for k, v in pins.items()},
         "layout": _PIN_LAYOUT_FULL,
         "lyrics_layout": _PIN_LYRICS_SPLIT})
-    logger.info(t("log_pins_saved"), len(pins))
+    # B571: not during a report. The B309 conversion comes through here
+    # on the way, and "couplings saved" in the log window while nothing
+    # is being saved is the one sentence a user should not have to
+    # doubt.
+    if not context.store.quiet:
+        logger.info(t("log_pins_saved"), len(pins))
 
 
 #: B506: the manual couplings, written down by WHAT they mean instead of
@@ -2378,14 +2390,56 @@ def projects_without_cache(context: AppContext) -> list[str]:
 
 
 def context_for_project(context: AppContext, song: str) -> AppContext:
-    """A sibling context for another project of the same installation."""
+    """A sibling context for another project of the same installation.
+
+    B571: being a REPORT is inherited. A report makes its own context
+    read-only once, at the top, and every project it walks through from
+    there is read-only with it - instead of a flag that has to be
+    handed down through every helper and is forgotten in exactly one of
+    them. Only ``quiet`` is inherited and not ``writable``: the
+    program's own context has no song when it starts (B111) and its
+    record is therefore not writable, and inheriting THAT would have
+    made every sibling project of a panel action read-only - which is
+    exactly what 1.5.1 and 1.5.12 are for.
+
+    ``ensure_directories`` is skipped for a report for the same reason:
+    a report may not create a folder in a project either, and the
+    projects it walks over exist by definition - it found them by
+    looking.
+    """
     paths = filesystem.ProjectPaths(root=context.paths.root, song=song,
                                     output_base=context.paths.output_base)
-    filesystem.ensure_directories(paths)
+    if not context.store.quiet:
+        filesystem.ensure_directories(paths)
     config = replace(context.config,
                      song=replace(context.config.song, title=song))
     return AppContext(paths=paths, config=config,
-                      store=filesystem.ProjectStore(paths.project_file))
+                      store=filesystem.ProjectStore(
+                          paths.project_file,
+                          quiet=context.store.quiet))
+
+
+def read_only(context: AppContext) -> AppContext:
+    """The same project, with a record that does not reach the disk (B571).
+
+    For a report that only looks. Reading a coupling is not a passive
+    act: ``migrate_lyric_pins`` (B417), ``_pins_for_transcript`` (B309)
+    and ``anchor_pins`` (B506) each convert the stored pins to the
+    shape the current lists have and write that conversion back, so
+    that it happens once instead of at every read. In the program that
+    is right. In a report it is not: three of the five parts of 1.5.2
+    saved a ``word_coupling`` step into every ``project.json`` they
+    touched, over the user's own pin work, and the relocation path
+    inside it can drop a pin.
+
+    What this does NOT do is switch the conversions off - they still
+    run, on the way, and the report sees exactly what the program
+    would see. Only the writing back is left out, so the first real
+    use of that project does the conversion again and then keeps it.
+    """
+    return replace(context, store=filesystem.ProjectStore(
+        context.paths.project_file, writable=context.store.writable,
+        quiet=True))
 
 
 def fill_transcription_cache(context: AppContext, progress=None,
@@ -2570,9 +2624,10 @@ def write_transcription_history(context: AppContext, track: str,
     }
     # Only log the app version if it has changed compared to the previous
     # run (less noise, B143).
-    vorige_versie = next((r.get("version") for r in reversed(data["runs"])
-                          if r.get("version")), None)
-    if _APP_VERSION != vorige_versie:
+    earlier_version = next((r.get("version")
+                            for r in reversed(data["runs"])
+                            if r.get("version")), None)
+    if _APP_VERSION != earlier_version:
         entry["version"] = _APP_VERSION
     if not result.from_cache:
         entry["segments"] = [
@@ -2587,7 +2642,7 @@ def write_transcription_history(context: AppContext, track: str,
                     encoding="utf-8")
     logger.info(t("log_history_updated"),
                 path.name, len(data["runs"]),
-                "cache" if result.from_cache else "nieuw")
+                "cache" if result.from_cache else t("value_fresh"))
     return path
 
 
@@ -2595,6 +2650,12 @@ def _remove_artefact_path(path: Path) -> bool:
     """Remove one file or folder; ``True`` if something disappeared."""
     if not path.exists():
         return False
+    # B568: invalidation is the cheapest way to lose the hand work -
+    # ``invalidate_timing`` deletes ``timing.json`` outright when the
+    # karaoke text changes structurally. Keeping a copy of what is
+    # about to be deleted is the same net as the one over the writes.
+    if path.is_file() and path.name in history.HAND_WORK:
+        history.keep_a_copy(path)
     try:
         if path.is_dir():
             import shutil
@@ -2970,7 +3031,7 @@ def rebuild_auto_timing(context: AppContext, force: bool = False):
     try:
         timing_module.save_timing(
             fresh, target, offset=timing_module.load_offset(hand_path),
-            project=context.config.song.title, versie=_APP_VERSION)
+            project=context.config.song.title, version=_APP_VERSION)
     except OSError:
         logger.warning(t("log_timing_auto_failed"))
         return None
@@ -3100,7 +3161,7 @@ def _write_rescued_timing(context: AppContext, rescue,
         timing_module.save_timing(lines, context.paths.timing_file,
                                   offset=offset,
                                   project=context.config.song.title,
-                                  versie=_APP_VERSION)
+                                  version=_APP_VERSION)
     except OSError:
         logger.warning(t("log_timing_rescue_failed"))
         return
@@ -3109,7 +3170,7 @@ def _write_rescued_timing(context: AppContext, rescue,
             timing_module.save_timing(auto, context.paths.timing_auto_file,
                                       offset=offset,
                                       project=context.config.song.title,
-                                      versie=_APP_VERSION)
+                                      version=_APP_VERSION)
         except OSError:
             logger.warning(t("log_timing_auto_failed"))
     logger.info(t("log_timing_kept"), ", ".join(changed) or "?")
@@ -4539,19 +4600,19 @@ def _relax_implausible_anchors(anchors: list[bool], times: list,
         # usually an unfixable sliver, and the real culprit lies further
         # along.
         for start, stop, _low, _high in heavy:
-            kandidaten = [p for p in
+            candidates = [p for p in
                           (next((p for p in range(start - 1, -1, -1)
                                  if anchors[p]), None),
                            next((n for n in range(stop, count)
                                  if anchors[n]), None))
                           if p is not None and p not in fixed and is_loner(p)]
             best, best_score = None, worst_density(anchors)
-            for kandidaat in kandidaten:
+            for candidate in candidates:
                 trial = list(anchors)
-                trial[kandidaat] = False
+                trial[candidate] = False
                 score = worst_density(trial)
                 if score < best_score:
-                    best, best_score = kandidaat, score
+                    best, best_score = candidate, score
             if best is not None:
                 chosen = best
                 break
@@ -4719,22 +4780,23 @@ def _place_skipped_on_energy(context: AppContext, aligned: tuple) -> tuple:
                   if e > low + 0.02 and s < high - 0.02]
         # B318: weigh by syllable count, so "Espagna" gets more time than
         # "e" instead of exactly as much.
-        gewichten = [max(1, len(timing_module.split_syllables(
-            result[start_index + k].lyric.text))) for k in range(run_count)]
+        weights = [max(1, len(timing_module.split_syllables(
+            result[start_index + k].lyric.text)))
+            for k in range(run_count)]
         # B319: a run at the END of the song has no anchor after it, so
         # its window runs on to where the singing stops. Does that window
         # offer far more sung time than these words need, then counting
         # back from the end fits better than spreading over everything.
         if run is last_run and end_index >= count:
-            needed = sum(gewichten) * per_syllable
-            beschikbaar = sum(e - s for s, e in within)
-            if beschikbaar > needed * _TAIL_BACKWARD_SLACK:
+            needed = sum(weights) * per_syllable
+            available = sum(e - s for s, e in within)
+            if available > needed * _TAIL_BACKWARD_SLACK:
                 within = _fit_from_the_back(within, needed)
                 logger.info(t("log_tail_from_the_back"),
-                            run_count, beschikbaar, needed)
+                            run_count, available, needed)
         for offset, (start, stop) in enumerate(
                 timing_module.spread_over_active(run_count, within,
-                                                 weights=gewichten)):
+                                                 weights=weights)):
             word = result[start_index + offset]
             if untouchable(word):
                 continue
@@ -5926,27 +5988,28 @@ def _apply_energy_word_timing(context: AppContext, timed):
     else:
         project = lambda s: s                                # noqa: E731
     win_k = [(project(s), project(e)) for s, e in windows]
-    uit = []
+    refined = []
     for line in timed:
         s, e = line.start, line.end
-        binnen = [(max(a, s), min(b, e)) for a, b in win_k
+        inside = [(max(a, s), min(b, e)) for a, b in win_k
                   if b > s + 0.05 and a < e - 0.05]
-        binnen = [(a, b) for a, b in binnen if b - a > 0.05]
-        if len(binnen) >= 2 and not line.crowd:
+        inside = [(a, b) for a, b in inside if b - a > 0.05]
+        if len(inside) >= 2 and not line.crowd:
             # B290: catch per line. The caller has a safety-net except
             # around the whole step, but that switched off the energy
             # word timing of the complete song at one problem line. Now
             # only that one line loses its refinement and the others keep it.
             try:
-                uit.append(timing_module.distribute_over_windows(line, binnen))
+                refined.append(
+                    timing_module.distribute_over_windows(line, inside))
             except Exception:  # noqa: BLE001 - one line may not break the rest
                 logger.exception(
                     t("log_energy_word_line_skipped"),
                     line.index, line.text)
-                uit.append(line)
+                refined.append(line)
         else:
-            uit.append(line)
-    return tuple(uit)
+            refined.append(line)
+    return tuple(refined)
 
 
 def _bg_only_lines(context: AppContext) -> frozenset[int]:
@@ -6275,7 +6338,7 @@ def generate_timing(context: AppContext) -> tuple[Path, int, str]:
     timed = timing_module.sanitize_timing(
         timed, first_start=float(onset) if onset is not None else None,
         song_duration=duration,
-        blok_barriere=_gav.block_anchor_barrier,
+        block_barrier=_gav.block_anchor_barrier,
         weight_map={"syllable": _gav.anchor_weight_syllable,
                    "high": _gav.anchor_weight_high,
                    "word": _gav.anchor_weight_word,
@@ -6362,7 +6425,7 @@ def generate_timing(context: AppContext) -> tuple[Path, int, str]:
                     else "")
             report = timing_module.timing_report(
                 timed, offset=current_offset(context), source_karaoke=source,
-                versie=_APP_VERSION, stages=stages)          # B408
+                version=_APP_VERSION, stages=stages)          # B408
             diagnostics_dir(context).mkdir(parents=True, exist_ok=True)
             (diagnostics_dir(context) / "timing_diagnostics.txt").write_text(
                 report, encoding="utf-8")
@@ -6373,13 +6436,13 @@ def generate_timing(context: AppContext) -> tuple[Path, int, str]:
     offset = current_offset(context)
     title = context.config.song.title
     timing_module.save_timing(timed, target, offset=offset,
-                              project=title, versie=_APP_VERSION)
+                              project=title, version=_APP_VERSION)
     # Also keep the automatic timing separately, so that manual
     # corrections can be compared later (B68).
     try:
         timing_module.save_timing(timed, context.paths.timing_auto_file,
                                   offset=offset, project=title,
-                                  versie=_APP_VERSION)
+                                  version=_APP_VERSION)
     except OSError:
         logger.warning(t("log_timing_auto_failed"))
     context.store.set_step("timing", {"file": str(target),
@@ -6463,7 +6526,7 @@ def sync_timing_with_text_change(context: AppContext, old_lines,
         return False, t("timing_sync_no_diff")
     timing_module.save_timing(result, path, offset=offset,
                               project=context.config.song.title,
-                              versie=_APP_VERSION)
+                              version=_APP_VERSION)
     logger.info(t("log_timing_synced"), changed)
     return True, t("timing_sync_updated").format(count=changed)
 
@@ -6591,7 +6654,7 @@ def check_text_alignment(context: AppContext) -> tuple[bool, str]:
             if stripped.startswith("#"):
                 continue
             if song_text.is_bg_only_line(stripped):
-                seen = True          # wél binnen het blok, niet geteld
+                seen = True          # inside the block, but not counted
                 continue
             current += 1
             seen = True

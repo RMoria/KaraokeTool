@@ -113,8 +113,17 @@ def rename_in_file(path: pathlib.Path, mapping: dict[str, str]) -> int:
     return 0
 
 
-def main() -> None:
-    root = pathlib.Path(sys.argv[1])
+def main(argv: list[str] | None = None) -> None:
+    """B564: through argparse. Without a folder it walked
+    ``sys.argv[1]`` straight into an IndexError, and with ``--help`` it
+    read that as the folder and rewrote every .py file it found."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Rename the old module names in a tree (B299/B300).")
+    parser.add_argument("root", help="folder to walk")
+    arguments = parser.parse_args(argv)
+    root = pathlib.Path(arguments.root)
     # mapping old -> new
     MAPPING = {
         "lyrics": "song_text",
@@ -140,4 +149,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

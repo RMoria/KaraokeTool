@@ -22,7 +22,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Sequence
 
-from . import timing_rules
+from . import history, timing_rules
 from .karaoke_text import TextLine, is_pause
 from .translations import t
 
@@ -902,7 +902,7 @@ def word_spans(syllables: Sequence[Any]
     or dicts (with ``"text"/"start"/"end"``). ``split_line`` marks the
     start of a new word with a leading space.
     """
-    def veld(syl: Any, item_name: str) -> Any:
+    def field(syl: Any, item_name: str) -> Any:
         return syl[item_name] if isinstance(syl, dict) else getattr(syl, item_name)
 
     words: list[tuple[str, float, float]] = []
@@ -910,14 +910,14 @@ def word_spans(syllables: Sequence[Any]
     start: float | None = None
     end = 0.0
     for syl in syllables:
-        stuk = str(veld(syl, "text"))
-        if stuk.startswith(" ") and start is not None:
+        piece = str(field(syl, "text"))
+        if piece.startswith(" ") and start is not None:
             words.append((text_value.strip(), start, end))
             text_value, start = "", None
         if start is None:
-            start = float(veld(syl, "start"))
-        text_value += stuk
-        end = float(veld(syl, "end"))
+            start = float(field(syl, "start"))
+        text_value += piece
+        end = float(field(syl, "end"))
     if start is not None:
         words.append((text_value.strip(), start, end))
     return words
@@ -932,12 +932,12 @@ def piece_groups(syllables: Sequence[Any]) -> list[list[int]]:
     two syllables). Anyone who wants to redistribute the pieces has to
     count what is there, not what the text suggests.
     """
-    def veld(syl: Any, item_name: str) -> Any:
+    def field(syl: Any, item_name: str) -> Any:
         return syl[item_name] if isinstance(syl, dict) else getattr(syl, item_name)
 
     groups: list[list[int]] = []
     for index, syl in enumerate(syllables):
-        if not groups or (str(veld(syl, "text")).startswith(" ") and groups[-1]):
+        if not groups or (str(field(syl, "text")).startswith(" ") and groups[-1]):
             groups.append([])
         groups[-1].append(index)
     return groups
@@ -1002,30 +1002,30 @@ def editor_view_cells(lines: Sequence[dict],
     piece gets a cell of its own in every view (B507).
     """
     if mode == "words":
-        cellen: list[dict] = []
+        cells: list[dict] = []
         for pos, line in enumerate(lines):
             groups = piece_groups(line["syllables"])
             spans = word_spans(line["syllables"])
             for (text_value, start, end), group in zip(spans, groups):
                 background = all(
                     line["syllables"][i].get("bg") for i in group)
-                cellen.append({"text": text_value, "start": start, "end": end,
+                cells.append({"text": text_value, "start": start, "end": end,
                                "crowd": bool(line["crowd"]),
                                "rows": [] if background else [pos],
                                "uit": bool(line.get("disabled")),
                                "bg": background})
-        return cellen
+        return cells
     if mode == "blocks":
-        cellen = []
+        cells = []
         current: list[tuple[int, dict]] = []
         block_id = None
 
         def close(group: list[tuple[int, dict]]) -> None:
-            cellen.append(_blok_cel(group))
+            cells.append(_block_cell(group))
             for _pos, line in group:
                 cell = _bg_cell(line)
                 if cell is not None:
-                    cellen.append(cell)
+                    cells.append(cell)
 
         for pos, line in enumerate(lines):
             b = line.get("block", 0)
@@ -1036,13 +1036,13 @@ def editor_view_cells(lines: Sequence[dict],
             current.append((pos, line))
         if current:
             close(current)
-        return cellen
+        return cells
     # "sentences" (default): one cell per line, with the background
     # piece right behind it so the two stay next to each other.
-    cellen = []
+    cells = []
     for pos, line in enumerate(lines):
         start, end = _dict_span(line)
-        cellen.append({"text": line["text"], "start": start, "end": end,
+        cells.append({"text": line["text"], "start": start, "end": end,
                        "crowd": bool(line["crowd"]),
                        "rows": [pos], "uit": bool(line.get("disabled")),
                        # B507: a whole background line is drawn as
@@ -1052,8 +1052,8 @@ def editor_view_cells(lines: Sequence[dict],
                        "restore": bool(line.get("restore"))})   # B496
         cell = _bg_cell(line)
         if cell is not None:
-            cellen.append(cell)
-    return cellen
+            cells.append(cell)
+    return cells
 
 
 def original_view_cells(originals: Sequence[dict], mode: str,
@@ -1072,7 +1072,7 @@ def original_view_cells(originals: Sequence[dict], mode: str,
     """
     line_block = line_block or {}
     if mode == "words":
-        cellen: list[dict] = []
+        cells: list[dict] = []
         for o in originals:
             words = str(o["text"]).split()
             n = max(1, len(words))
@@ -1080,32 +1080,32 @@ def original_view_cells(originals: Sequence[dict], mode: str,
             rows = list(o.get("rows") or [])
             crowd = bool(o.get("crowd"))
             for k, w in enumerate(words):
-                cellen.append({"text": w,
+                cells.append({"text": w,
                                "start": o["start"] + k * width,
                                "end": o["start"] + (k + 1) * width,
                                "rows": rows, "crowd": crowd})
-        return cellen
+        return cells
     if mode == "blocks":
-        cellen = []
+        cells = []
         group: list[dict] = []
         block = None
         for o in originals:
             rows = o.get("rows") or []
             b = line_block.get(rows[0], 0) if rows else 0
             if group and b != block:
-                cellen.append(_orig_blok(group))
+                cells.append(_original_block(group))
                 group = []
             block = b
             group.append(o)
         if group:
-            cellen.append(_orig_blok(group))
-        return cellen
+            cells.append(_original_block(group))
+        return cells
     return [{"text": o["text"], "start": o["start"], "end": o["end"],
              "rows": list(o.get("rows") or []), "crowd": bool(o.get("crowd"))}
             for o in originals]
 
 
-def _orig_blok(originals: list[dict]) -> dict:
+def _original_block(originals: list[dict]) -> dict:
     rows: list[int] = []
     for o in originals:
         rows.extend(o.get("rows") or [])
@@ -1128,7 +1128,7 @@ def _dict_span(line: dict) -> tuple[float, float]:
     return float(fs), float(le)
 
 
-def _blok_cel(items: list[tuple[int, dict]]) -> dict:
+def _block_cell(items: list[tuple[int, dict]]) -> dict:
     lines = [line for _pos, line in items]
     # B507: a line that is background vocals from beginning to end does
     # not decide how wide the block is either. Since B509 such a line
@@ -1432,22 +1432,22 @@ def spread_over_active(count: int,
         per_window[index] += 1
 
     slots: list[tuple[float, float]] = []
-    geplaatst = 0
+    placed = 0
     for (start, end), number in zip(usable, per_window):
         # B318: within a window divide by WEIGHT instead of equally.
         # "Espagna" used to get exactly as much time as "e", while it has
         # three syllables against one. The weights are the syllable
         # counts; without them (or with only zeros) it falls back on an
         # equal division, which is what it used to be.
-        deel = (slot_shares[geplaatst:geplaatst + number]
-                or [1.0] * number)
-        totaal_deel = sum(deel) or float(number)
-        positie = start
-        for gewicht in deel:
-            lengte = (end - start) * (gewicht / totaal_deel)
-            slots.append((positie, max(positie + 0.1, positie + lengte)))
-            positie += lengte
-        geplaatst += number
+        shares = (slot_shares[placed:placed + number]
+                  or [1.0] * number)
+        total_share = sum(shares) or float(number)
+        position = start
+        for weight in shares:
+            length = (end - start) * (weight / total_share)
+            slots.append((position, max(position + 0.1, position + length)))
+            position += length
+        placed += number
     return slots
 
 
@@ -1456,8 +1456,8 @@ def _slot_weights(count: int, weights: Sequence[float] | None
     """Usable weights per slot (B318); equal shares if none are given."""
     if not weights or len(weights) != count:
         return [1.0] * count
-    schoon = [max(float(w), 0.1) for w in weights]
-    return schoon if any(w > 0 for w in schoon) else [1.0] * count
+    cleaned = [max(float(w), 0.1) for w in weights]
+    return cleaned if any(w > 0 for w in cleaned) else [1.0] * count
 
 
 def windows_between(count: int,
@@ -1875,8 +1875,8 @@ def _karaoke_word_groups(pieces: Sequence[str]) -> list[list[int]]:
     syllables).
     """
     groups: list[list[int]] = []
-    for i, stuk in enumerate(pieces):
-        if str(stuk).startswith(" ") or not groups:
+    for i, piece in enumerate(pieces):
+        if str(piece).startswith(" ") or not groups:
             groups.append([i])
         else:
             groups[-1].append(i)
@@ -2608,7 +2608,7 @@ def tail_over_windows(count: int,
 def sanitize_timing(lines: Sequence[TimedLine],
                     first_start: float | None = None,
                     song_duration: float | None = None,
-                    blok_barriere: bool = True,
+                    block_barrier: bool = True,
                     weight_map: dict[str, float] | None = None,
                     active_windows: Sequence[tuple[float, float]] | None = None
                     ) -> tuple[TimedLine, ...]:
@@ -2693,7 +2693,7 @@ def sanitize_timing(lines: Sequence[TimedLine],
     _ANCHOR_WEIGHT = {"syllable": float(_gw.get("syllable", 3.0)),
                       "high": float(_gw.get("high", 2.0)),
                       "word": float(_gw.get("word", 1.0))}
-    _ONSET_GEWICHT = float(_gw.get("onset", 10.0))
+    _ONSET_WEIGHT = float(_gw.get("onset", 10.0))
 
     def _anchor_weight(ln: TimedLine) -> float:
         return _ANCHOR_WEIGHT.get(ln.quality, 0.0)
@@ -2702,16 +2702,16 @@ def sanitize_timing(lines: Sequence[TimedLine],
     # keeps its START as an anchor. It stays in ``suspect``, so its
     # measured DURATION is not copied over further down - the beginning
     # is measured, the end ran away.
-    kandidaten: dict[int, tuple[float, float]] = {
+    candidates: dict[int, tuple[float, float]] = {
         i: (ln.start, _anchor_weight(ln))
         for i, ln in enumerate(lines)
         if ln.quality in ("high", "syllable") and ln.end > ln.start
         and (i not in suspect or i in overlong)}          # B329/B332/B522
     if first_start is not None:
         # The vocal onset is the strongest anchor there is (B130/B133).
-        kandidaten[0] = (max(0.0, float(first_start)), _ONSET_GEWICHT)
-    elif 0 not in kandidaten:
-        kandidaten[0] = (max(0.0, lines[0].start
+        candidates[0] = (max(0.0, float(first_start)), _ONSET_WEIGHT)
+    elif 0 not in candidates:
+        candidates[0] = (max(0.0, lines[0].start
                              if lines[0].end > lines[0].start else 0.0), 0.5)
 
     # Monotonic anchor series with weight and block barriers (B251,
@@ -2726,8 +2726,8 @@ def sanitize_timing(lines: Sequence[TimedLine],
         timing_rules.Candidate(
             scope="line", ref=i, start=t, end=t, weight=w,
             confidence=1.0, kind=timing_rules.KIND_ANCHOR,
-            block=(lines[i].block if blok_barriere else 0))
-        for i, (t, w) in kandidaten.items()]
+            block=(lines[i].block if block_barrier else 0))
+        for i, (t, w) in candidates.items()]
     kept = timing_rules.arbitrate_anchors(cands)
     anchor_idx = sorted(kept)
 
@@ -3271,7 +3271,7 @@ STAGES = ("koppeling", "zinnen", "inzet", "woorden")
 
 
 def timing_report(lines: Sequence[TimedLine], offset: float | None = None,
-                  source_karaoke: str = "", versie: str = "",
+                  source_karaoke: str = "", version: str = "",
                   stages: dict[str, Sequence[tuple[float, float]]]
                   | None = None) -> str:
     """Compact, token-frugal diagnostics per sentence (B129/B408).
@@ -3293,7 +3293,7 @@ def timing_report(lines: Sequence[TimedLine], offset: float | None = None,
     head_offset = "onbekend" if offset is None else f"{offset * 1000:+.0f}ms"
     present = [name for name in STAGES if stages and stages.get(name)]
     extra = "".join(f"|{name}" for name in present)
-    header = (f"# versie={versie or '?'} offset={head_offset} "
+    header = (f"# versie={version or '?'} offset={head_offset} "
               f"bron-karaoke={source_karaoke or '-'} regels={len(lines)}\n"
               f"idx|start|end|span{extra}|nsyl|kwal|flags")
     rows = [header]
@@ -3349,29 +3349,34 @@ def _line_to_dict(line: TimedLine) -> dict[str, Any]:
 
 def save_timing(lines: Sequence[TimedLine], path: Path,
                 offset: float | None = None, project: str = "",
-                versie: str = "") -> None:
+                version: str = "") -> None:
     """Write the timing to JSON.
 
     Since v0.53 the format is an object ``{"offset": <s>, "lines":
     [...]}`` so that the original↔karaoke offset that was used is
     preserved (B98). Since v0.72 there is also a header with ``project``
-    (title), ``versie`` and ``aangemaakt`` (timestamp), so that you can
+    (title), ``version`` and ``created`` (timestamp), so that you can
     see which project/version a file belongs to and cross-contamination
     can be traced (B183). The old bare-list format stays readable.
     """
     import datetime as _dt
     data = {
         "project": project,
-        "version": versie,
+        "version": version,
         "created": _dt.datetime.now().isoformat(timespec="seconds"),
         "offset": offset,
         "lines": [_line_to_dict(line) for line in lines],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
+    # B568: the version that is about to disappear first. Every write
+    # of a timing file in the program comes through here, so this one
+    # line covers timing.json (the hand work) and timing_auto.json (the
+    # reference it is measured against) both.
+    history.keep_a_copy(path)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")
     logger.info(t("log_timing_written"),
-                path, len(lines), "onbekend" if offset is None
+                path, len(lines), t("value_unknown") if offset is None
                 else f"{offset * 1000:+.0f} ms", project or "?")
 
 

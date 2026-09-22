@@ -122,7 +122,7 @@ def test_only_a_blank_line_starts_a_new_block(tmp_path) -> None:
     bg = pipeline._bg_only_lines(context)
     assert len(bg) == 1
     line = next(iter(bg))
-    # De regels eromheen horen bij hetzelfde blok.
+    # The lines around it belong to the same block.
     assert line - 1 not in bg and line + 1 not in bg
 
 

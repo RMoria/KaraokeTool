@@ -195,25 +195,25 @@ def shape_checks(lines, found: Findings) -> None:
         # pause), inside a word it is not - that is a word falling apart.
         index = 0
         for _text, _start, _end in timing_module.word_spans(syllables):
-            eigen = []
+            own = []
             while index < len(syllables):
-                eigen.append(syllables[index])
+                own.append(syllables[index])
                 index += 1
                 if index < len(syllables) and \
                         str(_value(syllables[index], "text")).startswith(" "):
                     break
-            for first, second in zip(eigen, eigen[1:]):
+            for first, second in zip(own, own[1:]):
                 if float(_value(second, "start")) \
                         - float(_value(first, "end")) > 0.02:
                     found.gaps_in_word += 1
-            if eigen:
-                breedte = (float(_value(eigen[-1], "end"))
-                           - float(_value(eigen[0], "start")))
-                if breedte < len(eigen) * MIN_SYLLABLE_S:   # B435
+            if own:
+                width = (float(_value(own[-1], "end"))
+                         - float(_value(own[0], "start")))
+                if width < len(own) * MIN_SYLLABLE_S:   # B435
                     found.cramped_words += 1
-            held = [n for n, s in enumerate(eigen)
+            held = [n for n, s in enumerate(own)
                     if bool(_value(s, "held"))]
-            if held and max(held) != len(eigen) - 1:
+            if held and max(held) != len(own) - 1:
                 found.held_not_last += 1
 
 

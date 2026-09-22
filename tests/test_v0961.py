@@ -34,29 +34,16 @@ def test_dir_is_never_called_with_two_arguments() -> None:
     assert not wrong, f"dir() called with several arguments: {wrong}"
 
 
-def test_rename_vocabulary_holds_no_python_builtin_as_source() -> None:
-    """B303: the root cause, and the dangerous half of it.
-
-    A rename SOURCE that is also a builtin is fatal: working code silently
-    changes meaning, because ``map(...)`` becomes ``dir(...)`` without a
-    syntax error anywhere. That may never happen, hence this hard check.
-
-    A rename TARGET that is a builtin (``alle`` -> ``all``, ``reeks`` ->
-    ``range``) is a lesser evil: it only shadows the builtin, and only
-    inside the one scope where the name lives. Forbidding those outright
-    would force awkward names, so they are allowed - but
-    ``test_no_builtin_is_shadowed_and_called_in_the_same_scope`` below
-    guards the case where that shadowing actually bites.
-    """
-    vocabulary = TOOLS / "b299_dictionary.py"
-    if not vocabulary.exists():          # tool is optional in a release zip
-        return
-    namespace: dict = {}
-    exec(compile(vocabulary.read_text(encoding="utf-8"),
-                 str(vocabulary), "exec"), namespace)
-    words = namespace["NL_WORD"]
-    sources = set(words) & BUILTINS
-    assert not sources, f"Dutch source word is a builtin: {sorted(sources)}"
+#: B571: ``test_rename_vocabulary_holds_no_python_builtin_as_source``
+#: stood here. It read ``tools/b299_dictionary.py``, the word list
+#: of the B299 rename, and that file is gone: a later rename wave
+#: had run over the data itself (37 of its 285 entries read
+#: "english -> the same english"), nothing imported it, and the
+#: migration it belonged to finished at v0.96.1. The test already
+#: returned without asserting anything when the file was absent,
+#: so keeping it would have been a green line that measures
+#: nothing. What it guarded - a rename that hits a builtin - is
+#: still covered by the two tests around this note.
 
 
 def test_no_builtin_is_shadowed_and_called_in_the_same_scope() -> None:

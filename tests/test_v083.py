@@ -124,9 +124,9 @@ def test_sanitize_single_block_barrier_noop() -> None:
     lines = [line(0, 0.0, "high"), line(1, 2.0, "high"),
              line(2, 4.0, "high")]
     on = sanitize_timing(lines, first_start=0.0, song_duration=10.0,
-                         blok_barriere=True)
+                         block_barrier=True)
     off = sanitize_timing(lines, first_start=0.0, song_duration=10.0,
-                          blok_barriere=False)
+                          block_barrier=False)
     assert [ln.start for ln in on] == [ln.start for ln in off]
 
 

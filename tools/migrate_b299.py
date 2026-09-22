@@ -280,9 +280,9 @@ def rename_paths(root: Path, apply: bool, report: list) -> None:
         elif path.is_file() and path.stem == "origineel":
             target = path.with_name("original" + path.suffix)
         elif path.is_file() and path.name.startswith("transcriptie_"):
-            nieuw = path.name.replace("transcriptie_", "transcription_", 1)
-            nieuw = nieuw.replace("_origineel", "_original")
-            target = path.with_name(nieuw)
+            new_name = path.name.replace("transcriptie_", "transcription_", 1)
+            new_name = new_name.replace("_origineel", "_original")
+            target = path.with_name(new_name)
         else:
             continue
         if target.exists():
@@ -361,12 +361,20 @@ def verify(root: Path, report: list) -> None:
     report.append(f"  verification: {problems} file(s) with lost values")
 
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print(__doc__)
-        return 2
-    root = Path(sys.argv[1])
-    apply = "--apply" in sys.argv
+def main(argv: list[str] | None = None) -> int:
+    """B564: through argparse, so ``--help`` is help and not a folder
+    name. It printed "not a folder: --help"."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="One-off migration of stored data to the English "
+                    "keys (B299/B300).")
+    parser.add_argument("root", help="the KaraokeTool installation folder")
+    parser.add_argument("--apply", action="store_true",
+                        help="really write; without this it is a dry run")
+    arguments = parser.parse_args(argv)
+    root = Path(arguments.root)
+    apply = arguments.apply
     if not root.is_dir():
         print(f"not a folder: {root}")
         return 2
@@ -417,4 +425,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

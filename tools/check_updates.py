@@ -77,9 +77,9 @@ def ask_pip(python_exe: str = "") -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--force", action="store_true",
-                        help="ook als er vandaag al gekeken is")
+                        help="even if it was already checked today")
     parser.add_argument("--python", default="",
-                        help="de python van de venv (standaard: deze)")
+                        help="the python of the venv (default: this one)")
     args = parser.parse_args(argv)
 
     target = versions.UPDATE_FILE

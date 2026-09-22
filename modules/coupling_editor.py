@@ -120,20 +120,20 @@ def legend_html(clickable: bool = False) -> str:
     ``clickable`` the two assignable markings become links, so that
     selecting plus clicking assigns them (B337).
     """
-    def blokje(fill: QColor, border: QColor, text: str,
+    def swatch(fill: QColor, border: QColor, text: str,
                status: str = "") -> str:
-        vak = (f'<span style="background:{fill.name()};'
+        box = (f'<span style="background:{fill.name()};'
                f'border:1px solid {border.name()};">&nbsp;&nbsp;&nbsp;'
                f'</span>&nbsp;{text}')
         if clickable and status in MARKABLE:
-            return f'<a href="{status}" style="text-decoration:none;">{vak}</a>'
-        return vak
+            return f'<a href="{status}" style="text-decoration:none;">{box}</a>'
+        return box
 
-    delen = [blokje(fill, border, t(key), status)
+    parts = [swatch(fill, border, t(key), status)
              for status, (fill, border, key) in _STATUS_STYLE.items()]
-    delen.append(blokje(_FILTERED_FILL, _FILTERED_BORDER,
+    parts.append(swatch(_FILTERED_FILL, _FILTERED_BORDER,
                         t("legend_filtered_word")))
-    return " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(delen)
+    return " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(parts)
 
 #: Fill and border of a found word that the hallucination filter threw
 #: out (B309). Same purple as the "[hal]" marking in the bottom row, so

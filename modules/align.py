@@ -435,9 +435,9 @@ def _build_regions(
         # front, but a group can end up looking like that by another route
         # too; in that case fall back on the unweighted mean instead of
         # letting the whole alignment crash.
-        gewichtensom = float(weights.sum())
+        weight_sum = float(weights.sum())
         average_offset = (float(np.average(offsets, weights=weights))
-                            if gewichtensom > 0 else float(np.mean(offsets)))
+                            if weight_sum > 0 else float(np.mean(offsets)))
         regions.append(OffsetRegion(
             start=group[0].start,
             end=group[-1].end,

@@ -5242,6 +5242,222 @@ What of the list is NOT in it, and why:
   pause lasts about two. Changing either without measuring is guessing;
   the yardstick (1.5.5/1.5.10) can say what it does.
 
+Included in v1.0.10:
+
+- **B571 - a report that only looks, now really only looks.** Three of
+  the five parts of 1.5.2 saved a `word_coupling` step into the
+  `project.json` of every project they touched. That step IS the
+  user's pin work, and the path that writes it relocates pins on the
+  way and can drop one. B563 wrote the fact down and left the repair
+  standing, because the cause is not in the reports: reading a
+  coupling runs the pin conversions of B309 (transcript indices),
+  B417 (lyrics indices) and B506 (the relocation by description), and
+  each of those writes its result back so that it happens once instead
+  of at every read. In the program that is right; in a report it is
+  not. Split apart now: `pipeline.read_only` gives back the same
+  project with a record that does not reach the disk, and
+  `context_for_project` inherits that, so a report says it once at the
+  top and every project it walks through is quiet with it - instead of
+  a flag handed down through every helper and forgotten in exactly
+  one. The conversions still run, on the way, so the report sees what
+  the program sees; only the writing back is left out, and the first
+  real use of the project does the conversion again and keeps it.
+  Measured: action 1.5.2 over two projects now leaves the PROJECTS
+  byte for byte as they were - the measurement history and the report
+  in `docs/` are what the action is for and are written as before -
+  and the panel's promise, only 1.5.1 and 1.5.12 write because that is
+  their job, is exact for the first time.
+  `tests/test_project_safety.py` says so both ways: the reports change
+  nothing, AND the coupling they read is the same one a writing record
+  gives, because a read-only mode that quietly answers something else
+  would be worse than the writing was.
+
+  Three things the review of this repair found, all of them in the
+  first version of it and none of them in the one that shipped:
+
+  * **"may not write" is not one flag.** It was inherited from
+    `ProjectStore.writable`, and the program's own context starts
+    WITHOUT a song (B111), so its record is not writable. Every
+    sibling project of a panel action therefore became read-only -
+    1.5.1 filling a cache whose checksum it could no longer record,
+    1.5.12 rendering videos that `project.json` never heard about,
+    both silently, because a record that does not write does not
+    complain. Being a report is a flag of its own now (`quiet`), and
+    only that one is inherited.
+  * **Not writing is not the same as leaving alone.** A report asked
+    for a project through `context_for_project`, which calls
+    `ensure_directories` and made six folders per project it looked
+    at. It does not do that for a report any more, and the safety test
+    now snapshots folders as well as files - it could not see this.
+  * **A report could start Demucs.** The syllable checks ask for the
+    vocal stem, and when it is not cached that means separating:
+    minutes per project, two mp3s in the output folder and a wav in
+    the cache, from the action that promises to read what is lying
+    there anyway in under a minute. A quiet context now uses the cache
+    or does without. Filling that cache is 1.5.1, a button of its own,
+    on purpose.
+
+  And one sentence that had become a lie: `set_word_pins` logs
+  "couplings saved", and the B309 conversion comes through it on the
+  way, so a report said in the log window that the user's pin work had
+  been saved while B571 was making sure it was not. It says nothing
+  during a report now, and a record that is quiet says so with its own
+  message instead of borrowing B445's "no song chosen".
+- **The B299 word list is gone.** `tools/b299_dictionary.py` held the
+  Dutch-to-English word list of the B299 rename, and the review of
+  v1.0.9 found that 37 of its 285 entries had become `english -> the
+  same english`: a later rename wave ran over the data itself, and the
+  Dutch keys it was made of (`tekst`, `regel`, `woorden`, `bestand`,
+  `taal`, ...) are not in the repository any more. Nothing imported
+  the file, the migration it belonged to finished at v0.96.1, and
+  `tools/migrate_b299.py` has its own maps, which are undamaged. The
+  one test that read it already returned without asserting anything
+  when the file was absent, so it went with it; what it guarded - a
+  rename that hits a Python builtin - is still covered by the two
+  tests around it.
+
+What is NOT in it, and why:
+
+- The Dutch report and log TEXTS, still. Those are translations, not
+  renames, and the user has said they come later.
+
+Included in v1.0.9:
+
+- **B564 - a tool that answered `--help` by doing the work.** Six tools
+  in `tools/` read `sys.argv` by hand and treated anything that was
+  there as their argument. `github_export.py --help` therefore did not
+  print help: it built a complete anonymised copy of the tree into a
+  folder beside the project, and `write_dependency_doc.py --help`
+  rewrote the document it is supposed to describe. Both were found the
+  way you find such things - by typing `--help`. All six now go through
+  `argparse`, so `--help` is help, and the test below proves it by
+  snapshotting the tree around the call.
+- **B565 - the command-line tools are run now, not read.** Twice this
+  month a tool turned out to have been dead for a hundred builds
+  (B550 called a name that was renamed at B379, B562 asked for a
+  dictionary key that changed at B299). Both raise on the first line
+  that does any work, and the suite stayed green through all of it,
+  because about ninety tests around this machinery assert on SOURCE
+  TEXT: `assert "x" in inspect.getsource(...)` passes just as happily
+  on code that crashes. `tests/test_cli_tools.py` executes them
+  instead - every tool's `--help`, and everything that needs neither
+  Whisper nor Demucs nor the owner's own projects really run on data
+  in a temporary folder, output read. Proven by putting the B550 and
+  the B562 bug back one at a time: each turns the file red.
+  `whisper_probe.py` stays at `--help` on purpose - it loads a Whisper
+  model before it can report anything, and a test that only passes on
+  the owner's machine is worse than a gap that is written down.
+  `timing_regression.py` is really run, in the file below, over two
+  projects built in a temporary folder.
+- **B566 - the redirect list had a hole, and now there is a net under
+  it.** `conftest` moves seven constants that point into `docs/` aside
+  for every test. `docs/metingen.md` is written by
+  `tools/timing_regression.py`, which is loaded by file path and
+  therefore has neither a module on that list nor a constant to hang
+  on it: it builds the path out of `__file__` on the spot. A test that
+  called its `main(--record)` rewrote the owner's real measurement
+  file. The function that writes it (`note`) is now moved aside
+  instead of the constant, and a path outside `docs/` is passed
+  through untouched so a test can still hand the tool a file of its
+  own. Above that sits a session guard: the whole `docs/` folder is
+  read before the suite, size and sha1, and held against itself
+  afterwards, so the next hole reports itself with the name of the
+  file that moved instead of costing an evening of measuring.
+- **B567 - what a panel action may do to the projects, in a test.** The
+  header of `test_panel.py` promised for years that the actions wrote
+  nothing "with exactly two exceptions", and it was wrong until last
+  week because nobody had to say so anywhere.
+  `tests/test_project_safety.py` pins it: every visible action is
+  either in a table with a written reason, or it has to leave the
+  whole installation byte-identical. The three reports that do save a
+  `word_coupling` into every `project.json` they read are measured, not
+  assumed - and the day a report can ask for a coupling without saving
+  one, the test says so and the exception goes.
+- **B568 - the hand work keeps its last ten versions.** `timing.json`
+  is every syllable the user has dragged into place and `project.json`
+  holds his pins; both are overwritten in place, and until now that was
+  the end of the previous version. A step that ran on the wrong
+  project, a report that saves what it only meant to read, a crash
+  halfway through a write: each of them costs an evening, and the only
+  copy was the one being written over. Invalidation does not even
+  write - it deletes the timing outright when the karaoke text changes
+  structurally. The version that is about to disappear is now copied
+  into `output/<song>/settings/history/` first, on all three routes
+  (the timing write, the project record, the delete), named after the
+  moment it was replaced, ten per file. `timing_auto.json` goes along:
+  it can be made again in principle, but only by the same models on
+  the same machine, and it is the reference the hand work is measured
+  against. Two rules keep the folder useful: a copy is only made when
+  the content really differs from the youngest copy of THAT file - the
+  first version of this matched its copies with a glob, so
+  `timing_auto` counted as a version of `timing` and pushed the hand
+  work out of its own ring within a dozen runs - and `project.json`,
+  which every pipeline step saves, is copied at most once every ten
+  minutes. The first write of a run therefore keeps the state the user
+  left, and an afternoon of pinning is kept at intervals instead of a
+  hundred times or not at all. Deliberately without an interface: they
+  are plain JSON files with their own date, and putting one back is
+  copying it over the original.
+- **B569 - the interface is walked in both languages.** The program
+  starts in Dutch and so did every test that built a window, which made
+  a whole class of mistake invisible: a dictionary filled under one
+  name and read back under another lines up as long as both spell the
+  same word. That is exactly what B557 was - the two extra rows of the
+  input panel were registered under the Dutch literals "Songtekst" and
+  "Karaoketekst" while the refresh had moved on to the internal ids, so
+  in Dutch it matched by accident and in English the first refresh
+  raised. `tests/test_interface_language.py` does every walk twice, and
+  covers both halves: the reading side by driving the code that indexes
+  such a register, the writing side by comparing the KEYS of every
+  widget register between the two languages and refusing a key that is
+  a word from the screen. Plus one check that the switch takes at all,
+  because without that the English half of the file would be walking
+  the Dutch interface.
+- **B570 - the Dutch the stem list could not see.** It is a
+  deny-list, and a deny-list is only as good as what has been put on
+  it: `versie`, `schoon`, `gewicht`, `lengte`, `breedte`, `positie`,
+  `deel`, `veld`, `stuk`, `optie`, `blok`, `kop`, `nieuw`, `eind`,
+  `binnen`, `plek`, `vorige` were all still standing in `modules/` and
+  `tools/`, including the `versie=` parameter of `save_timing` that
+  every timing write in the program goes through. They are renamed,
+  the stems are on the list so they cannot come back, and widening the
+  list immediately found five more that no one had seen
+  (`gewichtensom`, `_ONSET_GEWICHT`, `_blok_cel`, `_orig_blok`,
+  `blok_barriere`), and the review of this release another eight
+  (`vak`, `beschikbaar`, `cellen`, `kandidaten`, `eigen`,
+  `verplaatst`, `reden`, `vormen`). `cel` and `cellen` were tried on
+  the list and taken off again: the guard matches a stem at the start
+  OR the end of a piece, so they fire on the English `cell`, `cells`
+  and `cancel`. The Dutch comments that the prose guard diluted away
+  in long blocks are translated too, the console text of the tools
+  with them, and four Dutch messages that `relocate_output_base`
+  RETURNED to the user instead of raising - which is why the B559
+  sweep over `raise` did not see them - are keys now. What stays
+  Dutch is content, on purpose: the `nl` table, the report headings
+  the user reads, the diagnostics header, the song titles in the
+  publication tool, and `docs/metingen.md` - his own measurement file,
+  in the language he reads it in. This is not "the last Dutch in the
+  code": it is what a widened deny-list and one adversarial read
+  found, and the next widening will find more.
+
+What is NOT in it, and why:
+
+- The real repair behind the 1.5.2 exception: a report that wants a
+  coupling still has to save one. That is a change to
+  `pipeline.build_coupling` and `word_coupling_view`, in a release
+  about tests, and it would have hidden itself among them.
+- The Dutch report and log TEXTS. Those are translations, not renames,
+  and the user has said they come later.
+- A repair for `tools/b299_dictionary.py`. Its `NL_WORD` map is the
+  Dutch-to-English word list of the B299 rename, and 37 of its 285
+  entries now read `english -> the same english`: a rename wave has
+  run over the data itself and the Dutch keys it was made of are gone
+  (`tekst`, `regel`, `woorden`, `bestand`, `taal`, ...). Nothing
+  imports the module, so nothing is broken by it today, but it cannot
+  do its job either. Restoring it means reading the keys back out of
+  the repository history, and that is a decision for the owner: repair
+  from history, or drop the file.
+
 Included in v1.0.8:
 
 - **B563 - the panel kept ten buttons for work that was finished.**

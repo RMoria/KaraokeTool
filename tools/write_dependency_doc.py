@@ -107,9 +107,21 @@ def render() -> str:
     return _INTRO + "\n".join(_rows()) + "\n"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Write the document, or only check that it is current.
+
+    B564: through argparse, so ``--help`` prints help instead of
+    rewriting the document - which is what it did.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Write docs/dependencies.md from the chain itself.")
+    parser.add_argument("--check", action="store_true",
+                        help="only report whether it is current")
+    arguments = parser.parse_args(argv)
     text = render()
-    if "--check" in sys.argv:
+    if arguments.check:
         current = DOC.read_text(encoding="utf-8") if DOC.exists() else ""
         if current == text:
             print("docs/dependencies.md is up to date")
@@ -124,4 +136,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

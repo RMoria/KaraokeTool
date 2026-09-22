@@ -44,9 +44,20 @@ def points_for(source, mapping):
             points.append((s, s+len(name), name))
     return sorted(set(points), reverse=True)
 
-def main():
-    root = pathlib.Path(sys.argv[1])
-    mapping = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+def main(argv=None):
+    """B564: through argparse. It read sys.argv[1] and [2] blind, so
+    running it without arguments gave an IndexError instead of a word
+    about what it wants."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Rename identifiers in a tree, by an AST-safe map.")
+    parser.add_argument("root", help="folder to walk")
+    parser.add_argument("mapping", help="json file with old -> new")
+    arguments = parser.parse_args(argv)
+    root = pathlib.Path(arguments.root)
+    mapping = json.loads(
+        pathlib.Path(arguments.mapping).read_text(encoding="utf-8"))
     n_files = n_replaced = 0
     for path in sorted(root.rglob("*.py")):
         if "__pycache__" in str(path): continue
@@ -64,4 +75,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

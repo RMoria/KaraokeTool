@@ -54,7 +54,19 @@ DUTCH = re.compile(
     r"zichtbare|acties|actie|vinkjes|knop|achtergrond|voorvoegsel|"
     r"vooraf|haalt|fout|aantal|waarde|naam|activiteit|bron|"
     r"diagnostiek|keuze|leeg|patronen|punten|verbergen|voor|wortel|"
-    r"zoek|klemtoon)(_|$)", re.I)
+    r"zoek|klemtoon|"
+    # B570: the ones that were still standing in modules/ and tools/
+    # when this list was widened. Every stem here cost a rename, so
+    # what the list guards is not a rule but a repair.
+    r"versie|versies|schoon|gewicht|gewichten|lengte|breedte|hoogte|"
+    r"positie|geplaatst|deel|delen|veld|velden|stuk|optie|opties|"
+    r"blok|blokje|kop|koppen|nieuw|nieuwe|eind|binnen|plek|vorige|"
+    # "cel"/"cellen" are deliberately NOT here: the guard matches
+    # a stem at the start OR the end of a piece, and that makes
+    # them fire on the English "cell", "cells" and "cancel".
+    r"aangemaakt|genoteerd|onbekend|vak|vakken|beschikbaar|"
+    r"kandidaat|kandidaten|eigen|behoud|vorm|vormen|verplaatst|reden|"
+    r"melding|meldingen)(_|$)", re.I)
 
 #: Words that exist in Dutch and not in English. Function words only:
 #: they are what prose is made of, they are too common to avoid, and

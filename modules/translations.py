@@ -579,6 +579,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                  "eerst '{step_karaoke}'.",
         "err_no_source_properties": "Geen broneigenschappen gevonden; draai "
                                     "eerst '{step_detect}'.",
+        "err_output_not_writable": "Kan niet schrijven in {folder}: {reason}",
+        "err_output_same_folder": "Dit is al de huidige output-map.",
+        "err_output_move_failed": "Verplaatsen van '{name}' mislukt; controleer of er geen bestanden open staan.",
+        "output_base_set": "Output-map ingesteld op {folder} ({count} project(en) verplaatst).",
         "err_not_migrated": "Dit project is nog niet omgezet: {names} staat "
                             "er nog onder de oude naam. Sluit KaraokeTool en "
                             "draai migrate_texts.bat - eenmalig; vanaf "
@@ -825,6 +829,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "log_version_lookup_failed": "Versienummer van een pakket kon niet worden gelezen",
         "log_version_history_failed": "Versiegeschiedenis kon niet worden gelezen of geschreven",
         "log_updates_available": "Updates beschikbaar volgens de vorige controle: %s",
+        "log_vocals_not_made_for_a_report": "Rapport: zangstem niet in de cache, niet opnieuw gemaakt",
+        "log_project_report_only": "Rapport leest alleen; niets weggeschreven naar %s",
         "log_project_not_saved": "Geen lied gekozen, dus niets weggeschreven naar %s",
         "log_stray_project_store": "Losse projectadministratie zonder lied gevonden: %s. Die hoort bij geen enkel project en mag weg.",
         "template_no_duration": "geen duur",
@@ -1117,7 +1123,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "log_timing_reanchored": 'Timing her-verankerd: opgeslagen offset %+.0f ms, nu %+.0f ms -> verschuiving %+.0f ms',
         "log_timing_sync_failed": 'timing.json bijwerken na tekstwijziging mislukt',
         "log_timing_synced": 'timing.json bijgewerkt na karaoketekst-wijziging: %d regel(s) aangepast',
+        "value_unknown": "onbekend",
+        "value_fresh": "nieuw",
         "log_timing_written": "Timing geschreven: %s (%d regels, offset %s, project '%s')",
+        "log_previous_kept": "Vorige versie bewaard: %s",
+        "log_previous_keep_failed": "Kon geen kopie bewaren van %s: %s",
         "log_timing_flat_repaired": "Platgeslagen regels hersteld bij openen: %d",
         "log_chunk_words_failed": "De geknipte woorden konden niet worden weggeschreven",
         "log_timing_rescued": "Handmatige timing behouden over de tekstwijziging heen: %d regels, %d met nieuwe tekst",
@@ -1689,6 +1699,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                  "'{step_karaoke}' first.",
         "err_no_source_properties": "No source properties found; run "
                                     "'{step_detect}' first.",
+        "err_output_not_writable": "Cannot write in {folder}: {reason}",
+        "err_output_same_folder": "That is already the current output folder.",
+        "err_output_move_failed": "Moving '{name}' failed; check that no files are open.",
+        "output_base_set": "Output folder set to {folder} ({count} project(s) moved).",
         "err_not_migrated": "This project has not been converted yet: "
                             "{names} is still there under its old name. "
                             "Close KaraokeTool and run migrate_texts.bat "
@@ -1931,6 +1945,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "log_version_lookup_failed": "Could not read the version number of a package",
         "log_version_history_failed": "Could not read or write the version history",
         "log_updates_available": "Updates available according to the previous check: %s",
+        "log_vocals_not_made_for_a_report": "Report: the vocal stem is not cached and is not made again",
+        "log_project_report_only": "A report only reads; nothing written to %s",
         "log_project_not_saved": "No song chosen, so nothing written to %s",
         "log_stray_project_store": "Loose project record without a song found: %s. It belongs to no project and may be removed.",
         "template_no_duration": "no duration",
@@ -2219,7 +2235,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "log_timing_reanchored": 'Timing re-anchored: stored offset %+.0f ms, now %+.0f ms -> shift %+.0f ms',
         "log_timing_sync_failed": 'Updating timing.json after the text change failed',
         "log_timing_synced": 'timing.json updated after the karaoke text change: %d line(s) adjusted',
+        "value_unknown": "unknown",
+        "value_fresh": "fresh",
         "log_timing_written": "Timing written: %s (%d lines, offset %s, project '%s')",
+        "log_previous_kept": "Previous version kept: %s",
+        "log_previous_keep_failed": "Could not keep a copy of %s: %s",
         "log_timing_flat_repaired": "Flattened lines repaired on opening: %d",
         "log_chunk_words_failed": "The chunked words could not be written",
         "log_timing_rescued": "Manual timing kept across the text change: %d lines, %d with new text",

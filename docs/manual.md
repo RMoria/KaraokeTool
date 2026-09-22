@@ -340,6 +340,17 @@ and the artist — those belong to the song and live on tab 1.
 - **Diagnostics (local only):** writes the transcription history and
   `timing_diagnostiek.txt` to `output/<title>/diagnostiek/`. Handy for
   analysing problems; nothing is sent anywhere.
+- **Kept versions of your own work:** `timing.json` (the syllables you
+  dragged into place), `timing_auto.json` (the automatic version beside
+  it) and `project.json` (your pins and the choices of this project) are
+  copied before they are overwritten or deleted, into
+  `output/<title>/settings/history/`, named after the moment they were
+  replaced. The last ten of each are kept. Nothing to set and nothing
+  to click: if a run has made a mess of a timing, close the program,
+  copy the file you want out of `history/` over the original and start
+  again. `project.json` is written by every step, so a copy of it is
+  kept at most once every ten minutes: the first one of a session is
+  the state you left it in.
 - **Cache:** "Cache wissen bij opstarten en afsluiten" (clear cache on
   start-up and shutdown) is off by default, and that is deliberate —
   without a transcription in the cache the timing falls back to even

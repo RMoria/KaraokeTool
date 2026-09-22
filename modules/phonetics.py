@@ -320,10 +320,10 @@ def _is_vowel_segment(seg: str) -> bool:
     return bool(core) and all(ch in _VOWEL_CHARS for ch in core)
 
 
-def _longest_match(low: str, i: int, opties: list[str]) -> int:
-    for optie in opties:
-        n = len(optie)
-        if n and low[i:i + n] == optie:
+def _longest_match(low: str, i: int, options: list[str]) -> int:
+    for option in options:
+        n = len(option)
+        if n and low[i:i + n] == option:
             return n
     return 0
 

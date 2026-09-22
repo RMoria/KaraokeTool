@@ -73,9 +73,9 @@ def resolve_font(field_value: str, fonts_dir: Path | None = None) -> str:
     if not field_value:
         return ""
     if Path(field_value).name == field_value:            # bare file name
-        kandidaat = (fonts_dir or FONTS_DIR) / field_value
-        if kandidaat.is_file():
-            return str(kandidaat)
+        candidate = (fonts_dir or FONTS_DIR) / field_value
+        if candidate.is_file():
+            return str(candidate)
     return field_value
 
 

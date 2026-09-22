@@ -197,7 +197,7 @@ def _run(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
     """Run an ffmpeg/ffprobe command with error handling."""
     logger.debug(t("log_command"), " ".join(args))
     try:
-        # B356: via proc.run, zodat Stop hem ook echt kan afschieten.
+        # B356: through proc.run, so that Stop can really kill it.
         return proc.run(list(args), check=True)
     except FileNotFoundError as exc:
         raise FfmpegError(
@@ -221,12 +221,12 @@ def _parse_probe_output(data: dict[str, Any]) -> AudioProperties:
     duration_raw = fmt.get("duration") or stream.get("duration") or 0.0
 
     return AudioProperties(
-        codec=str(stream.get("codec_name", "onbekend")),
+        codec=str(stream.get("codec_name", t("value_unknown"))),
         sample_rate=int(stream.get("sample_rate", 0)),
         channels=int(stream.get("channels", 0)),
         bit_rate=bit_rate,
         duration=float(duration_raw),
-        container=str(fmt.get("format_name", "onbekend")),
+        container=str(fmt.get("format_name", t("value_unknown"))),
         is_vbr=None,
     )
 

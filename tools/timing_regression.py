@@ -182,13 +182,13 @@ def _work_dir(song: str) -> Path:
     """The stable work directory for this project (B384)."""
     keeper = _WORK_DIRS.get(song)
     if keeper is None:
-        keeper = tempfile.TemporaryDirectory(prefix=f"kt_meetlat_{song}_")
+        keeper = tempfile.TemporaryDirectory(prefix=f"kt_yardstick_{song}_")
         _WORK_DIRS[song] = keeper
     return Path(keeper.name)
 
 
 def _stable_vocals(project_dir: Path, stem: Path) -> Path | None:
-    """De omgezette zangstem, één keer per project per draai (B364)."""
+    """The converted vocal stem, once per project per run (B364)."""
     kept = _VOCALS_READY.get(project_dir.name)
     if kept is not None and kept.exists():
         return kept
@@ -324,8 +324,8 @@ def measure(project_dir: Path) -> dict | None:
 def compare(rows: list[dict], earlier: list[dict]) -> None:
     """Report this run against an earlier one (``--compare``)."""
     before = {row["project"]: row for row in earlier}
-    print(f"{'project':<28}{'verzet':>7} | {'eerder':>8}{'nu':>8}"
-          f"{'winst':>8} | {'ongemoeid slechter':>20}")
+    print(f"{'project':<28}{'moved':>7} | {'before':>8}{'now':>8}"
+          f"{'gain':>8} | {'untouched worse':>20}")
     print("-" * 84)
     total_before = total_now = weight = damage = 0.0
     for row in rows:
@@ -353,11 +353,15 @@ def compare(rows: list[dict], earlier: list[dict]) -> None:
               f"{was - now:>8.2f} | {worse:>20}")
     print("-" * 84)
     if weight:
-        print(f"gewogen: {total_before / weight:.2f} s -> "
+        print(f"weighed: {total_before / weight:.2f} s -> "
               f"{total_now / weight:.2f} s")
-    print(f"ongemoeide regels die slechter worden: {int(damage)}")
+    print(f"untouched lines that get worse: {int(damage)}")
 
 
+#: The text of the document itself stays Dutch: ``docs/metingen.md``
+#: is the owner's own measurement file, in the language he reads it
+#: in. What the tool says on the console is program text and is
+#: English like the rest of the tree.
 HEADER = """# Meetlat: koppeling en timing per versie
 
 De gebruiker corrigeert `timing.json` met de hand in de golfvorm-editor,
@@ -396,23 +400,23 @@ def note(rows: list[dict], path: Path, version: str, stamp: str) -> None:
             f"| {row['moved']} | {row['new_moved']:.2f} s |")
     lines += ["", f"Gewogen over {int(weight)} verzette regels: "
               f"**{average:.2f} s**.", ""]
-    blok = "\n".join(lines)
+    block = "\n".join(lines)
 
     if path.exists():
         text = path.read_text(encoding="utf-8")
-        kop = f"## v{version} —"
-        if kop in text:
-            begin = text.index(kop)
-            eind = text.find("\n## ", begin + 1)
-            text = text[:begin] + blok + (text[eind + 1:] if eind >= 0 else "")
+        heading = f"## v{version} —"
+        if heading in text:
+            start = text.index(heading)
+            stop = text.find("\n## ", start + 1)
+            text = text[:start] + block + (text[stop + 1:] if stop >= 0 else "")
         else:
-            plek = text.find("\n## ")
-            text = (text[:plek + 1] + blok + text[plek + 1:] if plek >= 0
-                    else text.rstrip() + "\n\n" + blok)
+            spot = text.find("\n## ")
+            text = (text[:spot + 1] + block + text[spot + 1:] if spot >= 0
+                    else text.rstrip() + "\n\n" + block)
     else:
-        text = HEADER + blok
+        text = HEADER + block
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
-    print(f"genoteerd in {path}")
+    print(f"written down in {path}")
 
 
 def main() -> int:
@@ -420,9 +424,9 @@ def main() -> int:
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--json", type=Path, default=None)
     parser.add_argument("--compare", type=Path, default=None,
-                        help="json van een eerdere draai om tegen af te zetten")
+                        help="json of an earlier run to measure against")
     parser.add_argument("--record", action="store_true",
-                        help="voeg de uitslag toe aan docs/metingen.md")
+                        help="add the result to docs/metingen.md")
     parser.add_argument("--date", default="")
     args = parser.parse_args()
 
@@ -431,7 +435,7 @@ def main() -> int:
              if p.is_dir())
             if row]
     if not rows:
-        print("geen meetbare projecten gevonden")
+        print("no measurable projects found")
         return 1
 
     if args.record:
@@ -449,8 +453,8 @@ def main() -> int:
         # stored automatic timing is not damage but the absence of that
         # handwork. Damage is what two runs of THIS tool show against
         # each other - see --compare.
-        print(f"{'project':<28}{'zinnen':>7}{'gekop.':>7}{'verzet':>7} | "
-              f"{'fout verzet':>12}{'fout rest':>11}  bron")
+        print(f"{'project':<28}{'lines':>7}{'coupled':>7}{'moved':>7} | "
+              f"{'error moved':>12}{'error rest':>11}  source")
         print("-" * 82)
         for row in rows:
             print(f"{row['project']:<28}{row['lines']:>7}{row['coupled']:>7}"
@@ -460,7 +464,7 @@ def main() -> int:
         weight = sum(row["moved"] for row in rows) or 1
         new = sum(row["new_moved"] * row["moved"] for row in rows) / weight
         print("-" * 74)
-        print(f"gewogen fout op {int(weight)} verzette regels: {new:.2f} s")
+        print(f"weighed error on {int(weight)} moved lines: {new:.2f} s")
     if args.json:
         args.json.write_text(json.dumps(rows, indent=1), encoding="utf-8")
     return 0

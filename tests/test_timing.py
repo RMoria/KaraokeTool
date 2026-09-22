@@ -164,7 +164,7 @@ def test_metadata_and_disabled_in_timing_json(tmp_path: Path) -> None:
                      disabled=True)
     path = tmp_path / "timing.json"
     save_timing((line,), path, offset=0.0, project="Lied_N",
-                versie="0.72.0")
+                version="0.72.0")
     assert timing_project(path) == "Lied_N"
     back = load_timing(path)
     assert back[0].disabled is True

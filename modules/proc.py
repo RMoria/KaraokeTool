@@ -140,15 +140,15 @@ def terminate_all() -> int:
     killed.
     """
     with _RUNNING_LOCK:
-        processen = list(_RUNNING)
-    for process in processen:
+        processes = list(_RUNNING)
+    for process in processes:
         try:
             process.kill()
-        except OSError:          # al klaar tussen kijken en doden
+        except OSError:          # already gone between looking and killing
             continue
-    if processen:
-        logger.info(t_or_plain("log_processes_killed"), len(processen))
-    return len(processen)
+    if processes:
+        logger.info(t_or_plain("log_processes_killed"), len(processes))
+    return len(processes)
 
 
 def t_or_plain(key: str) -> str:
@@ -158,5 +158,5 @@ def t_or_plain(key: str) -> str:
     try:
         from .translations import t
         return t(key)
-    except Exception:  # noqa: BLE001 - logging mag nooit de oorzaak zijn
-        return "%d proces(sen) afgebroken"
+    except Exception:  # noqa: BLE001 - logging may never be the cause
+        return "%d process(es) stopped"

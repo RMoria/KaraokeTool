@@ -39,6 +39,6 @@ def test_rhythm_through_librosa() -> None:
     """Rhythm works through librosa (no madmom, no compiler)."""
     from modules import rhythm
     assert rhythm.is_available() is True       # librosa is core
-    assert rhythm.beat_activation("x.wav", 0) is None      # ongeldige frames
-    assert rhythm.beat_times("bestaat_niet.wav") == []     # nette terugval
-    rhythm.warmup()  # no-op, geen download
+    assert rhythm.beat_activation("x.wav", 0) is None      # invalid frames
+    assert rhythm.beat_times("no_such_file.wav") == []     # a clean fallback
+    rhythm.warmup()  # no-op, no download

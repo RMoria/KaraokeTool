@@ -247,9 +247,9 @@ def version_number(version: str) -> int:
     A repair release such as 0.110.1 therefore does not count as a
     version of its own (B371).
     """
-    delen = str(version).split(".")
+    parts = str(version).split(".")
     try:
-        return int(delen[1]) if len(delen) > 1 else int(delen[0])
+        return int(parts[1]) if len(parts) > 1 else int(parts[0])
     except ValueError:
         return 0
 

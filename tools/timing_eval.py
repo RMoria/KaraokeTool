@@ -26,11 +26,17 @@ from modules import timing_eval  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 2:
-        print(__doc__)
-        return 2
-    auto_path, ref_path = args
+    """B564: through argparse, like the rest of the tools."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Compare automatic timing against a reference (B251).")
+    parser.add_argument("auto", metavar="<auto.json>",
+                        help="the automatic timing")
+    parser.add_argument("reference", metavar="<reference.json>",
+                        help="the timing to compare it with")
+    arguments = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    auto_path, ref_path = arguments.auto, arguments.reference
     for path in (auto_path, ref_path):
         if not Path(path).exists():
             print(f"File not found: {path}", file=sys.stderr)

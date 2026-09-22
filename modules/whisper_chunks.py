@@ -126,21 +126,21 @@ def cut_points(windows, total: float, first_sound: float = 0.0,
     free = [m for m in free if m > first_sound]
 
     chunks: list[Chunk] = []
-    begin = float(first_sound)
-    while begin < total - 1e-6:
-        limit = begin + window_s
-        usable = [m for m in free if begin + MIN_CHUNK_S <= m <= limit]
+    cursor = float(first_sound)
+    while cursor < total - 1e-6:
+        limit = cursor + window_s
+        usable = [m for m in free if cursor + MIN_CHUNK_S <= m <= limit]
         if usable:
             end, forced = max(usable), False
         elif limit >= total:
             end, forced = total, False
         else:
             end, forced = limit, True
-        chunks.append(Chunk(round(begin, 3), round(min(end, total), 3),
+        chunks.append(Chunk(round(cursor, 3), round(min(end, total), 3),
                             forced))
         if end >= total - 1e-6:
             break
-        begin = end - OVERLAP_S if forced else end
+        cursor = end - OVERLAP_S if forced else end
     return tuple(chunks)
 
 

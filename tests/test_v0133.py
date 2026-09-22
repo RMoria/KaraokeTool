@@ -171,7 +171,7 @@ def _timing_project(tmp_path, text: str):
     lines = [timing.timedline_from_text(i, line, 10.0 + i * 4, 13.0 + i * 4)
              for i, line in enumerate(text.strip().splitlines())]
     timing.save_timing(lines, context.paths.timing_file, offset=0.0,
-                       project="Proef", versie="0.133.0")
+                       project="Proef", version="0.133.0")
     context.store.set_step("timing", {"lines": len(lines)})
     return context, karaoke
 

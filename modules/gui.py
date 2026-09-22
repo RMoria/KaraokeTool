@@ -849,7 +849,7 @@ class MainWindow(QMainWindow):
         def on_save(karaoke: list, original: list, anchors: dict) -> None:
             timing_module.save_timing(karaoke, timing_path, offset=offset,
                                       project=context.config.song.title,
-                                      versie=__version__)
+                                      version=__version__)
             pipeline.set_stress_anchors(context, anchors)
             self._log(t("stress_saved"))
             self._show_timing_lines()
@@ -1006,7 +1006,7 @@ class MainWindow(QMainWindow):
                 timing_module.save_timing(
                     lines, timing_path,
                     offset=pipeline.current_offset(context),
-                    project=context.config.song.title, versie=__version__)
+                    project=context.config.song.title, version=__version__)
                 existing = pipeline.original_overrides(context)
                 existing.update(original_overrides)
                 pipeline.set_original_overrides(context, existing)

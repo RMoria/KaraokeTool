@@ -305,9 +305,9 @@ def test_the_reference_is_projected_onto_the_right_timeline() -> None:
 def test_the_difference_rows_are_a_real_table() -> None:
     rows = test_panel.differences("a", [_word("x", 1.0, 2.0)], "b", [],
                                   [(0.0, 10.0)])
-    kop = [i for i, r in enumerate(rows) if r.startswith("| plek |")]
-    assert kop, "de verschilregels horen een eigen kopregel te hebben"
-    for index in kop:
+    header = [i for i, r in enumerate(rows) if r.startswith("| plek |")]
+    assert header, "de verschilregels horen een eigen kopregel te hebben"
+    for index in header:
         assert rows[index + 1].startswith("| --- |")
 
 
@@ -327,7 +327,7 @@ def test_a_click_in_an_empty_part_of_a_box_destroys_nothing(qapp) -> None:
     x2 = canvas._bot_rect(last)[0] + canvas._bot_rect(last)[2]
     middle = QPoint((x1 + x2) // 2, ce._BOT_Y + 5)
     assert canvas._hit_row(middle, top=False) is None
-    assert canvas._hit_link(middle) is not None    # dit was de sloper
+    assert canvas._hit_link(middle) is not None    # this was the one that broke it
     assert canvas._in_a_box(middle) is True
     source = inspect.getsource(ce.CouplingCanvas.mousePressEvent)
     assert source.index("self._in_a_box(pos)") < source.index("_hit_link")

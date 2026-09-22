@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from . import history
 from .translations import t
 
 logger = logging.getLogger(__name__)
@@ -158,8 +159,8 @@ def output_base_from(output_dir: str) -> Path | None:
     """Convert the configured output folder string into a ``Path`` (B214).
 
     Empty or only whitespace -> ``None`` (the default ``<root>/output``)."""
-    schoon = (output_dir or "").strip()
-    return Path(schoon) if schoon else None
+    cleaned = (output_dir or "").strip()
+    return Path(cleaned) if cleaned else None
 
 
 def ensure_directories(paths: ProjectPaths) -> None:
@@ -425,7 +426,8 @@ def _now_iso() -> str:
 class ProjectStore:
     """Management of ``project.json`` with results per pipeline step."""
 
-    def __init__(self, path: Path, writable: bool = True) -> None:
+    def __init__(self, path: Path, writable: bool = True,
+                 quiet: bool = False) -> None:
         """Open (or initialise) the project record.
 
         Args:
@@ -438,9 +440,19 @@ class ProjectStore:
                 exist yet, and complained at every start that its
                 structure was wrong. Reading stays allowed, so an
                 existing file is not suddenly invisible.
+            quiet: True for the record a REPORT reads (B571). Reading a
+                coupling runs conversions that write their result back,
+                and a report may not leave those in the user's project.
+                Deliberately a second flag and not the same one as
+                ``writable``: that one means "there is no project here",
+                and the program's own context starts that way (no song
+                chosen yet, B111). Folding the two together made every
+                sibling project of a panel action read-only, which
+                silently threw away what 1.5.1 and 1.5.12 are FOR.
         """
         self._path = path
         self._writable = bool(writable)
+        self._quiet = bool(quiet)
         # Reentrant lock: with parallel detection (B90) several threads
         # write steps to project.json at the same time.
         self._lock = threading.RLock()
@@ -450,6 +462,16 @@ class ProjectStore:
     def path(self) -> Path:
         """Path to the underlying JSON file."""
         return self._path
+
+    @property
+    def writable(self) -> bool:
+        """Is there a project here to write about at all? (B445)"""
+        return self._writable
+
+    @property
+    def quiet(self) -> bool:
+        """Is this the record of a report, that may not write? (B571)"""
+        return self._quiet
 
     def _load(self) -> dict[str, Any]:
         """Read the file; start with an empty record on errors."""
@@ -469,11 +491,24 @@ class ProjectStore:
         return {"created": _now_iso(), "steps": {}}
 
     def save(self) -> None:
-        """Write the record to disk (B445: unless there is no project)."""
+        """Write the record to disk.
+
+        Two reasons not to: there is no project to write about (B445),
+        or this record belongs to a report that only looks (B571).
+        """
+        if self._quiet:
+            logger.debug(t("log_project_report_only"), self._path)
+            return
         if not self._writable:
             logger.debug(t("log_project_not_saved"), self._path)
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        # B568: at intervals, because every pipeline step saves this
+        # file. The first write of a run keeps the record as the user
+        # left it; after that at most one copy per settling time, so an
+        # afternoon of pinning is kept without a hundred copies of the
+        # same run pushing it out.
+        history.keep_a_copy(self._path, settle=history.SETTLE_S)
         self._path.write_text(
             json.dumps(self._data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
