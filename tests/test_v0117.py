@@ -205,27 +205,64 @@ def test_never_run_simply_means_run_it(tmp_path) -> None:
 # B371 - the heavy bin
 # --------------------------------------------------------------------------
 
+def _a_panel_with_the_heavy_bin() -> tuple:
+    """Two measurements, the heavy bin and a chore (B563).
+
+    B563 retired 1.5.11 with ``done=True``, so the real panel no longer
+    contains a heavy action and the tests below could no longer find
+    the situation they are about. B371 itself did not change: the panel
+    still keeps a heavy action out of 'all' and drops it when there is
+    nothing under it. So the tests build the list instead of hoping to
+    find it - real actions from ``ACTIONS`` with the switch back on, so
+    they keep measuring the panel and not a fantasy.
+    """
+    from dataclasses import replace
+
+    wanted = ("1.5.2", "1.5.3", "1.5.11", "1.5.12")
+    return tuple(replace(a, done=False) for a in test_panel.ACTIONS
+                 if a.code in wanted)
+
+
 def test_the_heavy_action_stands_outside_the_ceiling_of_ten() -> None:
+    """The ceiling counts the numbered measurements, working or retired.
+
+    B563: they keep their code in ``ACTIONS`` and in the measurement
+    history even though the panel no longer shows them, so this count
+    is over the table and not over the panel. Eight since the split
+    between unique and repeated lines (1.5.6) and the five reports of
+    1.5.2 were counted apart - 1.5.2 is one action now.
+    """
     measuring = [a for a in test_panel.ACTIONS
                  if not a.heavy and not a.on_request]
     heavy = [a for a in test_panel.ACTIONS if a.heavy]
     chores = [a for a in test_panel.ACTIONS if a.on_request]
-    # B526: nine since 1.5.8 went; the ceiling stays at ten.
+    # B526: 1.5.8 went; the ceiling stays at ten.
     # B531: 1.5.12 is a chore and does not count towards that ceiling.
-    assert len(measuring) == 9 <= test_panel.MAX_ACTIONS
+    assert len(measuring) == 8 <= test_panel.MAX_ACTIONS
     assert [a.code for a in heavy] == ["1.5.11"]
-    assert [a.code for a in chores] == ["1.5.12"]
+    # B563: 1.5.1 is a chore as well now. It is the only light-looking
+    # action that starts Demucs and Whisper, and hours of that may not
+    # hang on the 'all' button.
+    assert [a.code for a in chores] == ["1.5.1", "1.5.12"]
 
 
-def test_ticking_everything_skips_the_heavy_one(qapp) -> None:
-    """Hours of computing should be a deliberate choice, 'all' included."""
+def test_ticking_everything_skips_the_heavy_one(qapp, monkeypatch) -> None:
+    """Hours of computing should be a deliberate choice, 'all' included.
+
+    B563: the heavy bin is retired, so the panel is handed one for the
+    length of this test (see :func:`_a_panel_with_the_heavy_bin`).
+    """
+    monkeypatch.setattr(test_panel, "ACTIONS", _a_panel_with_the_heavy_bin())
     panel = test_panel.TestPanel()
     panel._toggle_all()
     assert all(not a.heavy for a in panel.chosen())
-    assert len(panel.chosen()) == 9
+    assert [a.code for a in panel.chosen()] == ["1.5.2", "1.5.3"]
 
 
-def test_the_heavy_action_can_still_be_ticked_on_its_own(qapp) -> None:
+def test_the_heavy_action_can_still_be_ticked_on_its_own(
+        qapp, monkeypatch) -> None:
+    """Outside 'all' is not the same as out of reach (B371, B563)."""
+    monkeypatch.setattr(test_panel, "ACTIONS", _a_panel_with_the_heavy_bin())
     panel = test_panel.TestPanel()
     heavy = [n for n, a in enumerate(panel._actions) if a.heavy]
     assert heavy, "1.5.11 should be visible now that it has trials under it"
@@ -235,15 +272,16 @@ def test_the_heavy_action_can_still_be_ticked_on_its_own(qapp) -> None:
 
 def test_without_trials_the_heavy_action_disappears(qapp,
                                                     monkeypatch) -> None:
-    """No empty row and no greyed-out button."""
+    """No empty row and no greyed-out button (B371, B563)."""
+    monkeypatch.setattr(test_panel, "ACTIONS", _a_panel_with_the_heavy_bin())
     monkeypatch.setattr(test_panel, "HEAVY_TRIALS", ())
     assert all(not a.heavy for a in test_panel.visible_actions())
     panel = test_panel.TestPanel()
     ordinary = [a for a in test_panel.visible_actions()
                 if not a.heavy and not a.on_request]
-    assert len(ordinary) == 9
+    assert [a.code for a in ordinary] == ["1.5.2", "1.5.3"]
     # B531: 1.5.12 does stay - it does not hang on the trials.
-    assert len(panel._ticks) == 10
+    assert len(panel._ticks) == 3
     assert "1.5.11" not in " ".join(v.text() for v in panel._ticks)
     assert "1.5.12" in " ".join(v.text() for v in panel._ticks)
 

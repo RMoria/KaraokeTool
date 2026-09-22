@@ -167,9 +167,21 @@ def test_the_conversions_happen_before_the_lanes_start() -> None:
 # --------------------------------------------------------------------------
 
 @pytest.fixture()
-def panel(qapp_offscreen):
+def panel(qapp_offscreen, monkeypatch):
+    """A panel that still has 1.5.11 with its letters in it (B563).
+
+    B563 retired the heavy bin with ``done=True``, so the real panel
+    draws no letters any more and these tests had nothing to tick. The
+    lock between the number and its letters (B461) is untouched code,
+    so the fixture switches the real action back on for the length of
+    the test - same action, same HEAVY_TRIALS, only visible again.
+    """
+    from dataclasses import replace
+
     from modules import test_panel
 
+    heavy = next(a for a in test_panel.ACTIONS if a.heavy)
+    monkeypatch.setattr(test_panel, "ACTIONS", (replace(heavy, done=False),))
     return test_panel.TestPanel(None)
 
 

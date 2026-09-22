@@ -14,11 +14,19 @@ Agreements that hold for every action:
   heavy test costs half an hour, and that must not happen by accident.
 * Every action looks at ``cancelled()`` inside its loop, so the Stop
   button works here too.
-* An action returns text; that lands in the log window. They write
-  nothing to the projects, with exactly two exceptions that say so in
-  their own description (1.5.1 fills the cache, 1.5.10 writes the model
-  matrix). The measurement history in ``docs/testhistorie.json`` IS
-  updated by every action that has a code (B362).
+* An action returns text; that lands in the log window. The
+  measurement history in ``docs/testhistorie.json`` is updated by every
+  action that has a code (B362).
+* B563: about writing into the PROJECTS this text used to promise more
+  than it kept. It said "nothing, with exactly two exceptions". Two of
+  the five parts of 1.5.2 - the project reports and the syllable
+  checks - go through ``pipeline.build_coupling``, and that writes a
+  ``word_coupling`` step into ``project.json`` of every project it
+  touches. That is the user's hand-made pin work, and the relocation
+  path inside it can drop pins. Measured, not assumed: 114 bytes
+  before, 426 after. It has always done that; only the promise was
+  wrong. Written down here until the day the reports can ask for a
+  coupling without saving one.
 """
 from __future__ import annotations
 
@@ -77,6 +85,12 @@ class TestAction:
     #: own field and not ``heavy``: this one may not disappear from the
     #: list, and it is not hours of computing either.
     on_request: bool = False
+    #: B563: its work is done. Switched off, not deleted - the same way
+    #: a heavy trial is (B454) and for the same reason: the question has
+    #: been answered, the answer is in production, and the idea stays
+    #: readable and one word away from measuring again. Out of the
+    #: panel, so the list is what is still worth clicking.
+    done: bool = False
 
 # -- the individual actions ----------------------------------------------
 
@@ -3167,6 +3181,75 @@ def heavy_trial(context, report: Reporter, cancelled) -> str:
 #: The list as it stands in the panel.
 #:
 #: B365: the maximum is TEN. That forces merging instead of endless
+def check_all_projects(context, report: Reporter, cancelled) -> str:
+    """1.5.2 - one look at all the projects, in five parts (B563).
+
+    The panel had ten numbered actions. Nine of them were experiments
+    about the PROGRAM - what is a model worth, does cutting help, is
+    the loudest level better - and those questions have been answered;
+    the answers are in production and repeating the measurement stopped
+    producing an improvement. Measuring for the sake of measuring is
+    not a reason to keep a button.
+
+    What is left is the part that says something about the SONGS, and
+    that is worth a look at every new one. Five reports that all read
+    files which are lying there anyway, and together take under a
+    minute over twenty-two projects. They were five ticks that were
+    always ticked together; they are one now.
+
+    Each part keeps recording under its OWN code in the measurement
+    history - 1.5.5 stays 1.5.5 there, 1.5.7 stays 1.5.7 - so the
+    comparison with earlier versions goes on uninterrupted. Only the
+    panel shows one line instead of five.
+
+    What it does NOT do is fill the cache. That is the one that can run
+    for hours, and it stays a button of its own (1.5.1), off the 'all'
+    tick, so it is always a deliberate choice.
+    """
+    # The keys are written out and not composed from the name: the
+    # guard against dead translation keys reads the source text, and a
+    # key it cannot see is a key somebody deletes later (B400).
+    parts = (("test_status", "test_status_hint", benchmark_status),
+             ("test_reports", "test_reports_hint", project_report),
+             ("test_missing", "test_missing_hint", missing_repetitions),
+             ("test_ruler", "test_ruler_hint", yardstick),
+             ("test_syllables", "test_syllables_hint", syllable_checks))
+    # B402/B409: through Steps, on the ACTION bar. Reporting to work
+    # slot 0 is what 1.5.11 did before B409 and it does not work: the
+    # first project name of the part overwrites the label a moment
+    # later, so the top row never moves and the user cannot see which
+    # of the five is running.
+    steps = Steps(report, t("test_check_all"), len(parts))
+    lines: list[str] = []
+    for name_key, hint_key, function in parts:
+        if cancelled():
+            break
+        steps.name(t(name_key))
+        if lines:
+            lines.append("")
+        lines.append(f"--- {t(name_key)} " + "-" * max(
+            0, 60 - len(t(name_key))))
+        # Each part says what it is. They were five ticks with five
+        # explanations beside them in the panel; merged into one button
+        # those explanations have nowhere else to go, and a report of
+        # five tables without a word about what they mean is a report
+        # nobody reads twice.
+        lines.append(t(hint_key))
+        lines.append("")
+        try:
+            lines.append(str(function(context, report, cancelled)))
+        except Exception:  # noqa: BLE001 - one part may not cost four
+            # Before the merge each of these was an action of its own
+            # and the runner caught per action, so a part that fell over
+            # cost one report of five. Merged into one button, an
+            # uncaught error would throw away the four that DID work -
+            # including the yardstick, which is the expensive one.
+            logger.exception(t("log_test_failed"), name_key)
+            lines.append(t("test_part_failed").format(name=t(name_key)))
+        steps.tick()
+    return "\n".join(lines)
+
+
 #: growth, and ten still fits in one window. The numbering was relaid at
 #: the same time: 1.5.3, 1.5.4 and 1.5.5 were three cheap reports over
 #: the same files and are now 1.5.3 together, and the omission trial and
@@ -3175,27 +3258,44 @@ def heavy_trial(context, report: Reporter, cancelled) -> str:
 MAX_ACTIONS = 10
 
 ACTIONS: tuple[TestAction, ...] = (
+    # B563: never in the 'all' tick. It is the only light-looking action
+    # that starts Demucs and Whisper, and on twenty-two projects with a
+    # cleared cache that is hours. It joined 'all' until this version,
+    # which made a run of many hours one click away from a run of one
+    # minute. Filling the cache is a decision, so it is a button.
     TestAction("1.5.1", "test_fill_cache", "test_fill_cache_hint",
-              True, fill_cache),
-    TestAction("1.5.2", "test_status", "test_status_hint",
-              True, benchmark_status),
+              True, fill_cache, on_request=True),
+    TestAction("1.5.2", "test_check_all", "test_check_all_hint",
+              True, check_all_projects),
+    # B563: the five that are now parts of 1.5.2. They keep their code
+    # in the measurement history, so the comparison with earlier
+    # versions is unbroken; only the panel shows one line.
     TestAction("1.5.3", "test_reports", "test_reports_hint",
-              True, project_report),
+              True, project_report, done=True),
     TestAction("1.5.4", "test_missing", "test_missing_hint",
-              True, missing_repetitions),
-    TestAction("1.5.5", "test_ruler", "test_ruler_hint", True, yardstick),
+              True, missing_repetitions, done=True),
+    TestAction("1.5.5", "test_ruler", "test_ruler_hint", True, yardstick,
+              done=True),
+    # B563: answered, and the answer has been in production for a long
+    # time. The split between unique and repeated lines told us what it
+    # had to tell us - repeated lines are far more wrong - and has not
+    # changed a decision since. Switched off, not deleted.
     TestAction("1.5.6", "test_split", "test_split_hint",
-              True, unique_against_repeated),
+              True, unique_against_repeated, done=True),
     TestAction("1.5.7", "test_syllables", "test_syllables_hint",
-              True, syllable_checks),
+              True, syllable_checks, done=True),
+    # B563: the model trials. The register has been settled for months;
+    # 1.5.9 and 1.5.10 measure what each model is worth and have not
+    # moved a single switch since v0.148.0. 1.5.10 costs a hundred and
+    # forty-four seconds, 1.5.11 costs hours, and both only confirm
+    # what is already in production. We do not measure for the sake of
+    # measuring.
     TestAction("1.5.9", "test_leave_out", "test_leave_out_hint",
-              True, omission_trial),
+              True, omission_trial, done=True),
     TestAction("1.5.10", "test_matrix", "test_matrix_hint",
-              True, big_trial),
-    # B371: the heavy bin. With nothing in HEAVY_TRIALS the panel leaves
-    # this line out entirely.
+              True, big_trial, done=True),
     TestAction("1.5.11", "test_heavy", "test_heavy_hint",
-              True, heavy_trial, heavy=True),
+              True, heavy_trial, heavy=True, done=True),
     # B531: a job and not a measurement, so it stands at the end, never
     # joins the 'all' tick and does not count towards MAX_ACTIONS.
     TestAction("1.5.12", "test_rebuild", "test_rebuild_hint",
@@ -3382,10 +3482,11 @@ def visible_actions() -> tuple[TestAction, ...]:
     """The actions that end up in the panel (B371).
 
     A heavy action with no investigations under it does not appear: no
-    empty line, no greyed-out button.
+    empty line, no greyed-out button. B563: neither does an action
+    whose work is done.
     """
     return tuple(a for a in ACTIONS
-                 if not a.heavy or HEAVY_TRIALS)
+                 if not a.done and (not a.heavy or HEAVY_TRIALS))
 
 
 class TestPanel(QDialog):
@@ -3404,7 +3505,16 @@ class TestPanel(QDialog):
         top_row = QHBoxLayout()
         self._all_button = QPushButton(t("test_select_all"))
         self._all_button.clicked.connect(self._toggle_all)
-        top_row.addWidget(self._all_button)
+        # B563: "tick all" over one tick is a button that says what the
+        # tick beside it already says. With the measurements retired
+        # there is one left, so the button steps aside until there is
+        # something to gather again.
+        tickable = [a for a in visible_actions()
+                    if not a.heavy and not a.on_request]
+        if len(tickable) > 1:
+            top_row.addWidget(self._all_button)
+        else:
+            self._all_button.hide()
         self._again = QCheckBox(t("test_force_again"))
         self._again.setToolTip(t("test_force_again_hint"))
         top_row.addWidget(self._again)

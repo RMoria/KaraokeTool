@@ -2288,7 +2288,7 @@ class MainWindow(QMainWindow):
                 started_cpu = _time.process_time()
                 try:
                     text = action.function(context, report, cancel.is_set)
-                except Exception:  # noqa: BLE001 - een test mag de rest niet stoppen
+                except Exception:  # noqa: BLE001 - one test may not stop the rest
                     logger.exception(t("log_test_failed"), action.code)
                     text = t("test_failed").format(code=action.code)
                 seconds = _time.monotonic() - started

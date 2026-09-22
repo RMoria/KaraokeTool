@@ -423,13 +423,51 @@ def test_the_all_button_ticks_everything_on_and_off_again(qapp) -> None:
     assert panel._all_button.text() == TRANSLATIONS["nl"]["test_select_all"]
 
 
-def test_the_all_button_completes_a_half_selection(qapp) -> None:
+def test_the_all_button_completes_a_half_selection(qapp,
+                                                   monkeypatch) -> None:
+    """Half ticked and then 'all' means everything on (B367).
+
+    B563: nine of the ten measurements are retired, so the real panel
+    has a single tickable action and 'half' cannot be made out of it
+    any more. The rule is about what the button does with a partial
+    selection, so the test lays out three real actions itself.
+    """
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        test_panel, "ACTIONS",
+        tuple(replace(a, done=False) for a in test_panel.ACTIONS
+              if a.code in ("1.5.2", "1.5.3", "1.5.4")))
     panel = test_panel.TestPanel()
     panel._ticks[0].setChecked(True)
     panel._toggle_all()
-    light = [a for a in test_panel.visible_actions()
-             if not a.heavy and not a.on_request]
-    assert len(panel.chosen()) == len(light)
+    assert [a.code for a in panel.chosen()] == ["1.5.2", "1.5.3", "1.5.4"]
+
+
+def test_the_all_button_steps_aside_for_a_single_tick(qapp,
+                                                      monkeypatch) -> None:
+    """B563: over one tick, "tick all" says what that tick already says.
+
+    So the button steps aside - hidden, not removed: the moment a
+    second measurement comes back it stands there again. Both sides
+    are laid out here, because it is the COUNT that decides and not
+    which actions happen to be left in the panel today.
+    """
+    from dataclasses import replace
+
+    real = test_panel.ACTIONS
+
+    def panel_with(*codes):
+        monkeypatch.setattr(
+            test_panel, "ACTIONS",
+            tuple(replace(a, done=False) for a in real
+                  if a.code in codes))
+        return test_panel.TestPanel()
+
+    # 1.5.1 and 1.5.12 are jobs: they never join the button, so one
+    # measurement beside them is still one tick.
+    assert panel_with("1.5.1", "1.5.2", "1.5.12")._all_button.isHidden()
+    assert not panel_with("1.5.2", "1.5.3")._all_button.isHidden()
 
 
 def test_remeasure_is_off_when_the_panel_opens(qapp) -> None:

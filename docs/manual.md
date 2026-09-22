@@ -47,39 +47,48 @@ The buttons below appear in the same order as in the app. Steps marked
      want to soften them. Afterwards a list of **gedempte fragmenten**
      (damped fragments) replaces the cluster list: clearing a tick
      immediately reapplies the damping.
-   - **1.5. Test** *(temporary)* → opens a checklist of ten numbered
-     investigations (1.5.1 through 1.5.10): restoring the cache, the
-     calibration-set status, the project check (lyrics, filters and
-     structure in one), missing repeats, the yardstick, unique versus
-     repeated lines, the word and syllable checks, the Whisper window
-     test, the omission trial and the big trial. That last one pits all
-     the models against each other — on their own, in every pair and in
-     reverse order, at block, sentence, link and word level — and takes
-     about half an hour; it writes as it goes to `docs/modelmatrix.md`,
-     so aborting only costs you the variant it is working on. Ten is the
-     maximum: if something is added, small tests get merged.
+   - **1.5. Test** *(temporary)* → opens a short checklist. It held
+     ten numbered investigations until v1.0.8; nine of those asked
+     something about the program itself — what a model is worth, what
+     leaving a check out costs, whether cutting the transcription
+     helps — and those questions have been answered. Three lines are
+     left:
 
-     At the top there is **Alles aanvinken** (tick everything; clicking
-     again clears them all) and a **Opnieuw meten** (measure again)
-     checkbox. You rarely need that last one: what has already been
-     measured is tracked per action, project and version, so a project
-     that has not changed since the previous run is skipped, and the
-     yardstick puts its figures next to those of the three previous
-     versions. Change a lyric, a timing or a model setting and that
-     counts as new data, so it is measured again by itself. Start is at
-     the bottom; the ticks are always cleared when the window opens, so
-     you can never kick off a long measurement by accident. The two
-     radio buttons underneath choose whether the measurements cover all
-     projects or only the one currently open. Stop works here too. Each
-     test drops its result into the log window as soon as it finishes,
-     so you do not have to wait for the rest.
+     - **1.5.1 Cache vullen** (fill the cache) → transcribes what is
+       missing and rebuilds a missing `timing_auto.json`. The only one
+       that starts Demucs and Whisper, so over all projects it can run
+       for hours; it therefore never joins "Alles aanvinken" and is
+       always a deliberate click.
+     - **1.5.2 Alle projecten nakijken** (check all projects) → five
+       reports about your songs in one go: what is measurable, the
+       three cheap project reports (lyrics, filters, structure),
+       what was heard but is not in the lyrics, the yardstick against
+       your own timing, and the word and syllable checks. It reads
+       files that are lying there anyway and stays under a minute over
+       all projects. Each part prints what it is above its own table,
+       and a part that stumbles costs only its own table.
+     - **1.5.12 Video's opnieuw** (rebuild the videos) → a job, not a
+       measurement: renders every video again, beside the existing
+       files, and only moves the old ones aside once the new one has
+       passed its own check.
 
-     An investigation that takes longer than half an hour does not
-     appear in this list but under **1.5.11 Zware proeven** (heavy
-     trials) — the overnight jobs. That group never joins in with "Alles
-     aanvinken", and when nothing is listed under it, it is not visible
-     at all. Each investigation there skips itself until it is twenty
-     versions old.
+     What was switched off is not deleted — it is one word away from
+     measuring again, and its numbers stay in `docs/testhistorie.json`
+     under the same codes.
+
+     At the top there is **Opnieuw meten** (measure again). You rarely
+     need it: what has already been measured is tracked per action,
+     project and version, so a project that has not changed since the
+     previous run is skipped, and the yardstick puts its figures next
+     to those of the three previous versions. Change a lyric, a timing
+     or a model setting and that counts as new data, so it is measured
+     again by itself. Start is at the bottom; the ticks are always
+     cleared when the window opens, so you can never kick off a long
+     measurement by accident. The two radio buttons underneath choose
+     whether the measurements cover all projects or only the one
+     currently open. Stop works here too, between the five parts as
+     well. Each test drops its result into the log window as soon as it
+     finishes.
 
      This button exists so that research can be done on your own
      machine, and it will disappear again.

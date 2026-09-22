@@ -85,10 +85,24 @@ def test_the_ticks_are_always_off_when_it_opens(qapp) -> None:
     assert panel.chosen() == []
 
 
-def test_ticking_gives_the_actions_in_number_order(qapp) -> None:
+def test_ticking_gives_the_actions_in_number_order(qapp,
+                                                   monkeypatch) -> None:
+    """What comes out follows the list, not the order of clicking.
+
+    B563: the panel shows three lines now, so ticks 4 and 1 pointed at
+    nothing. The rule is about the ORDER that comes out and not about
+    how long the list is, so the test lays out its own list of three
+    real actions instead of hoping to find five in the panel.
+    """
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        test_panel, "ACTIONS",
+        tuple(replace(a, done=False) for a in test_panel.ACTIONS
+              if a.code in ("1.5.2", "1.5.4", "1.5.5")))
     panel = test_panel.TestPanel()
-    panel._ticks[4].setChecked(True)
-    panel._ticks[1].setChecked(True)
+    panel._ticks[2].setChecked(True)
+    panel._ticks[0].setChecked(True)
     assert [a.code for a in panel.chosen()] == ["1.5.2", "1.5.5"]
 
 

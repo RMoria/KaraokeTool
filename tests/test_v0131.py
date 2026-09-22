@@ -46,7 +46,18 @@ def _composed_prefixes(text: str) -> set[str]:
 
 def test_no_translation_key_is_unused() -> None:
     """The guard. A key nobody asks for is a text nobody reads, and it
-    makes the table unreliable to search."""
+    makes the table unreliable to search.
+
+    B563 nearly needed an exemption here. Nine of the ten measurements
+    were retired, and a retired action keeps its line in ``ACTIONS``
+    (switched off, not deleted), so its name and its explanation are
+    still written out there. ``benchmark_status`` was the exception: it
+    lost its own action and became the first of the five parts of
+    1.5.2, which left its explanation without a reader. The answer was
+    not a list of allowed dead keys - that is how B400's thirty came
+    about - but to give 1.5.2 what it was missing: each part now prints
+    its own explanation above its table.
+    """
     from modules.translations import TRANSLATIONS
 
     text = _sources()
@@ -54,7 +65,8 @@ def test_no_translation_key_is_unused() -> None:
     dead = [key for key in TRANSLATIONS["nl"]
             if f'"{key}"' not in text and f"'{key}'" not in text
             and not any(key.startswith(p) for p in prefixes)]
-    assert not dead, "ongebruikte vertaalsleutels: " + ", ".join(sorted(dead))
+    assert not dead, \
+        "unused translation keys: " + ", ".join(sorted(dead))
 
 
 def test_the_guard_sees_composed_keys() -> None:

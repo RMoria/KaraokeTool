@@ -5242,6 +5242,84 @@ What of the list is NOT in it, and why:
   pause lasts about two. Changing either without measuring is guessing;
   the yardstick (1.5.5/1.5.10) can say what it does.
 
+Included in v1.0.8:
+
+- **B563 - the panel kept ten buttons for work that was finished.**
+  Under 1.5 stood ten numbered actions. Four of them ask something
+  about the PROGRAM: what does leaving a check out cost (1.5.9), what
+  is each model worth (1.5.10), how wrong are repeated lines against
+  unique ones (1.5.6), and the heavy bin (1.5.11). Those questions
+  have been answered and the answers are in production. 1.5.10 costs a
+  hundred and forty-four seconds and 1.5.11 costs hours, and both
+  confirm what is already decided.
+
+  Honest about the evidence: it is not true that they never moved a
+  switch. The register was last changed BY one of them - B536 flipped
+  two states at v0.150.0 on the strength of 1.5.9 - and an earlier
+  version of this entry claimed nothing had moved since v0.148.0,
+  which the review took apart against the code's own comments. What is
+  true is that nothing has moved since, and that the owner's judgement
+  is the ground here rather than a number: we do not measure for the
+  sake of measuring. They are switched off, not deleted, so the day
+  there is a reason again it is one word away.
+
+  The other five say something about the SONGS - what is measurable,
+  the three cheap project reports, what was heard but is not in the
+  lyrics, the yardstick against his own timing, and the word and
+  syllable checks. Those are worth a look at every new song, they read
+  only files that are lying there anyway, and together they take under
+  a minute over twenty-two projects. They were five ticks that were
+  always ticked together; they are one action now, 1.5.2, which takes
+  the place of the old 1.5.2. Its duration rows in the history from
+  before this version are therefore the old status scan, a tenth of a
+  second where this one takes a minute - that feeds nothing but an
+  estimate, and it corrects itself after one run.
+
+  A part that stumbles costs only its own table. Before the merge each
+  of the five was an action of its own and the runner caught per
+  action, so a fall cost one report of five; merged into one button an
+  uncaught error would have thrown away the four that DID work,
+  including the expensive yardstick. And the progress goes over the
+  ACTION bar through `Steps`, not to work slot 0 - reporting to slot 0
+  is what 1.5.11 did before B409, and the first project name of a part
+  overwrites it a moment later, so the top row never moves.
+
+  The measurement history is untouched by the merge. Every part keeps
+  recording under its OWN code - the yardstick stays 1.5.5 there, the
+  syllable checks stay 1.5.7 - so the comparison with earlier versions
+  runs on. Only the panel shows one line instead of five. And because
+  the five explanations that stood beside those ticks now have nowhere
+  to go, each part prints its own above its table: five tables without
+  a word about what they mean is a report nobody reads twice.
+
+  The nine are switched off, not deleted, the way a heavy trial is
+  since B454 and for the same reason. The code stays, the number stays,
+  and one word brings any of them back.
+
+- **Filling the cache is a decision, so it is a button.** 1.5.1 looked
+  like an ordinary light action and joined "tick all". It is the only
+  one of them that starts Demucs AND Whisper: on twenty-two projects
+  with a cleared cache that is hours of work, one click away from a run
+  that takes a minute. 1.5.11 and 1.5.12 were kept out of that button
+  long ago, for exactly this reason; 1.5.1 had been forgotten. It is
+  `on_request` now. With one tickable action left the "tick all" button
+  says what the tick beside it already says, so it steps aside until
+  there is something to gather again.
+
+- **And the panel's own promise did not hold.** The text at the top
+  said the actions write nothing into the projects, "with exactly two
+  exceptions". Measured: three of the five reports save a
+  `word_coupling` step into the `project.json` of every project they
+  touch - the project reports and the syllable checks through
+  `pipeline.build_coupling`, and "heard but not in the lyrics" through
+  `word_coupling_view`, which relocates the pins on its way. On one
+  project that is 214 bytes before and 487 after. That step is the
+  user's hand-made pin work, and the relocation path inside it can
+  drop pins. It has always done that; only the promise was wrong. It
+  now says what happens, and the real repair - letting a report ask for
+  a coupling without saving one - is written down as the next thing
+  rather than smuggled into a release about switching buttons off.
+
 Included in v1.0.7:
 
 - **B559 - the last fifty-two texts that did not follow the language

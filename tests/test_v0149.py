@@ -255,12 +255,22 @@ def test_the_job_never_rides_along_with_select_all(qapp) -> None:
 
 
 def test_the_job_can_still_be_ticked_on_its_own(qapp) -> None:
+    """Outside the 'all' tick, but one click away all the same.
+
+    B563: 1.5.1 became a job as well - it is the only light-looking
+    action that starts Demucs and Whisper - so "the first on_request
+    action" is no longer 1.5.12. The job is looked up by its code now,
+    and every job is checked, because the rule is about all of them.
+    """
     from modules import test_panel
     panel = test_panel.TestPanel()
-    spots = [n for n, a in enumerate(panel._actions) if a.on_request]
-    assert spots, "1.5.12 has to be visible"
-    panel._ticks[spots[0]].setChecked(True)
-    assert [a.code for a in panel.chosen()] == ["1.5.12"]
+    spots = {a.code: n for n, a in enumerate(panel._actions)
+             if a.on_request}
+    assert "1.5.12" in spots, "1.5.12 has to be visible"
+    for code, spot in spots.items():
+        panel._ticks[spot].setChecked(True)
+        assert [a.code for a in panel.chosen()] == [code]
+        panel._ticks[spot].setChecked(False)
 
 
 def test_the_job_does_not_count_towards_the_ceiling() -> None:
