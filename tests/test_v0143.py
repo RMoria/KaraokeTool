@@ -277,7 +277,7 @@ def test_an_empty_output_folder_is_not_a_folder_full_of_orphans(
     from modules import filesystem
 
     (tmp_path / "input" / "Een Lied").mkdir(parents=True)
-    out = tmp_path / "uit"
+    out = tmp_path / "out"
     (out / "settings").mkdir(parents=True)
     assert filesystem.prune_orphan_projects(tmp_path, out) == []
     assert (tmp_path / "input" / "Een Lied").exists()

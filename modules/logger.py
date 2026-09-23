@@ -49,5 +49,7 @@ def setup_logging(log_dir: Path, console_level: int = logging.INFO) -> logging.L
         console_handler.setFormatter(logging.Formatter(_CONSOLE_FORMAT))
         root.addHandler(console_handler)
 
-    logging.getLogger(__name__).debug("Logging gestart: %s", log_file)
+    from .translations import t
+
+    logging.getLogger(__name__).debug(t("log_logging_started"), log_file)
     return root

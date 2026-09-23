@@ -352,7 +352,8 @@ class MainWindow(QMainWindow):
             self.resize(width, height)
             logger.info(t("log_startup_size"),
                         current.width(), current.height(), width, height,
-                        "hersteld" if restored else "standaard")
+                        t("value_restored") if restored
+                        else t("value_default"))
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt interface
         """Store the window size on closing (B187), and let the workers
@@ -369,7 +370,7 @@ class MainWindow(QMainWindow):
         try:
             from . import measure_pool
             measure_pool.close_pool()
-        except Exception:  # noqa: BLE001 - opruimen mag sluiten niet breken
+        except Exception:  # noqa: BLE001 - cleaning up may not break closing
             pass
         super().closeEvent(event)
 
@@ -2124,7 +2125,7 @@ class MainWindow(QMainWindow):
     def _reset_theme(self) -> None:
         from dataclasses import replace as _replace
         config = self._context.config
-        # knop_actief back to the default yellow, not empty (B229).
+        # button_active back to the default yellow, not empty (B229).
         self._update_config(_replace(config, theme=_replace(
             config.theme, background="", button="", button_active="#f2c200")))
         for key, btn in self._theme_buttons.items():

@@ -40,7 +40,7 @@ def test_the_cut_lands_in_the_silence() -> None:
     windows = ((0.0, 10.0), (14.0, 24.0), (28.0, 40.0))
     cut = chunks.cut_points(windows, total=40.0)
     assert cut[0].start == 0.0
-    assert cut[0].end == pytest.approx(26.0)   # midden van 24-28
+    assert cut[0].end == pytest.approx(26.0)   # the middle of 24-28
     assert not cut[0].forced
 
 
@@ -58,7 +58,7 @@ def test_singing_that_never_pauses_is_cut_with_overlap() -> None:
     assert any(c.forced for c in cut)
     forced = [c for c in cut if c.forced][0]
     following = cut[cut.index(forced) + 1]
-    assert following.start < forced.end, "de stukken horen te overlappen"
+    assert following.start < forced.end, "the pieces should overlap"
 
 
 def test_the_offset_moves_every_edge() -> None:
@@ -199,7 +199,7 @@ def test_the_chunk_trial_is_in_the_heavy_bin() -> None:
     codes = {h.code: h for h in test_panel.HEAVY_TRIALS}
     assert "1.5.11d" in codes
     assert codes["1.5.11d"].off, \
-        "B454: het knippen draait in productie, de proef staat uit"
+        "B454: the chunking runs in production, the trial is off"
     assert codes["1.5.11d"].function is test_panel.chunk_trial
 
 
@@ -257,4 +257,4 @@ def test_the_probe_can_transcribe_a_slice() -> None:
     assert "start" in names and "end" in names
     assert hasattr(module, "run_chunked")
     source = inspect.getsource(module.run_once)
-    assert "shift" in source, "de tijden moeten terug op de liedtijdlijn"
+    assert "shift" in source, "the times have to go back onto the song timeline"

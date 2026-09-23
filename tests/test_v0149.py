@@ -351,7 +351,7 @@ def test_only_projects_with_a_video_count(tmp_path) -> None:
 def test_only_the_videos_land_flat_in_the_folder(tmp_path) -> None:
     from modules import pipeline
     context = _project(tmp_path, "Een_Lied")
-    target = tmp_path / "uit"
+    target = tmp_path / "out"
     projects, files = pipeline.collect_videos(context, target,
                                               with_sources=False)
     assert (projects, files) == (1, 1)
@@ -362,7 +362,7 @@ def test_the_collection_gets_a_folder_per_project(tmp_path) -> None:
     from modules import pipeline
     context = _project(tmp_path, "Een_Lied")
     _project(tmp_path, "Twee_Lied")
-    target = tmp_path / "uit"
+    target = tmp_path / "out"
     projects, files = pipeline.collect_videos(context, target,
                                               with_sources=True)
     assert projects == 2 and files == 8
@@ -377,7 +377,7 @@ def test_the_newest_render_goes_along(tmp_path) -> None:
     from modules import pipeline
     context = _project(tmp_path, "Een_Lied")
     (context.paths.output_dir / "Een Lied_10.mp4").write_bytes(b"nieuwste")
-    target = tmp_path / "uit"
+    target = tmp_path / "out"
     pipeline.collect_videos(context, target, with_sources=False)
     assert (target / "Een Lied_10.mp4").exists()
     assert not (target / "Een Lied_2.mp4").exists()
@@ -387,7 +387,7 @@ def test_the_button_is_off_without_a_video(tmp_path) -> None:
     from modules import pipeline
     context = _project(tmp_path, "Zonder", video=False)
     assert pipeline.projects_with_video(context) == []
-    target = tmp_path / "uit"
+    target = tmp_path / "out"
     assert pipeline.collect_videos(context, target,
                                    with_sources=True) == (0, 0)
 
@@ -400,7 +400,7 @@ def test_two_projects_with_the_same_title_do_not_overwrite_each_other(
     from modules import pipeline
     context = _project(tmp_path, "Opname_1", title="Mijn Lied")
     _project(tmp_path, "Opname_2", title="Mijn Lied")
-    target = tmp_path / "uit"
+    target = tmp_path / "out"
     projects, files = pipeline.collect_videos(context, target,
                                               with_sources=False)
     assert (projects, files) == (2, 2)
@@ -413,7 +413,7 @@ def test_the_other_render_variant_stays_behind(tmp_path) -> None:
     from modules import pipeline
     context = _project(tmp_path, "Een_Lied")
     (context.paths.output_dir / "Een Lied_voc_ori_2.mp4").write_bytes(b"zang")
-    target = tmp_path / "uit"
+    target = tmp_path / "out"
     pipeline.collect_videos(context, target, with_sources=False)
     assert [p.name for p in target.iterdir()] == ["Een Lied_2.mp4"]
 
@@ -422,7 +422,7 @@ def test_collecting_stops_on_the_stop_button(tmp_path) -> None:
     from modules import pipeline
     context = _project(tmp_path, "Een_Lied")
     _project(tmp_path, "Twee_Lied")
-    target = tmp_path / "uit"
+    target = tmp_path / "out"
     assert pipeline.collect_videos(context, target, with_sources=False,
                                    cancelled=lambda: True) == (0, 0)
 
@@ -438,7 +438,7 @@ def test_the_collection_may_not_sit_inside_the_projects(tmp_path) -> None:
         with pytest.raises(pipeline.PipelineError):
             pipeline.collect_videos(context, bad, with_sources=True)
     # Beside them is fine.
-    assert pipeline.collect_videos(context, tmp_path / "uit",
+    assert pipeline.collect_videos(context, tmp_path / "out",
                                    with_sources=True)[0] == 1
 
 

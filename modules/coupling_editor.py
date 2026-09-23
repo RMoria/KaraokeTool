@@ -262,16 +262,16 @@ class CouplingCanvas(QWidget):
             # something else entirely once the group already had its
             # columns: then the lyrics word landed on a column that its
             # predecessor might already own.
-            paar_col = min(self._top_col[tj] for tj in target_list)
-            if paar_col <= last_bot:
+            pair_col = min(self._top_col[tj] for tj in target_list)
+            if pair_col <= last_bot:
                 # No room under its own group: one place to the right.
                 # The coupling line then runs at a slight angle, and
                 # that is the smaller evil - a straight line to a word
                 # that cannot be seen or clicked is no line at all.
-                paar_col = last_bot + 1
-            col = max(col, paar_col + 1)
-            self._bot_col[j] = paar_col
-            last_bot = paar_col
+                pair_col = last_bot + 1
+            col = max(col, pair_col + 1)
+            self._bot_col[j] = pair_col
+            last_bot = pair_col
         while i < n_top:                            # remaining tops
             if self._top_col[i] == -1:
                 self._top_col[i] = col
@@ -402,7 +402,7 @@ class CouplingCanvas(QWidget):
         # the lines of the selected/pinned word solid and the rest very
         # faint. That way, after cutting/splitting, it stays possible to
         # follow what goes where.
-        heeft_selectie = self._sel_bot is not None or self._sel_top is not None
+        has_selection = self._sel_bot is not None or self._sel_top is not None
         spans = self._merged_spans()
         bot_spans = self._merged_bottom_spans()
         # First the 'background' (non-emphasised) lines, then the emphasis
@@ -418,11 +418,11 @@ class CouplingCanvas(QWidget):
                     # Top-row merge: only the head draws one line (B189).
                     if tj in spans and tj != spans[tj][0]:
                         continue
-                    betrokken = (li == self._sel_bot or tj == self._sel_top)
+                    involved = (li == self._sel_bot or tj == self._sel_top)
                     # Without a selection everything is 'active' (in
                     # colour). With a selection only the lines involved
                     # are active; the rest dims.
-                    active = betrokken or not heeft_selectie
+                    active = involved or not has_selection
                     if active != stress:
                         continue
                     tcx, tcy = self._top_link_point(tj, spans)
@@ -439,7 +439,7 @@ class CouplingCanvas(QWidget):
                             pinned = any(k in self._pinned
                                          for k in range(a, b + 1))
                         color = _sim_color(w["sim"], pinned)
-                        pen = QPen(color, 3 if betrokken else 2)
+                        pen = QPen(color, 3 if involved else 2)
                     else:
                         pen = QPen(QColor(205, 210, 216), 1)   # dimmed
                     painter.setPen(pen)
@@ -501,9 +501,9 @@ class CouplingCanvas(QWidget):
                 border = None
                 dashed = False
                 text_value = w["text"]
-                stijl = _STATUS_STYLE.get(w.get("status", "coupled"))
-                if stijl is not None:
-                    fill, border, _legend_key = stijl   # B317: geen prefix
+                status_style = _STATUS_STYLE.get(w.get("status", "coupled"))
+                if status_style is not None:
+                    fill, border, _legend_key = status_style   # B317: no prefix
                     dashed = True
                 self._draw_box(painter, self._bot_rect(i), text_value,
                                selected=(i == self._sel_bot),
@@ -655,10 +655,10 @@ class CouplingCanvas(QWidget):
             if li in bot_spans:
                 # Bottom-row merge: detach the whole group (B222).
                 a, b, target_list = bot_spans[li]
-                doelset = set(target_list)
+                target_set = set(target_list)
                 for k in range(a, b + 1):
                     self._targets[k] = [t for t in self._targets.get(k, [])
-                                        if t not in doelset]
+                                        if t not in target_set]
                     self._pinned.add(k)
                 self._emit()
             elif tj in spans:

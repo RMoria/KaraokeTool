@@ -110,7 +110,7 @@ def test_it_is_a_switchable_model_and_it_is_on() -> None:
     assert model is not None
     assert model.default_on
     assert model.level == "zin"
-    assert model.reason
+    assert model.display_reason
 
 
 # --------------------------------------------------------------------------

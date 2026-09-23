@@ -428,7 +428,8 @@ class TimingCanvas(QWidget):
             painter.setPen(QPen(QColor(120, 120, 120) if disabled
                                 else QColor(90, 30, 30) if is_crowd
                                 else QColor(60, 50, 30)))
-            prefix = "[uit] " if disabled else ("[crowd] " if is_crowd else "")
+            prefix = (f"[{t('off')}] " if disabled
+                      else ("[crowd] " if is_crowd else ""))
             # B485: the background piece belongs to this sentence and is
             # shown with it, between brackets so that it is clear it is
             # not sung along with.
@@ -461,7 +462,7 @@ class TimingCanvas(QWidget):
         for row, cell in enumerate(self._cells):
             x1, x2 = cell["start"] * self._pps, cell["end"] * self._pps
             y = _LANES_TOP + (row % 3) * 34
-            disabled = cell.get("uit", False)
+            disabled = cell.get("off", False)
             rows = cell.get("rows") or []
             # B499: the karaoke text stays as it is. The marking belongs
             # to the ORIGINAL that is fetched back, so it is shown there;
@@ -500,7 +501,8 @@ class TimingCanvas(QWidget):
             painter.setPen(QPen(QColor(120, 120, 120) if disabled
                                 else QColor(70, 110, 75) if background
                                 else QColor(40, 40, 40)))
-            label = ("[uit] " + cell["text"]) if disabled else cell["text"]
+            label = (f"[{t('off')}] " + cell["text"]) if disabled \
+                else cell["text"]
             painter.drawText(int(x1) + 4, y + 19,
                              label[:int((x2 - x1) / 7) or 1])
 
@@ -567,7 +569,7 @@ class TimingCanvas(QWidget):
         position = event.position()
         moment = position.x() / self._pps
         # Clicking a cell selects it (for disabling/enabling, B180) - in
-        # every view, including 'woorden'.
+        # every view, including ``words``.
         on_a_cell = False                      # B414
         for ci, cell in enumerate(getattr(self, "_cells", [])):
             y = _LANES_TOP + (ci % 3) * 34
@@ -597,8 +599,8 @@ class TimingCanvas(QWidget):
                 self._sel_cell = None
                 self.update()
                 break
-        # Dragging/stretching on cells: in 'zinnen' per line, in 'blokken'
-        # per block (B162). In the 'words' view only for orientation.
+        # Dragging/stretching on cells: in ``sentences`` per line, in
+        # ``blocks`` per block (B162). In the 'words' view only for orientation.
         if self._view_mode in ("sentences", "blocks"):
             for ci, cell in enumerate(getattr(self, "_cells", [])):
                 y = _LANES_TOP + (ci % 3) * 34
@@ -613,7 +615,7 @@ class TimingCanvas(QWidget):
                 mode = self._hit_mode(position.x(),
                                       (cell["start"], cell["end"]))
                 if mode is not None:
-                    self._drag = ("cel", ci, mode, moment)
+                    self._drag = ("cell", ci, mode, moment)
                     return
         if self._view_mode == "sentences":
             for index, original in enumerate(self._originals):
@@ -669,7 +671,8 @@ class TimingCanvas(QWidget):
             self._drag = (kind, row, mode, moment)
             self.update()
             return
-        # kind == "cel": one sentence (zinnen) or a whole block (blokken).
+        # kind == "cell": one sentence (``sentences``) or a whole block
+        # (``blocks``).
         cell = self._cells[row] if row < len(self._cells) else None
         if cell is None:
             return
@@ -1067,7 +1070,7 @@ class TimingEditorDialog(QDialog):
         self._view_combo = QComboBox()
         for mode in ("blocks", "sentences", "words"):    # B160: order
             self._view_combo.addItem(t(f"view_{mode}"), mode)
-        idx = self._view_combo.findData("sentences")         # default: zinnen
+        idx = self._view_combo.findData("sentences")         # default: sentences
         self._view_combo.setCurrentIndex(idx if idx >= 0 else 0)
         toolbar.addWidget(QLabel(t("view_label")))
         toolbar.addWidget(self._view_combo)

@@ -151,7 +151,7 @@ def test_more_slots_really_run_more_at_once(tmp_path) -> None:
 
     test_panel.across_projects(context, [f"l{n}" for n in range(5)], work,
                                lambda *a, **k: None, lambda: False, slots=5)
-    assert busy["most"] == 5, "vijf werkplekken horen echt tegelijk te lopen"
+    assert busy["most"] == 5, "five work slots should really run at the same time"
 
 
 # --------------------------------------------------------------------------
@@ -198,4 +198,4 @@ def test_a_pool_that_will_not_start_falls_back(tmp_path) -> None:
             patch.object(measure_pool, "_measure_one",
                          lambda item: calls.append(item) or None):
         rows = measure_pool.measure_rows(tmp_path, ["a", "b"], None, {})
-    assert rows == [] and len(calls) == 2, "hij hoort het serieel te doen"
+    assert rows == [] and len(calls) == 2, "it is supposed to do it serially"

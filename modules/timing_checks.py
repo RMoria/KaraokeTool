@@ -371,7 +371,7 @@ def inspect(context, lines) -> dict:
     shape_checks(lines, found)
     try:
         audio_checks(context, lines, found)
-    except Exception:  # noqa: BLE001 - aanwijzing mag falen, meting niet
+    except Exception:  # noqa: BLE001 - a hint may fail, a measurement may not
         from .translations import t
         logger.exception(t("log_syllable_checks_failed"))
     repetition_consistency(lines, found)

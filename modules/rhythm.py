@@ -428,13 +428,13 @@ def active_end(audio_path, start: float, end: float,
     if env is None or end <= start:
         return None
     times, rms = env
-    piek = float(rms.max())
-    if piek <= 0:
+    loudest = float(rms.max())
+    if loudest <= 0:
         return None
     mask = (times >= start) & (times <= end)
     if not mask.any():
         return None
-    return _last_active_time(rms, times, mask, piek * thr_ratio)
+    return _last_active_time(rms, times, mask, loudest * thr_ratio)
 
 
 def last_energy(audio_path, start: float, end: float,

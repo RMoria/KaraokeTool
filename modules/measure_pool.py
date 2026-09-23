@@ -297,7 +297,7 @@ def close_pool() -> None:
     if _POOL is not None:
         try:
             _POOL.shutdown(wait=False, cancel_futures=True)
-        except Exception:            # noqa: BLE001 - opruimen mag nooit klappen
+        except Exception:            # noqa: BLE001 - cleaning up may never blow up
             logger.exception(_t("log_pool_unavailable"))
     _POOL, _POOL_SIZE = None, 0
 

@@ -1,7 +1,10 @@
 """The register of switchable models (B361).
 
 Every idea that has ever been built into the timing and the coupling
-stands here by name, with a level, a neutral replacement and a state.
+stands here by code, with a level, a neutral replacement and a state.
+Its name and the reason for its state are texts on screen, so they live
+in ``translations.py`` under ``model_name_<key>`` and
+``model_reason_<key>``.
 There are two reasons for this register.
 
 The first is the user's rule: a model that turns out to be worth nothing
@@ -50,26 +53,65 @@ LEVELS = ("blok", "zin", "koppeling", "woord", "venster")
 
 @dataclass(frozen=True)
 class Model:
-    """One switchable idea."""
+    """One switchable idea.
+
+    The fields are ids only. What a person reads - the name, the level
+    word and the reason - comes out of the translation layer at the
+    moment it is shown, through the ``display_*`` properties. The
+    register is built before the interface language is known, so a
+    text fetched while building would stay in the language of that
+    moment for good.
+    """
 
     #: The B-number(s), e.g. "B329/332/340". Unique, and the key used by
     #: the settings and the measurement history.
     code: str
-    #: Short name in the tables (Dutch: it is read in reports).
-    name: str
+    #: One of :data:`LEVELS`; an id, not a text on screen.
     level: str
     #: Default state. Off means: measured and kept, but not running.
     default_on: bool = True
-    #: Why it is off (empty when on). Ends up in the startup log and in
-    #: the matrix, so a state is never anonymous.
-    reason: str = ""
     #: ``(module, attribute, replacement)``; a replacement has to accept
     #: the same arguments as the real function.
     targets: tuple = field(default_factory=tuple)
 
     @property
+    def key(self) -> str:
+        """The code as the tail of a translation key ("B329/332/340" ->
+        "b329_332_340")."""
+        return self.code.lower().replace("/", "_")
+
+    @property
+    def display_name(self) -> str:
+        """Short name in the tables, in the interface language."""
+        from .translations import t
+        return t(f"model_name_{self.key}")
+
+    @property
+    def display_level(self) -> str:
+        """The level as a word, in the interface language."""
+        from .translations import t
+        return t(f"model_level_{self.level}")
+
+    @property
+    def display_reason(self) -> str:
+        """Why it is off, in the interface language; empty when none.
+
+        Ends up in the startup log and in the matrix, so a state is
+        never anonymous. A model has a reason when the translation table
+        carries ``model_reason_<key>``. A reason that names another model
+        does so by its key (``{b336}``) and gets its code filled in here:
+        a code is data, and the translation table holds no B-numbers.
+        """
+        from .translations import TRANSLATIONS, t
+        key = f"model_reason_{self.key}"
+        if key not in TRANSLATIONS["nl"]:
+            return ""
+        return t(key).format(**{m.key: m.code for m in register()})
+
+    @property
     def label(self) -> str:
-        return f"{self.code} {self.name}"
+        """Code plus name, as the reports print it (translated)."""
+        return f"{self.code} {self.display_name}"
 
 
 def _build() -> tuple[Model, ...]:
@@ -106,7 +148,7 @@ def _build() -> tuple[Model, ...]:
         return real_hallucinations(segments, *args, **kwargs)
 
     return (
-        Model("B250/B251", "blokgrens", "blok",
+        Model("B250/B251", "blok",
               targets=((rules, "arbitrate_anchors", without_block_border),)),
         # B522/B529: the switch has to sit on the function the pipeline
         # really calls. ``implausible_anchors`` became a wrapper and
@@ -114,30 +156,30 @@ def _build() -> tuple[Model, ...]:
         # directly, so switching the old name off changed nothing at all
         # - and then the matrix reports 0.00 s for this model and the
         # conclusion "that check does nothing" is a measuring error.
-        Model("B329/332/340", "ankertoets", "zin",
+        Model("B329/332/340", "zin",
               targets=((tim, "implausible_and_overlong",
                         lambda *a, **k: (set(), set())),)),
-        Model("B332", "frase-periode", "zin",
+        Model("B332", "zin",
               targets=((tim, "phrase_period", lambda *a, **k: None),)),
-        Model("B329", "referentieduur", "zin",
+        Model("B329", "zin",
               targets=((tim, "reference_durations", lambda *a, **k: {}),)),
-        Model("B330/B351", "snappen", "zin",
+        Model("B330/B351", "zin",
               targets=((tim, "snap_to_onsets",
                         lambda lines, *a, **k: tuple(lines)),)),
-        Model("B351", "begin na pauze", "zin",
+        Model("B351", "zin",
               targets=((tim, "_onset_before_start", lambda *a, **k: None),)),
-        Model("B336", "staartvensters", "zin",
+        Model("B336", "zin",
               targets=((tim, "tail_over_windows", lambda *a, **k: None),)),
-        Model("B334", "herhaallus", "zin",
+        Model("B334", "zin",
               targets=((pipeline, "_drop_repetition_loop", same),)),
-        Model("B342", "grenswoorden", "zin",
+        Model("B342", "zin",
               targets=((pipeline, "_merge_boundary_duplicates", same),)),
-        Model("B343", "spookwoorden", "zin",
+        Model("B343", "zin",
               targets=((pipeline, "_drop_phantom_words", same),)),
         # B377: the vocal stem as referee. If a segment sits on no
         # measured singing at all, it is not singing - not even when the
         # text comes word for word from the lyrics (the prompt echo).
-        Model("B377", "zang als scheidsrechter", "koppeling",
+        Model("B377", "koppeling",
               targets=((pipeline, "_drop_unsung_segments",
                         lambda ctx, segments, *a, **k: segments),)),
         # B536: OFF since v0.150.0, and that was a surprise. The filter
@@ -151,12 +193,10 @@ def _build() -> tuple[Model, ...]:
         # does earn its keep somewhere - "Lied I" goes
         # from 1.81 s to 4.34 s without it - so off, not gone: the trial
         # keeps taking it along and reports the day it turns.
-        Model("B258/B285", "hallucinaties", "koppeling", default_on=False,
-              reason="-0,14 s op de ijkset; op Lied_T "
-                     "17,29 s tegen 7,28 s",
+        Model("B258/B285", "koppeling", default_on=False,
               targets=((pipeline, "_filter_hallucinations",
                         without_song_wide),)),
-        Model("B307/B337", "hallucinaties op plek", "koppeling",
+        Model("B307/B337", "koppeling",
               targets=((pipeline, "_filter_hallucinations_in_position",
                         lambda segments, *a, **k: segments),)),
         # B536: ON again since v0.150.0. It was off from v0.115.0
@@ -166,18 +206,18 @@ def _build() -> tuple[Model, ...]:
         # other way round, twice: -0.18 s WITH it on. A model that is
         # off keeps being measured every run precisely so a verdict from
         # thirty versions ago cannot quietly stay standing.
-        Model("B213", "vulwoorden apart", "koppeling",
+        Model("B213", "koppeling",
               targets=((song, "align_lyrics", without_filler_round),)),
-        Model("B276", "vulwoord-voorrang", "koppeling",
+        Model("B276", "koppeling",
               targets=((pipeline, "_filler_priority_lines",
                         lambda ctx: frozenset()),)),
-        Model("B159", "zwakke staart losmaken", "koppeling",
+        Model("B159", "koppeling",
               targets=((song, "trim_tail_matches",
                         lambda aligned, *a, **k: tuple(aligned)),)),
-        Model("B121", "handkoppelingen", "koppeling",
+        Model("B121", "koppeling",
               targets=((pipeline, "_pins_for_transcript",
                         lambda *a, **k: {}),)),
-        Model("B313", "energieplaatsing", "koppeling",
+        Model("B313", "koppeling",
               targets=((pipeline, "_place_skipped_on_energy",
                         lambda ctx, a: a),)),
         # B380: take an impossible line duration from the same line
@@ -187,37 +227,33 @@ def _build() -> tuple[Model, ...]:
         # OFF, with reason. The idea is right - a repeated line IS well
         # measured elsewhere in the song - but this one builds its
         # templates from the OUTPUT of the sentence coupling, and that is
-        # exactly the step that is broken in an outro. Measured on "Lied K
-        # ": four "instances" of exactly 1.00 s, which
-        # is not a measurement but the floor from sanitize_timing, and
+        # exactly the step that is broken in an outro. Measured on
+        # "Lied K": four "instances" of exactly 1.00 s,
+        # which is not a measurement but the floor from sanitize_timing, and
         # nine instances with a spread of 1.48. The template should come
         # from the TRANSCRIPTION TIMES (the original side), through the
         # coupling map. Off instead of gone: the trial keeps taking it
         # along every run and reports the moment it IS worth something.
-        Model("B392", "gat op de zang", "zin",
-              reason="een gat middenin kreeg een rechte lijn; B336 deed "
-                     "dit al voor de staart",
+        Model("B392", "zin",
               targets=((tim, "windows_between",
                         lambda count, windows, after, before: None),)),
-        Model("B380", "sjabloontiming", "zin", default_on=False,
-              reason="bouwt sjablonen uit de koppeluitvoer; op een stukke "
-                     "outro levert dat een ondergrens van 1.00 s op",
+        Model("B380", "zin", default_on=False,
               targets=((pipeline, "_retime_from_templates",
                         lambda ctx, timed: timed),)),
-        Model("B234/B347", "woorden op de zangvensters", "woord",
+        Model("B234/B347", "woord",
               targets=((tim, "distribute_over_windows",
                         lambda line, *a, **k: line),)),
-        Model("B241", "fonetische lettergrepen", "woord",
+        Model("B241", "woord",
               targets=((tim, "apply_phonetic_timing",
                         lambda lines, *a, **k: tuple(lines)),)),
         # These two only feed the coupling view and not the times; the
         # yardstick cannot see them by definition and scores them on
         # coverage.
-        Model("B191", "koppeling uitbreiden", "venster",
+        Model("B191", "venster",
               targets=((song, "extend_coupling",
                         lambda text, transcript, base, claimed, **k:
                         [base]),)),
-        Model("B228", "creatieve koppelingen", "venster",
+        Model("B228", "venster",
               targets=((song, "creative_couplings",
                         lambda texts, transcript, targets, **k:
                         [list(x) for x in targets]),)),
@@ -290,8 +326,8 @@ def apply_disabled() -> tuple[str, ...]:
         for module, attribute, replacement in model.targets:
             setattr(module, attribute, replacement)
         _DISABLED_NOW[model.code] = saved
-        logger.info(t("log_model_disabled"), model.code, model.name,
-                    model.reason or "-")
+        logger.info(t("log_model_disabled"), model.code,
+                    model.display_name, model.display_reason or "-")
     return disabled_now()
 
 
@@ -322,7 +358,11 @@ def disabled_now() -> tuple[str, ...]:
 
 def state_line() -> str:
     """One line for a report: how many on, how many off, and which."""
+    from .translations import t
+
     off = [m.code for m in register() if not enabled(m.code)]
-    aan = len(register()) - len(off)
-    return f"{aan} aan, {len(off)} uit" + (
-        f" (uit: {', '.join(off)})" if off else "")
+    on = len(register()) - len(off)
+    line = t("model_state_count").format(on=on, off=len(off))
+    if off:
+        line += t("model_state_off_codes").format(codes=", ".join(off))
+    return line

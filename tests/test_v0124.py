@@ -55,8 +55,8 @@ def test_the_measurement_keeps_one_work_directory_per_project() -> None:
     spec.loader.exec_module(module)
 
     first = module._work_dir("Proef")
-    assert module._work_dir("Proef") == first, "zelfde project, zelfde map"
-    assert module._work_dir("Ander") != first, "ander project, andere map"
+    assert module._work_dir("Proef") == first, "same project, same folder"
+    assert module._work_dir("Ander") != first, "other project, other folder"
 
 
 def test_the_cache_key_is_why_it_matters() -> None:
@@ -64,7 +64,7 @@ def test_the_cache_key_is_why_it_matters() -> None:
     directory back to a fresh one."""
     source = inspect.getsource(rhythm._rms_envelope)
     assert "stat.st_mtime" in source and "str(audio_path)" in source, \
-        "de sleutel bevat het pad; daarom moet dat pad stabiel zijn"
+        "the key holds the path, so that path has to be stable"
 
 
 def test_the_vocal_stem_is_linked_and_not_copied() -> None:
@@ -74,8 +74,8 @@ def test_the_vocal_stem_is_linked_and_not_copied() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "tools" / "timing_regression.py").read_text(
         encoding="utf-8")
-    assert "os.link(" in source, "een harde koppeling kost geen schijf"
-    assert "shutil.copy2" in source, "en een terugval over volumes heen"
+    assert "os.link(" in source, "a hard link costs no disk space"
+    assert "shutil.copy2" in source, "and a fallback across volumes"
     assert importlib.util  # noqa: B018 - import used for the path only
 
 
@@ -93,7 +93,7 @@ def test_a_trial_that_cannot_measure_raises_instead_of_returning() -> None:
                  "heavy_probe_nowhere"):
         where = source.index(spot)
         before = source[max(0, where - 200):where]
-        assert "TrialSkipped" in before, f"{spot} hoort af te haken"
+        assert "TrialSkipped" in before, f"{spot} should drop out"
 
 
 def test_the_reason_still_reaches_the_report() -> None:
@@ -110,9 +110,9 @@ def test_a_skipped_trial_records_no_duration() -> None:
     source = inspect.getsource(test_panel.heavy_trial)
     caught = source.index("except TrialSkipped")
     remembered = source.index("remember_duration")
-    assert caught < remembered, "eerst afhaken, dan pas de tijd bewaren"
+    assert caught < remembered, "drop out first, only then keep the time"
     tail = source[caught:remembered]
-    assert "continue" in tail, "een afhaker slaat het bewaren over"
+    assert "continue" in tail, "a dropout skips the keeping"
 
 
 # --------------------------------------------------------------------------

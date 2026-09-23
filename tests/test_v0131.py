@@ -26,10 +26,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def _sources() -> str:
+    """Every file that may ask for a key - the start script included
+    since v1.0.11, when its log lines moved into the table."""
     return " ".join(
         p.read_text(encoding="utf-8")
         for p in list((ROOT / "modules").glob("*.py"))
         + list((ROOT / "tools").glob("*.py"))
+        + [ROOT / "KaraokeTool.py"]
         if p.name != "translations.py")
 
 

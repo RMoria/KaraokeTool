@@ -85,6 +85,23 @@ def names() -> tuple[str, ...]:
     return tuple(_BUILDERS)
 
 
+#: The word between the two codes of an order name. The name itself is
+#: an id - it travels to a child process and into the measurement
+#: history - so it keeps its spelling; only what a report prints is
+#: translated (v1.0.11).
+_BETWEEN = " vóór "
+
+
+def label(name: str) -> str:
+    """An order name the way a report prints it, in the active language."""
+    from .translations import t
+
+    first, found, second = name.partition(_BETWEEN)
+    if not found:
+        return name
+    return f"{first} {t('model_order_before')} {second}"
+
+
 def targets(name: str):
     """The ``(module, attribute, replacement)`` triples for one order.
 

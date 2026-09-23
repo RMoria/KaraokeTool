@@ -346,11 +346,11 @@ def verify(root: Path, report: list) -> None:
         except ValueError:
             continue
         # Dutch values that were deliberately translated may differ.
-        vertaald = set()
+        translated = set()
         for m in VALUE_MAPS.values():
-            vertaald |= set(m) | set(m.values())
+            translated |= set(m) | set(m.values())
         missing = [v for v in old
-                   if v not in new and str(v) not in vertaald
+                   if v not in new and str(v) not in translated
                    and "origineel" not in str(v)
                    and "statistieken" not in str(v)
                    and "transcriptie" not in str(v)]

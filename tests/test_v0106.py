@@ -130,7 +130,7 @@ def _canvas(lines: list[dict], originals: list[dict] | None = None):
                           original_duration=_DURATION, vocal_peaks=peaks)
     canvas._cells = [{"text": r["text"], "start": _span(r)[0],
                       "end": _span(r)[1], "crowd": bool(r["crowd"]),
-                      "rows": [i], "uit": False}
+                      "rows": [i], "off": False}
                      for i, r in enumerate(lines)]
     return canvas
 
@@ -146,7 +146,7 @@ def _drag(canvas, cell: int, mode: str, start: float, to: float) -> None:
         def position(self):
             return self._point
 
-    canvas._drag = ("cel", cell, mode, start)
+    canvas._drag = ("cell", cell, mode, start)
     canvas.mouseMoveEvent(_Event(to * canvas._pps))
 
 
@@ -187,9 +187,9 @@ def test_a_block_cannot_pass_its_neighbour(qapp) -> None:
     canvas.set_view_mode("blocks")
     canvas._cells = [
         {"text": "blok 0", "start": 1.0, "end": 4.0, "crowd": False,
-         "rows": [0, 1], "uit": False},
+         "rows": [0, 1], "off": False},
         {"text": "blok 1", "start": 5.0, "end": 6.0, "crowd": False,
-         "rows": [2], "uit": False}]
+         "rows": [2], "off": False}]
     _drag(canvas, 1, "verplaats", 5.5, 0.5)
     assert _span(lines[2])[0] >= _span(lines[1])[1] - 1e-6
 

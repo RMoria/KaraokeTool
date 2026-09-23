@@ -21,11 +21,11 @@ because the timing is then handed an input that was already put right by
 hand. Measured: in one project 58 of the 64 original sentences were
 hand-set.
 
-    python tools/timing_regression.py <output-map> [--json uit.json]
-    python tools/timing_regression.py <output-map> --compare eerder.json
-    python tools/timing_regression.py <output-map> --record
+    python tools/timing_regression.py <output-dir> [--json out.json]
+    python tools/timing_regression.py <output-dir> --compare earlier.json
+    python tools/timing_regression.py <output-dir> --record
 
-``<output-map>`` is the ``output/`` folder of an installation. A project
+``<output-dir>`` is the ``output/`` folder of an installation. A project
 is measured when it has ``settings/timing.json``,
 ``settings/timing_auto.json`` and ``original/segments.json``.
 
@@ -34,6 +34,10 @@ the app (its version is in the header), so a comparison against it says
 what has improved since then and not what one change is worth. Save a
 run with ``--json`` before a change and hold the run after it against it
 with ``--compare``.
+
+``--record`` writes ``docs/metingen.md`` in the interface language of
+the installation (its ``config/config.json``); what the tool prints on
+the console is English.
 """
 from __future__ import annotations
 
@@ -53,9 +57,11 @@ from modules import karaoke_text, song_text               # noqa: E402
 from modules import pipeline                              # noqa: E402
 from modules import timing_checks                         # noqa: E402
 from modules import timing as timing_module               # noqa: E402
-from modules.config import default_config                 # noqa: E402
+from modules.config import (InterfaceSettings, default_config,  # noqa: E402
+                            read_interface_language)
 from modules.filesystem import (ProjectPaths, ProjectStore,  # noqa: E402
-                                ensure_directories)
+                                ensure_directories, resolve_data_root)
+from modules.translations import set_language, t          # noqa: E402
 
 #: A line counts as "moved by hand" from this many seconds of shift.
 MOVED_S = 0.3
@@ -63,8 +69,13 @@ MOVED_S = 0.3
 #: Which transcription a project was measured on (B348): "cache" is what
 #: the app really couples on (after forced alignment), "ruw" is the
 #: diagnostics copy from before that step - only used where the cache has
-#: been cleared, and then the number says less.
+#: been cleared, and then the number says less. The value is stored in
+#: the run JSON that ``--compare`` reads back, so it keeps its spelling;
+#: the console prints it through :data:`SOURCE_SHOWN`.
 SOURCE: dict[str, str] = {}
+
+#: How the console table prints a stored source value.
+SOURCE_SHOWN = {"cache": "cache", "ruw": "raw"}
 
 #: Steps in project.json that hold the user's OWN corrections. They are
 #: left out when rebuilding, otherwise the measurement is partly marking
@@ -197,6 +208,10 @@ def _stable_vocals(project_dir: Path, stem: Path) -> Path | None:
     # looked for "ffmpeg" in PATH only while the app also looks in its
     # own folder and at the setting.
     from modules import ffmpeg as ffmpeg_module
+    # The folder keeps its Dutch name on purpose: it is a cache that
+    # already exists on the owner's machine, and a new name would only
+    # mean converting every project again and leaving the old one
+    # behind in the temp folder.
     store = Path(tempfile.gettempdir()) / "karaoketool_meetlat"
     store.mkdir(parents=True, exist_ok=True)
     target = store / f"{project_dir.name}_vocals.wav"
@@ -204,7 +219,7 @@ def _stable_vocals(project_dir: Path, stem: Path) -> Path | None:
         try:
             ffmpeg_module.resample_to_match(stem, target, sample_rate=22050,
                                             channels=1)
-        except Exception:                # noqa: BLE001 - meting mag door
+        except Exception:                # noqa: BLE001 - measuring goes on
             return None
     _VOCALS_READY[project_dir.name] = target
     return target
@@ -234,7 +249,7 @@ def _vocals_into_cache(project_dir: Path, context) -> None:
             os.link(kept, target)
         except (OSError, AttributeError):
             shutil.copy2(kept, target)
-    except OSError:                      # noqa: BLE001 - meting mag door
+    except OSError:                      # noqa: BLE001 - measuring goes on
         pass
 
 
@@ -258,7 +273,7 @@ def measure(project_dir: Path) -> dict | None:
         _vocals_into_cache(project_dir, context)
         try:
             coupling = pipeline.build_coupling(context)
-        except Exception:                       # noqa: BLE001 - meting
+        except Exception:                       # noqa: BLE001 - measuring
             coupling = None
         if coupling is None or len(coupling["timed"]) != len(hand):
             return None
@@ -358,33 +373,19 @@ def compare(rows: list[dict], earlier: list[dict]) -> None:
     print(f"untouched lines that get worse: {int(damage)}")
 
 
-#: The text of the document itself stays Dutch: ``docs/metingen.md``
-#: is the owner's own measurement file, in the language he reads it
-#: in. What the tool says on the console is program text and is
-#: English like the rest of the tree.
-HEADER = """# Meetlat: koppeling en timing per versie
+#: The document follows the interface language: ``docs/metingen.md`` is
+#: the owner's own measurement file, and he chose to read it in the
+#: language he set for the app. What the tool says on the console is
+#: program text and is English like the rest of the tree. The section
+#: marker ``## v<version> — <date>`` is the same in every language,
+#: because :func:`note` finds an existing section by it.
+def header() -> str:
+    """The introduction at the top of a new ``docs/metingen.md``.
 
-De gebruiker corrigeert `timing.json` met de hand in de golfvorm-editor,
-terwijl `timing_auto.json` het automatische resultaat bewaart. Elke regel
-die hij heeft verschoven is een regel die de automaat fout had. Dit
-bestand houdt per versie bij hoe ver de automaat er nog naast zit.
-
-**Zinnen** is het aantal karaokeregels, **gekoppeld** hoeveel daarvan een
-echt gemeten tijd uit de transcriptie kregen (dat is de uitslag van de
-koppeling), **verzet** hoeveel regels de gebruiker daarna nog met de hand
-heeft verschoven, en **fout op verzette regels** hoe ver de code op
-precies die regels van zijn handmatige tijd afligt.
-
-Het gereedschap draait de echte pijplijn over de opgeslagen transcriptie
-en laat daarbij alle handmatige correcties weg (B338): de opgeslagen
-koppeling bevat de correcties van de gebruiker op de originele baan, en
-daartegen meten vleit het resultaat. Het aantal verzette regels ligt vast
-in het project en beweegt niet mee: dat is de lijst van plekken waar de
-tool het destijds fout had, en die blijft de toetssteen.
-
-Bijwerken: `python tools/timing_regression.py <output-map> --record`.
-
-"""
+    The finding number is filled in here because the translation table
+    holds no B-numbers.
+    """
+    return t("yard_header").format(finding="B338")
 
 
 def note(rows: list[dict], path: Path, version: str, stamp: str) -> None:
@@ -392,14 +393,13 @@ def note(rows: list[dict], path: Path, version: str, stamp: str) -> None:
     weight = sum(row["moved"] for row in rows) or 1
     average = sum(row["new_moved"] * row["moved"] for row in rows) / weight
     lines = [f"## v{version} — {stamp}", "",
-             "| project | zinnen | gekoppeld | verzet | fout op verzette"
-             " regels |", "| --- | ---: | ---: | ---: | ---: |"]
+             t("yard_table_head"), "| --- | ---: | ---: | ---: | ---: |"]
     for row in sorted(rows, key=lambda r: r["project"]):
         lines.append(
             f"| {row['project']} | {row['lines']} | {row['coupled']} "
             f"| {row['moved']} | {row['new_moved']:.2f} s |")
-    lines += ["", f"Gewogen over {int(weight)} verzette regels: "
-              f"**{average:.2f} s**.", ""]
+    lines += ["", t("yard_weighted").format(count=int(weight),
+                                             average=average), ""]
     block = "\n".join(lines)
 
     if path.exists():
@@ -414,12 +414,39 @@ def note(rows: list[dict], path: Path, version: str, stamp: str) -> None:
             text = (text[:spot + 1] + block + text[spot + 1:] if spot >= 0
                     else text.rstrip() + "\n\n" + block)
     else:
-        text = HEADER + block
+        text = header() + block
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
     print(f"written down in {path}")
 
 
-def main() -> int:
+def installation_language(output_dir: Path) -> str:
+    """The interface language the installation is set to.
+
+    Read straight from ``config/config.json`` instead of through
+    :func:`modules.config.load_config`: loading may write the file back
+    (the one-off repairs there), and a measurement has no business
+    changing the user's settings. First the installation whose
+    ``output/`` is being measured, then the data folder of this copy of
+    the app; Dutch, the app's default, when neither has a config.
+    """
+    app_root = Path(__file__).resolve().parents[1]
+    candidates = (output_dir.resolve().parent / "config" / "config.json",
+                  ProjectPaths(root=resolve_data_root(app_root)).config_file)
+    for path in candidates:
+        if not path.is_file():
+            continue
+        return (read_interface_language(path)
+                or InterfaceSettings.language)
+    return InterfaceSettings.language
+
+
+def main(standalone: bool = False) -> int:
+    """Run the yardstick.
+
+    ``standalone`` is set when the file is run as a script. Only then
+    does the tool pick the language itself: loaded by the app, the
+    interface language is already set and must stay as it is.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--json", type=Path, default=None)
@@ -429,6 +456,8 @@ def main() -> int:
                         help="add the result to docs/metingen.md")
     parser.add_argument("--date", default="")
     args = parser.parse_args()
+    if standalone:
+        set_language(installation_language(args.output_dir))
 
     rows = [row for row in
             (measure(p) for p in sorted(args.output_dir.iterdir())
@@ -457,10 +486,11 @@ def main() -> int:
               f"{'error moved':>12}{'error rest':>11}  source")
         print("-" * 82)
         for row in rows:
+            source = row.get("source", "?")
             print(f"{row['project']:<28}{row['lines']:>7}{row['coupled']:>7}"
                   f"{row['moved']:>7} | "
                   f"{row['new_moved']:>12.2f}{row['new_kept']:>11.2f}"
-                  f"  {row.get('source', '?')}")
+                  f"  {SOURCE_SHOWN.get(source, source)}")
         weight = sum(row["moved"] for row in rows) or 1
         new = sum(row["new_moved"] * row["moved"] for row in rows) / weight
         print("-" * 74)
@@ -471,4 +501,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(standalone=True))

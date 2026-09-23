@@ -65,7 +65,7 @@ def test_the_report_headings_carry_the_letter() -> None:
     # only no longer as the same f-string twice.
     assert source.count('f"## {trial.code} ') == 1
     assert source.count("lines += head") >= 2, \
-        "zowel de overgeslagen als de gedraaide kop"
+        "both the skipped and the run heading"
 
 
 def test_no_trial_still_writes_a_bare_number() -> None:

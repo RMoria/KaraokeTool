@@ -1,9 +1,9 @@
 """Analysis of the Whisper results.
 
 Creates, on the basis of the transcription: word frequencies
-(``frequentie.csv``), short words (``korte_woorden.csv``), a
-confidence report (``lage_confidence.csv``) and general statistics
-(``statistieken.json``). Works purely on the dataclasses from
+(``frequency.csv``), short words (``short_words.csv``), a
+confidence report (``low_confidence.csv``) and general statistics
+(``statistics.json``). Works purely on the dataclasses from
 ``whisper.py`` and is therefore testable on its own.
 """
 
@@ -31,7 +31,7 @@ class AnalysisStats:
     words: int
     unique_words: int
     short_words: int
-    lage_confidence: int
+    low_confidence: int
     average_confidence: float
     total_word_duration_s: float
 
@@ -58,7 +58,7 @@ def run_analysis(
 
     Returns:
         Summarising statistics (also stored as
-        ``statistieken.json``).
+        ``statistics.json``).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     words = [word for segment in segments for word in segment.words]
@@ -80,7 +80,7 @@ def run_analysis(
         words=len(words),
         unique_words=len(frequencies),
         short_words=len(short_words),
-        lage_confidence=len(low_confidence),
+        low_confidence=len(low_confidence),
         average_confidence=round(
             sum(word.confidence for word in words) / len(words), 4
         ) if words else 0.0,

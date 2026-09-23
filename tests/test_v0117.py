@@ -376,7 +376,38 @@ def test_the_pairs_come_from_the_report_of_1_5_10(tmp_path,
     pairs = test_panel._pairs_from_report()
     assert len(pairs) == 2
     groups = test_panel.clusters_from_pairs(pairs)
-    assert groups == [{"B329 ankertoets", "B313 energie"}]
+    # v1.0.11: a model by its code - the name after it is translated.
+    assert groups == [{"B329", "B313"}]
+
+
+@pytest.mark.parametrize("language", ["nl", "en"])
+def test_the_pairs_are_read_in_either_language(tmp_path, monkeypatch,
+                                               language) -> None:
+    """The report follows the interface language since v1.0.11, and so
+    do the model names in it. Whatever language wrote the file and
+    whatever language reads it, the same pairs come out, by code."""
+    from modules import translations
+
+    report = tmp_path / "modelmatrix.md"
+    heading = TRANSLATIONS[language]["rep_head_pairs"]
+    columns = TRANSLATIONS[language]["rep_matrix_pairs_cols"]
+    report.write_text(
+        f"## {heading}\n\n{columns}\n"
+        "| --- | --- | ---: | ---: | ---: |\n"
+        "| B329 anchor check | B313 energy placement | 5.66 s | 3.66 s |"
+        " +2.00 |\n"
+        "| B334 loop | B342 boundary words | 3.25 s | 3.25 s | +0.00 |\n"
+        "\n## " + TRANSLATIONS[language]["rep_head_order"] + "\n\n"
+        "| B1 x | B2 y | 1.00 s | 1.00 s | +9.00 |\n",
+        encoding="utf-8")
+    monkeypatch.setattr(test_panel, "MATRIX_REPORT", report)
+    for reader in ("nl", "en"):
+        translations.set_language(reader)
+        try:
+            pairs = test_panel._pairs_from_report()
+        finally:
+            translations.set_language("nl")
+        assert pairs == [("B329", "B313", 2.0), ("B334", "B342", 0.0)]
 
 
 # --------------------------------------------------------------------------

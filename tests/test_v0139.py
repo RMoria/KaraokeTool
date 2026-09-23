@@ -347,7 +347,7 @@ def test_the_letters_can_be_picked_one_by_one() -> None:
         assert not test_panel._wanted("1.5.11b")
     finally:
         test_panel.limit_heavy_to([])
-    assert test_panel._wanted("1.5.11b"), "leeg = alles, zoals voorheen"
+    assert test_panel._wanted("1.5.11b"), "empty = everything, as before"
 
 
 def test_the_answered_trials_are_switched_off_not_deleted() -> None:
@@ -370,7 +370,16 @@ def test_the_new_gain_trial_is_on_and_can_go_off_again() -> None:
     assert "1.5.11e" in codes and codes["1.5.11e"].off
     assert codes["1.5.11e"].reason == "gain_answered"
     assert "GAIN_LEVELS" in dir(test_panel)
-    assert [name for name, _target in test_panel.GAIN_LEVELS][0] == "zoals nu"
+    first, target = test_panel.GAIN_LEVELS[0]
+    assert target is None, "the first level is the untouched stem"
+    from modules import translations
+
+    for language, label in (("nl", "zoals nu"), ("en", "as it is")):
+        translations.set_language(language)
+        try:
+            assert test_panel._gain_label(first) == label
+        finally:
+            translations.set_language("nl")
 
 
 # --------------------------------------------------------------------------
@@ -596,4 +605,4 @@ def test_the_frame_rate_lift_happens_once(tmp_path) -> None:
     stored = json.loads(path.read_text(encoding="utf-8"))
     stored["video"]["fps"] = 25
     path.write_text(json.dumps(stored), encoding="utf-8")
-    assert load_config(path).video.fps == 25, "een bewuste 25 blijft staan"
+    assert load_config(path).video.fps == 25, "a deliberate 25 stays"

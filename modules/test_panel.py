@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (
 from . import measure_pool
 from . import model_orders
 from . import pipeline
-from .translations import t
+from .translations import TRANSLATIONS, t
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ def across_projects(context, songs, work, report, cancelled,
 
     queue = list(songs)
     lines: list[tuple[int, str]] = []
-    progress = {"gedaan": 0}
+    progress = {"count": 0}
     lock = threading.Lock()
     total = len(queue)
 
@@ -159,14 +159,14 @@ def across_projects(context, songs, work, report, cancelled,
                     return
                 position = total - len(queue)
                 song = queue.pop(0)
-            report(slot, song, progress["gedaan"], total)
+            report(slot, song, progress["count"], total)
             try:
                 outcome = work(song)
             except Exception:  # noqa: BLE001 - one project never stops the rest
                 logger.exception(t("log_test_project_failed"), song)
                 outcome = [t("test_project_failed").format(name=song)]
             with lock:
-                progress["gedaan"] += 1
+                progress["count"] += 1
                 # B362: an action may also return one composite answer
                 # (the yardstick yields a dict per project). Without this
                 # split the loop ran over the KEYS of that dict, and that
@@ -176,7 +176,7 @@ def across_projects(context, songs, work, report, cancelled,
                         lines.append((position, line))
                 elif outcome is not None:
                     lines.append((position, outcome))
-                done = progress["gedaan"]
+                done = progress["count"]
             report(slot, song, done, total)
 
     # B396: the number of slots is an argument. Two was right for pure
@@ -374,12 +374,14 @@ def benchmark_status(context, report: Reporter, cancelled) -> str:
             data = json.loads(auto.read_text(encoding="utf-8"))
             version = str(data.get("version") or "?")
             count = str(len(data.get("lines") or ()))
-        return [f"{song:30s} {'ja' if cache.exists() else 'NEE':>6s} "
-                f"{'ja' if paths.timing_file.exists() else '-':>7s} "
+        yes = t("rep_yes")
+        return [f"{song:30s} {yes if cache.exists() else t('rep_no'):>6s} "
+                f"{yes if paths.timing_file.exists() else '-':>7s} "
                 f"{count:>7s}  {version}"]
 
-    header = (f"{'project':30s} {'cache':>6s} {'timing':>7s} {'regels':>8s}"
-           f"  auto-versie")
+    header = (f"{t('rep_col_project'):30s} {t('rep_col_cache'):>6s}"
+              f" {t('rep_col_timing'):>7s} {t('rep_col_lines'):>8s}"
+              f"  {t('rep_col_auto_version')}")
     return "\n".join([header] + across_projects(context, _projects(context),
                                             per_project, report, cancelled))
 
@@ -442,8 +444,9 @@ def _filter_rows(context, report: Reporter, cancelled) -> list[str]:
                  in pipeline._drop_phantom_words(after_boundary))
         return [f"{song:30s} {n0:8d} {n0 - n1:5d} {n1 - n2:6d} {n2 - n3:6d}"]
 
-    header = (f"{'project':30s} {'woorden':>8s} {'lus':>5s} {'grens':>6s}"
-           f" {'spook':>6s}")
+    header = (f"{t('rep_col_project'):30s} {t('rep_col_words'):>8s}"
+              f" {t('rep_col_loop'):>5s} {t('rep_col_boundary'):>6s}"
+              f" {t('rep_col_phantom'):>6s}")
     return [header] + across_projects(context, _projects(context), per_project,
                                   report, cancelled)
 
@@ -466,8 +469,9 @@ def _structure_rows(context, report: Reporter, cancelled) -> list[str]:
                 f"{('-' if period is None else f'{period:.2f}'):>8s} "
                 f"{len(anchors):7d} {len(lines_):7d} {gaps:6d}"]
 
-    header = (f"{'project':30s} {'periode':>8s} {'ankers':>7s} {'zinnen':>7s}"
-           f" {'gaten':>6s}")
+    header = (f"{t('rep_col_project'):30s} {t('rep_col_period'):>8s}"
+              f" {t('rep_col_anchors'):>7s} {t('rep_col_sentences'):>7s}"
+              f" {t('rep_col_gaps'):>6s}")
     return [header] + across_projects(context, _projects(context), per_project,
                                   report, cancelled)
 
@@ -502,9 +506,10 @@ def missing_repetitions(context, report: Reporter, cancelled) -> str:
         other = pipeline.context_for_project(context, song)
         lines = []
         for item in pipeline.missing_repetitions(other):
-            kind = "herhaling" if item["repetition"] else "onbekend "
-            lines.append(f"{song:26s} {item['start']:8.1f} s  {kind}"
-                          f"  regel {item['line'] + 1:3d}"
+            kind = t("rep_kind_repetition" if item["repetition"]
+                     else "rep_kind_unknown")
+            lines.append(f"{song:26s} {item['start']:8.1f} s  {kind:9s}"
+                          f"  {t('rep_line')} {item['line'] + 1:3d}"
                           f"  {item['text'][:28]}")
         return lines
 
@@ -528,7 +533,7 @@ def _regression_module():
         import importlib.util
         path = (Path(__file__).resolve().parents[1] / "tools"
                / "timing_regression.py")
-        spec = importlib.util.spec_from_file_location("regressie", path)
+        spec = importlib.util.spec_from_file_location("timing_regression", path)
         _REGRESSION = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_REGRESSION)
     return _REGRESSION
@@ -615,8 +620,9 @@ def yardstick(context, report: Reporter, cancelled) -> str:
     rows = _yardstick_rows(context, report, cancelled, code="1.5.5")
     if not rows:
         return t("test_no_projects")
-    lines = [f"{'project':30s} {'zinnen':>7s}{'gekop.':>7s}{'verzet':>7s} |"
-              f" {'fout verzet':>12s}{'fout rest':>11s}"]
+    lines = [f"{t('rep_col_project'):30s} {t('rep_col_sentences'):>7s}"
+             f"{t('rep_col_coupled_short'):>7s}{t('rep_col_moved'):>7s} |"
+             f" {t('rep_col_error_moved'):>12s}{t('rep_col_error_rest'):>11s}"]
     for row in rows:
         lines.append(f"{row['project']:30s} {row['lines']:7d}"
                       f"{row['coupled']:7d}{row['moved']:7d} | "
@@ -686,9 +692,11 @@ def syllable_checks(context, report: Reporter, cancelled) -> str:
     if not rows:
         return t("test_no_projects")
     lines = [t("test_syllable_intro"), "",
-              f"{'project':30s} {'regels':>6s}{'woorden':>8s}{'lettergr.':>10s}"
-              f" | {'vorm':>5s}{'stilte':>7s}{'tussen':>7s}{'duur':>6s}"
-              f"{'inzet':>7s}{'herhaal':>8s}"]
+              f"{t('rep_col_project'):30s} {t('rep_col_lines'):>6s}"
+              f"{t('rep_col_words'):>8s}{t('rep_col_syllables_short'):>10s}"
+              f" | {t('rep_col_shape'):>5s}{t('rep_col_silence'):>7s}"
+              f"{t('rep_col_between'):>7s}{t('rep_col_duration'):>6s}"
+              f"{t('rep_col_onset'):>7s}{t('rep_col_repeat'):>8s}"]
     total = dict(shape=0, silence=0, between=0, duration=0)
     for row in rows:
         shape = (row["out_of_order"] + row["overlapping"] + row["gaps_in_word"]
@@ -734,7 +742,8 @@ def unique_against_repeated(context, report: Reporter, cancelled) -> str:
     from collections import Counter
 
     unique, repeated = [], []
-    lines = [f"{'project':30s} {'uniek':>15s} {'herhaald':>15s}"]
+    lines = [f"{t('rep_col_project'):30s} {t('rep_col_unique'):>15s}"
+             f" {t('rep_col_repeated'):>15s}"]
     for row in _yardstick_rows(context, report, cancelled):
         paths = pipeline.filesystem.ProjectPaths(
             root=context.paths.root, song=row["project"],
@@ -807,8 +816,9 @@ def omission_trial(context, report: Reporter, cancelled) -> str:
 
     report(0, t("test_leave_out"), 0, 0)
     base = weighted()
-    lines = [f"{'variant':34s} {'fout':>7s} {'verschil':>9s}",
-              f"{'uitgangspunt':34s} {base:7.2f}"]
+    lines = [f"{t('rep_col_variant'):34s} {t('rep_col_error'):>7s}"
+             f" {t('rep_col_difference'):>9s}",
+             f"{t('rep_baseline'):34s} {base:7.2f}"]
     for _level, model, _targets, on in _variants_from_register():
         if cancelled():
             break
@@ -942,7 +952,7 @@ def big_trial(context, report: Reporter, cancelled) -> str:
     from . import __version__
 
     lines: list[str] = [
-        "# Modelmatrix", "",
+        "# " + t("rep_matrix_title"), "",
         t("test_matrix_intro"), "",
         t("test_matrix_state").format(state=_state_line()), "",
         # B440: which version made this. Ten versions of nought-reports
@@ -975,15 +985,15 @@ def big_trial(context, report: Reporter, cancelled) -> str:
                               for r in rows}
 
     base, base_damage, per_project = weighted()
-    lines += ["## Uitgangspunt", "",
-               f"- gewogen fout: **{base:.2f} s**",
-               f"- schade op ongemoeide regels: {base_damage:.2f} s", ""]
-    lines += ["| project | fout |", "| --- | ---: |"]
+    lines += ["## " + t("rep_head_baseline"), "",
+               "- " + t("rep_matrix_weighted").format(error=base),
+               "- " + t("rep_matrix_damage").format(damage=base_damage), ""]
+    lines += [t("rep_matrix_project_cols"), "| --- | ---: |"]
     lines += [f"| {name} | {value:.2f} s |"
                for name, value in sorted(per_project.items())]
-    lines += ["", "## Elk model apart anders", "",
+    lines += ["", "## " + t("rep_head_singles"), "",
                t("test_matrix_symmetry"), "",
-               "| niveau | model | stand | fout | verschil | schade |",
+               t("rep_matrix_singles_cols"),
                "| --- | --- | --- | ---: | ---: | ---: |"]
     write_report()
 
@@ -1004,14 +1014,15 @@ def big_trial(context, report: Reporter, cancelled) -> str:
         steps.tick()
         error, damage, per = weighted([model.code])
         singles.append((level, model, targets, on, error, per))
-        lines.append(f"| {level} | {model.label} | "
+        level_word = t(f"model_level_{level}")
+        lines.append(f"| {level_word} | {model.label} | "
                       f"{t('test_on') if on else t('test_off')} | "
                       f"{error:.2f} s | {error - base:+.2f} | {damage:.2f} s |")
         write_report()
 
-    lines += ["", "## Waar komt elk model tot zijn recht", "",
+    lines += ["", "## " + t("rep_head_where"), "",
                t("test_matrix_where"), "",
-               "| model | grootste winst | grootste verlies |",
+               t("rep_matrix_where_cols"),
                "| --- | --- | --- |"]
     for _level, model, _targets, _on, _error, per in singles:
         differences = {p: per.get(p, 0.0) - per_project.get(p, 0.0)
@@ -1032,10 +1043,10 @@ def big_trial(context, report: Reporter, cancelled) -> str:
     # own can still be a safety net. With the yardstick at ~8 s per run,
     # measuring everything costs half an hour, and that is worth it.
     separate = {m.code: error for _n, m, _d, _a, error, _p in singles}
-    lines += ["", "## Twee tegelijk anders", "", t("test_matrix_pairs"), ""]
+    lines += ["", "## " + t("rep_head_pairs"), "", t("test_matrix_pairs"), ""]
     count = len(singles) * (len(singles) - 1) // 2
     lines += [t("test_matrix_pairs_all").format(count=count), "",
-               "| model A | model B | samen | los opgeteld | verschil |",
+               t("rep_matrix_pairs_cols"),
                "| --- | --- | ---: | ---: | ---: |"]
     write_report()
     for (_na, ma, da, _aa, _fa, _pa), (_nb, mb, db, _ab, _fb, _pb) in \
@@ -1050,8 +1061,8 @@ def big_trial(context, report: Reporter, cancelled) -> str:
                       f"{added_up:.2f} s | {error - added_up:+.2f} |")
         write_report()
 
-    lines += ["", "## Volgorde", "", t("test_matrix_order"), "",
-               "| volgorde | fout | verschil |", "| --- | ---: | ---: |"]
+    lines += ["", "## " + t("rep_head_order"), "", t("test_matrix_order"), "",
+               t("rep_matrix_order_cols"), "| --- | ---: | ---: |"]
     write_report()
     for name in model_orders.names():
         if cancelled():
@@ -1062,22 +1073,22 @@ def big_trial(context, report: Reporter, cancelled) -> str:
         # for something that was never tried.
         off = model_orders.measurable(name)
         if off:
-            lines.append(f"| {name} | {t('test_order_skipped')} "
+            lines.append(f"| {model_orders.label(name)} | "
+                          f"{t('test_order_skipped')} "
                           f"({', '.join(off)}) | |")
             write_report()
             continue
         error, _damage, _per = weighted(order=name)
-        lines.append(f"| {name} | {error:.2f} s | {error - base:+.2f} |")
+        lines.append(f"| {model_orders.label(name)} | {error:.2f} s | "
+                      f"{error - base:+.2f} |")
         write_report()
 
     # B364: these two sections ran a plain loop over the projects and
     # therefore used only one work slot. Now through the same spreader as
     # the rest.
-    lines += ["", "## Woordkoppeling (dekking)", "",
+    lines += ["", "## " + t("rep_head_coupling"), "",
                t("test_matrix_coupling"), "",
-               "| variant | project | woorden | gekoppeld | meervoudig |"
-               " zwak | zwak% | laagste | energie | gat | gefilterd |"
-               " vulwoord | geen match |",
+               t("rep_matrix_coupling_cols"),
                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
                " ---: | ---: | ---: | ---: | ---: |"]
     write_report()
@@ -1116,10 +1127,8 @@ def big_trial(context, report: Reporter, cancelled) -> str:
                 f" {k['filler']} | {k['no_match']} |")
         write_report()
 
-    lines += ["", "## Woord en lettergreep", "", t("test_matrix_words"), "",
-               "| variant | project | regels | woorden | lettergrepen |"
-               " vorm | zonder duur | in stilte |"
-               " afstand tot inzet | herhaalverschil |",
+    lines += ["", "## " + t("rep_head_words"), "", t("test_matrix_words"), "",
+               t("rep_matrix_words_cols"),
                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
                " ---: | ---: |"]
     write_report()
@@ -1186,6 +1195,32 @@ _PURITY_SLACK = 5.0
 #: makes a new edge at every cut, and whether that costs more than it
 #: yields can only show on a song that has little to win.
 CHUNK_SONGS = 4
+
+#: The ways 1.5.11d listens, by id, in the order they are reported. The
+#: label a report shows is the text ``rep_chunk_run_<id>``.
+_CHUNK_PLAN = ("current", "offset_10", "offset_20", "chunked",
+               "chunked_global", "chunked_vad")
+
+#: The order in which the runs are merged and written down. It is the
+#: alphabetical order of the Dutch names these runs carried before
+#: v1.0.11, kept as it was: the merge fills from the runs one after the
+#: other, so a different order is a different merge.
+_CHUNK_MERGE_ORDER = ("current", "chunked", "chunked_global",
+                      "chunked_vad", "offset_10", "offset_20")
+
+
+def _chunk_label(name: str) -> str:
+    """What a report calls this way of listening."""
+    key = f"rep_chunk_run_{name}"
+    text = t(key)
+    return name if text == key else text
+
+
+def _chunk_order(names) -> list[str]:
+    """The runs in merge order; an unknown id goes last, by name."""
+    return sorted(names, key=lambda name: (
+        _CHUNK_MERGE_ORDER.index(name) if name in _CHUNK_MERGE_ORDER
+        else len(_CHUNK_MERGE_ORDER), name))
 
 #: From this difference between "together" and "added up separately"
 #: onward a pair is called an INTERACTION and both models go into the
@@ -1359,7 +1394,7 @@ def alarm_rows() -> list[str]:
     if not _SANITY_ALARMS:
         return []
     lines = [t("sanity_found").format(count=len(_SANITY_ALARMS)), "",
-             "| project | anders gezet | wat er mis is |",
+             t("rep_alarm_cols"),
              "| --- | --- | --- |"]
     seen = set()
     for alarm in _SANITY_ALARMS:
@@ -1367,9 +1402,11 @@ def alarm_rows() -> list[str]:
         if key in seen:
             continue
         seen.add(key)
-        wat = ", ".join(f"{name} {value}"
-                        for name, value in sorted(alarm["counts"].items()))
-        lines.append(f"| {alarm['project']} | {alarm['models']} | {wat} |")
+        problems = ", ".join(
+            f"{name} {value}"
+            for name, value in sorted(alarm["counts"].items()))
+        lines.append(f"| {alarm['project']} | {alarm['models']} |"
+                     f" {problems} |")
     return lines
 
 
@@ -1416,7 +1453,16 @@ def _pairs_from_report() -> list[tuple[str, str, float]]:
     if not MATRIX_REPORT.exists():
         return []
     text = MATRIX_REPORT.read_text(encoding="utf-8")
-    head_at = text.find("## Twee tegelijk anders")
+    # The heading follows the interface language of the run that wrote
+    # the report, so every language's version is looked for - Dutch
+    # first, which is also what every report before v1.0.11 carries.
+    head_at = -1
+    for language in ("nl", *sorted(set(TRANSLATIONS) - {"nl"})):
+        heading = TRANSLATIONS[language].get("rep_head_pairs")
+        if heading:
+            head_at = text.find("## " + heading)
+            if head_at >= 0:
+                break
     if head_at < 0:
         return []
     end_at = text.find("\n## ", head_at + 4)
@@ -1430,8 +1476,18 @@ def _pairs_from_report() -> list[tuple[str, str, float]]:
             difference = float(re.search(r"-?\d+\.\d+", fields[4]).group())
         except (AttributeError, ValueError):
             continue
-        result.append((fields[0], fields[1], difference))
+        # A model by its CODE, the first word of its label: the name
+        # after it follows the interface language, the code does not.
+        first, second = _model_code(fields[0]), _model_code(fields[1])
+        if first and second:
+            result.append((first, second, difference))
     return result
+
+
+def _model_code(label: str) -> str:
+    """The code a model label starts with ("B250/B251 blokgrens")."""
+    words = str(label).split()
+    return words[0] if words else ""
 
 
 def flat_report(pairs) -> bool:
@@ -1533,18 +1589,20 @@ def cluster_trial(context, report, cancelled) -> list[str]:
 
     from . import model_register
 
-    # B410: the CODE per label, no longer the setattr triples - the
-    # measurement runs in a child interpreter and a code travels, a
-    # function object does not.
-    models = {m.label: m.code for _n, m, _targets, _a
-                in _variants_from_register()}
+    # B410: the CODE, no longer the setattr triples - the measurement
+    # runs in a child interpreter and a code travels, a function object
+    # does not. The pairs come back as codes too (v1.0.11): the name in a
+    # label follows the interface language, the code never does. The
+    # label is kept for what the report shows.
+    labels = {m.code: m.label for _n, m, _targets, _a
+              in _variants_from_register()}
     pairs = _pairs_from_report()
     if not pairs:
         raise TrialSkipped([t("heavy_needs_matrix")])
     if flat_report(pairs):                       # B440
         raise TrialSkipped([t("heavy_flat_matrix")])
     groups = [g for g in clusters_from_pairs(pairs)
-               if all(name in models for name in g)]
+               if all(code in labels for code in g)]
     if not groups:
         raise TrialSkipped([t("heavy_no_clusters")])
 
@@ -1558,29 +1616,33 @@ def cluster_trial(context, report, cancelled) -> list[str]:
         raise TrialSkipped([t("heavy_no_measurable")])
     base = _measure(context, report, cancelled, [])
     lines = [t("heavy_cluster_intro"), "",
-              f"- gemeten op {len(measurable)} project(en) met handmatige timing",
-              f"- uitgangspunt: **{base:.2f} s**",
+              "- " + t("rep_cluster_measured_on").format(
+                  count=len(measurable)),
+              "- " + t("rep_cluster_baseline").format(error=base),
               f"- {model_register.state_line()}"]
     lines += _skipped_projects_note(context) + [""]     # B462
     for number, group in enumerate(groups, start=1):
-        members = sorted(group)
+        # In the order of their labels, as before the pairs were codes.
+        members = sorted(group, key=lambda code: labels[code])
         if len(members) > _MAX_CLUSTER:
             lines.append(t("heavy_cluster_too_big").format(
                 count=len(members), max=_MAX_CLUSTER,
-                names=", ".join(members)))
+                names=", ".join(labels[code] for code in members)))
             continue
-        lines += ["", f"### Cluster {number}: {len(members)} modellen", "",
-                   "| combinatie (anders gezet) | fout | verschil |",
+        lines += ["", "### " + t("rep_cluster_head").format(
+                      number=number, count=len(members)), "",
+                   t("rep_cluster_cols"),
                    "| --- | ---: | ---: |"]
         for count in range(len(members) + 1):
             for choice in itertools.combinations(members, count):
                 if cancelled():
                     return lines
                 report(0, f"{running_code()} {number}/{len(groups)}: "
-                          f"{len(choice)} van {len(members)}", 0, 0)
-                error = _measure(context, report, cancelled,
-                                 [models[name] for name in choice])
-                name = " + ".join(k.split()[0] for k in choice) or t("test_all_on")
+                          + t("rep_n_of_m").format(done=len(choice),
+                                                   total=len(members)),
+                       0, 0)
+                error = _measure(context, report, cancelled, list(choice))
+                name = " + ".join(choice) or t("test_all_on")
                 lines.append(f"| {name} | {error:.2f} s | "
                               f"{error - base:+.2f} |")
     return lines
@@ -1596,7 +1658,8 @@ def _climb(context, report, cancelled, models, songs, base) -> tuple:
         for name in models:
             if name in chosen or cancelled():
                 continue
-            report(0, f"{running_code()} klim {len(chosen) + 1}: {name}", 0, 0)
+            report(0, f"{running_code()} " + t("rep_climb").format(
+                step=len(chosen) + 1, name=name), 0, 0)
             combined = [models[k] for k in chosen + [name]]
             error = _measure(context, report, cancelled, combined, songs)
             measurements += 1
@@ -1651,10 +1714,10 @@ def search_trial(context, report, cancelled) -> list[str]:
               t("heavy_search_split").format(
                   search=len(search), held=len(held),
                   names=", ".join(held)), "",
-              f"- uitgangspunt zoekset: **{base_search:.2f} s**",
-              f"- uitgangspunt achtergehouden: **{base_held:.2f} s**", "",
-              "| start | gevonden combinatie | zoekset | achtergehouden |"
-              " metingen |", "| --- | --- | ---: | ---: | ---: |"]
+              "- " + t("rep_search_baseline_search").format(
+                  error=base_search),
+              "- " + t("rep_search_baseline_held").format(error=base_held),
+              "", t("rep_search_cols"), "| --- | --- | ---: | ---: | ---: |"]
     names = list(models)
     chooser = random.Random(20240812)      # fixed sequence: repeatable
     best_overall = None
@@ -1675,8 +1738,10 @@ def search_trial(context, report, cancelled) -> list[str]:
         on_held = _measure(context, report, cancelled,
                            [models[k] for k in combination], held)
         label = " + ".join(k.split()[0] for k in combination) or t("test_all_on")
+        start = (t("rep_search_start_current") if attempt == 0
+                 else t("rep_search_start_random").format(number=attempt))
         lines.append(
-            f"| {'huidige stand' if attempt == 0 else f'willekeurig {attempt}'} |"
+            f"| {start} |"
             f" {label} | {error:.2f} s ({error - base_search:+.2f}) |"
             f" {on_held:.2f} s ({on_held - base_held:+.2f}) |"
             f" {measurements} |")
@@ -1885,10 +1950,8 @@ def _chunk_one_song(context, song, report, cancelled,
         # on purpose. Counting that as "not heard" would blame Whisper
         # for a hole that the lyrics themselves have.
         lines += [t("heavy_chunk_tail").format(seconds=round(tail, 1)), ""]
-    lines += [
-        "| variant | segmenten | woorden | in tekst | niet gehoord |"
-        " gevuld | rekentijd |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    lines += [t("rep_chunk_cols"),
+              "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
 
     def words_of(segments):
         return [w for s in segments for w in s.get("words", ())]
@@ -1897,16 +1960,15 @@ def _chunk_one_song(context, song, report, cancelled,
     timings: dict[str, float] = {}
     bookkeeping = threading.Lock()
     # B424/B425: two variants that each answer one question the earlier
-    # rounds left open. "globale prompt" cuts exactly as the normal
+    # rounds left open. "chunked_global" cuts exactly as the normal
     # chunked run but hands every piece the SAME deduplicated word list,
-    # so the difference with "knippen" is the prompt per piece and
+    # so the difference with "chunked" is the prompt per piece and
     # nothing else - and that decides whether the cutting has to wait for
-    # a first transcription at all. "knippen + vad" is the combination
+    # a first transcription at all. "chunked_vad" is the combination
     # nobody has measured: 1.5.11c measured VAD on the whole song,
     # 1.5.11d cutting without VAD, and the two are not alternatives -
     # VAD removes silence, cutting cuts IN silence.
-    plan = ["huidig", "offset 10 s", "offset 20 s", "knippen",
-            "knippen (globale prompt)", "knippen + vad"]
+    plan = list(_CHUNK_PLAN)
     from dataclasses import replace as _replace
     met_vad = _replace(base, **probe.VARIANTS["vad"])
 
@@ -1919,30 +1981,31 @@ def _chunk_one_song(context, song, report, cancelled,
         """
         started = _time.monotonic()
         try:
-            if name.startswith("knippen"):
-                settings = met_vad if name.endswith("vad") else base
+            if name.startswith("chunked"):
+                settings = met_vad if name == "chunked_vad" else base
                 per_piece = (
                     (lambda piece: prompt)
-                    if "globale" in name
+                    if name == "chunked_global"
                     else (lambda piece: wc.chunk_prompt(placed, piece)
                           or prompt))
                 found = probe.run_chunked(stem, settings, language, pieces,
                                           per_piece)
             else:
-                offset = {"huidig": 0.0, "offset 10 s": 10.0,
-                          "offset 20 s": 20.0}[name]
+                offset = {"current": 0.0, "offset_10": 10.0,
+                          "offset_20": 20.0}[name]
                 found = probe.run_once(stem, base, prompt, language,
                                        start=offset)
         except BaseException as exc:  # noqa: BLE001 - a variant may fail
-            logger.exception(t("log_test_project_failed"), name)
-            return [f"| {name} | - | - | - | - | - | {exc} |"]
+            logger.exception(t("log_test_project_failed"), _chunk_label(name))
+            return [f"| {_chunk_label(name)} | - | - | - | - | - | {exc} |"]
         spent = _time.monotonic() - started
         with bookkeeping:
             runs[name] = found
             timings[name] = spent
         words = words_of(found)
-        label = (f"{name} ({len(pieces)} stukken)"
-                 if name.startswith("knippen") else name)
+        label = (t("rep_chunk_pieces").format(name=_chunk_label(name),
+                                              count=len(pieces))
+                 if name.startswith("chunked") else _chunk_label(name))
         return [f"| {label} | {len(found)} | {len(words)} |"
                 f" {in_the_text(words, lyric_keys):.0f}% |"
                 f" {wc.unheard_seconds(words, windows):.1f} s | - |"
@@ -1950,16 +2013,17 @@ def _chunk_one_song(context, song, report, cancelled,
 
     lines += across_projects(
         context, plan, one_run,
-        lambda slot, name, done=0, total=0: report(slot, name, done, total),
+        lambda slot, name, done=0, total=0: report(
+            slot, _chunk_label(name), done, total),
         cancelled, slots=measure_pool.whisper_workers(len(plan)))
 
-    # B410: merge onto the BEST run, not onto "huidig".
+    # B410: merge onto the BEST run, not onto "current".
     #
     # The merge may only fill holes, and that rule is right. Which run it
     # fills holes IN was not: it was always the current one, the run with
     # the most unheard singing there is. On the measured song that cost
     # seven seconds of coverage - cutting on its own reached 29.3 s
-    # unheard and the merge onto "huidig" came out at 36.5 s, worse than
+    # unheard and the merge onto "current" came out at 36.5 s, worse than
     # its own best ingredient. Starting from the best run and filling the
     # rest into it can only be better: every hole that another run can
     # fill is still filled, and the ones the best run already had right
@@ -1976,19 +2040,20 @@ def _chunk_one_song(context, song, report, cancelled,
         # looping run the base position, and then its invented words are
         # exactly the ones that are kept.
         clean = [name for name in runs
-                 if purity(name) >= purity("huidig") - _PURITY_SLACK] \
+                 if purity(name) >= purity("current") - _PURITY_SLACK] \
             or list(runs)
         best = min(clean, key=unheard)
         merged = words_of(runs[best])
         filled_total = 0
-        for name in sorted(runs):
+        for name in _chunk_order(runs):
             if name == best:
                 continue
             merged, filled = wc.merge_runs(merged, words_of(runs[name]),
                                            windows, lyric_keys)
             filled_total += filled
         lines.append(
-            f"| **samengevoegd (basis: {best})** | - | {len(merged)} |"
+            f"| **{t('rep_chunk_merged_base').format(name=_chunk_label(best))}**"
+            f" | - | {len(merged)} |"
             f" {in_the_text(merged, lyric_keys):.0f}% |"
             f" {wc.unheard_seconds(merged, windows):.1f} s |"
             f" {filled_total} | - |")
@@ -2033,13 +2098,15 @@ def _write_chunk_words(per_song) -> None:
     for song in sorted(per_song):
         runs, merged = per_song[song]
         out += [f"# {song}", ""]
-        for name in sorted(runs):
+        for name in _chunk_order(runs):
             words = [w for seg in runs[name] for w in seg.get("words", ())]
-            out += [f"## {name} ({len(words)} woorden)", ""]
+            out += ["## " + t("rep_words_count").format(
+                name=_chunk_label(name), count=len(words)), ""]
             out += [f"{float(w['start']):8.2f}  {str(w['text']).strip()}"
                     for w in words]
             out.append("")
-        out += [f"## samengevoegd ({len(merged)} woorden)", ""]
+        out += ["## " + t("rep_words_count").format(
+            name=t("rep_chunk_merged"), count=len(merged)), ""]
         out += [f"{float(w['start']):8.2f}  {str(w['text']).strip()}"
                 for w in merged]
         out.append("")
@@ -2103,14 +2170,19 @@ def _lyric_keys(context):
     return pipeline.lyric_keys(context)
 
 
-#: The levels 1.5.11e listens at (B457). "zoals nu" is the untouched
-#: stem; the others are normalised on it with the same EBU R128 measure
-#: the video uses, so a win here is a setting and not a coincidence.
+#: The levels 1.5.11e listens at (B457). "as_is" is the untouched stem;
+#: the others are normalised on it with the same EBU R128 measure the
+#: video uses, so a win here is a setting and not a coincidence.
 GAIN_LEVELS: tuple[tuple[str, float | None], ...] = (
-    ("zoals nu", None),
+    ("as_is", None),
     ("-16 LUFS", -16.0),
     ("-11 LUFS", -11.0),
 )
+
+
+def _gain_label(name: str) -> str:
+    """What a report calls a level of :data:`GAIN_LEVELS`."""
+    return t("rep_gain_as_is") if name == "as_is" else name
 
 
 def gain_trial(context, report, cancelled) -> list[str]:
@@ -2230,7 +2302,7 @@ def _gain_trial(context, report, cancelled, scratch: Path) -> list[str]:
                     "words": words, "job": job,
                     "seconds": _time.monotonic() - started}
             steps.tick()
-            steps.name(f"1.5.11e  {job['song']}  {job['level']}")
+            steps.name(f"1.5.11e  {job['song']}  {_gain_label(job['level'])}")
 
     lanes = max(1, measure_pool.whisper_lanes())
     threads = [threading.Thread(target=worker, daemon=True)
@@ -2252,16 +2324,15 @@ def _gain_trial(context, report, cancelled, scratch: Path) -> list[str]:
         if measured is not None:
             lines += [t("heavy_gain_level").format(
                 lufs=measured.integrated, peak=measured.true_peak), ""]
-        lines += ["| niveau | woorden | in tekst | niet gehoord |"
-                  " rekentijd |",
+        lines += [t("rep_gain_cols"),
                   "| --- | ---: | ---: | ---: | ---: |"]
         for name, row in rows:
             if row is None or not row["words"]:
-                lines.append(f"| {name} | - | - | - | - |")
+                lines.append(f"| {_gain_label(name)} | - | - | - | - |")
                 continue
             words = row["words"]
             lines.append(
-                f"| {name} | {len(words)} | "
+                f"| {_gain_label(name)} | {len(words)} | "
                 f"{in_the_text(words, row['job']['keys']):.0f}% | "
                 f"{wc.unheard_seconds(words, row['job']['windows']):.1f} s | "
                 f"{row['seconds']:.0f} s |")
@@ -2854,7 +2925,8 @@ def rebuild_videos(context, report: Reporter, cancelled) -> str:
     scrap = _old_videos_folder(context, "")
     lines = [t("rebuild_intro").format(count=len(songs),
                                        background=STANDARD_BACKGROUND), "",
-             f"{'project':32s} {'uitkomst':>10s}  {'oud':>4s}  bijzonderheden"]
+             f"{t('rep_col_project'):32s} {t('rep_col_outcome'):>10s}"
+             f"  {t('rep_col_old'):>4s}  {t('rep_col_remarks')}"]
     made = replaced = 0
     steps = Steps(report, "1.5.12", len(songs))
     for song in songs:
@@ -2864,7 +2936,8 @@ def rebuild_videos(context, report: Reporter, cancelled) -> str:
         steps.name(f"1.5.12  {song}")
         other = pipeline.context_for_project(context, song)
         if not other.paths.timing_file.exists():
-            lines.append(f"{song:32s} {'overgeslagen':>10s}  {'-':>4s}"
+            lines.append(f"{song:32s} {t('rep_outcome_skipped'):>10s}"
+                         f"  {'-':>4s}"
                          f"  {t('rebuild_no_timing')}")
             continue
         note = ""
@@ -2883,7 +2956,8 @@ def rebuild_videos(context, report: Reporter, cancelled) -> str:
         except Exception as exc:        # noqa: BLE001 - one project, not the rest
             logger.exception(t("log_test_project_failed"), song)
             trouble = f"{note}; {exc}" if note else str(exc)
-            lines.append(f"{song:32s} {'MISLUKT':>10s} {len(old):5d}"
+            lines.append(f"{song:32s} {t('rep_outcome_failed'):>10s}"
+                         f" {len(old):5d}"
                          f"  {trouble[:70]}")
             continue
         made += 1
@@ -2914,7 +2988,8 @@ def rebuild_videos(context, report: Reporter, cancelled) -> str:
                 other.store.set_step("video", step)
             except OSError as exc:
                 note = (note + "; " if note else "") + str(exc)[:50]
-        lines.append(f"{song:32s} {'nieuw':>10s} {moved:5d}  {note}")
+        lines.append(f"{song:32s} {t('rep_outcome_new'):>10s} {moved:5d}"
+                     f"  {note}")
     lines += ["", t("rebuild_total").format(
         made=made, replaced=replaced, folder=scrap / "<project>")]
     return "\n".join(lines)
@@ -3014,10 +3089,14 @@ def _uncoupled_words(context, cancelled) -> list[str]:
             if "->" not in line:
                 continue
             total += 1
-            word = line.split("->")[0].strip()
-            if "(niet gekoppeld)" in line:
-                never[word.lower()] += 1
-            elif re.search(r"sim 0\.00", line):
+            word, _arrow, rest = line.partition("->")
+            word = word.strip()
+            # A coupled word ends in "sim 0.93"; an uncoupled one carries
+            # a note in the language of the run that wrote the file
+            # instead, so it is known by the missing similarity and not
+            # by the words of that note.
+            similarity = re.findall(r"\bsim (\d+\.\d+)", rest)
+            if not similarity or float(similarity[-1]) == 0.0:
                 never[word.lower()] += 1
             else:
                 coupled += 1
@@ -3027,7 +3106,7 @@ def _uncoupled_words(context, cancelled) -> list[str]:
     out.append(t("inventory_uncoupled_head").format(
         total=total, never=total - coupled,
         percent=100.0 * (total - coupled) / max(1, total)))
-    out += ["", "| woord | keer | lengte |", "| --- | ---: | ---: |"]
+    out += ["", t("rep_uncoupled_cols"), "| --- | ---: | ---: |"]
     for word, count in never.most_common(25):
         out.append(f"| {word} | {count} | {len(word)} |")
     return out + [""]
@@ -3065,7 +3144,7 @@ def _held_syllables(context, cancelled) -> list[str]:
     out.append(t("inventory_held_head").format(
         count=len(found), total=total,
         percent=100.0 * len(found) / max(1, total)))
-    out += ["", "| duur | project | regel | lettergreep |",
+    out += ["", t("rep_held_cols"),
             "| ---: | --- | ---: | --- |"]
     for span, song, index, text in found[:20]:
         out.append(f"| {span:.2f} s | {song} | {index} | {text} |")
@@ -3108,7 +3187,7 @@ def _block_drift(context, cancelled) -> list[str]:
     if not rows:
         return out + [t("inventory_no_material"), ""]
     out.append(t("inventory_blocks_head").format(count=len(rows)))
-    out += ["", "| spreiding | project | keer | mediaan | blok |",
+    out += ["", t("rep_blocks_cols"),
             "| ---: | --- | ---: | ---: | --- |"]
     for spread, song, count, middle, key in rows[:20]:
         out.append(f"| {spread:.2f} s | {song} | {count} | {middle:.2f} s |"
@@ -3132,7 +3211,7 @@ def heavy_trial(context, report: Reporter, cancelled) -> str:
     report_file = COMBINATION_REPORT
     report_file.parent.mkdir(parents=True, exist_ok=True)
     keep_dated_copy(report_file)                 # B534, see big_trial
-    lines = ["# Modelcombinaties", "", t("heavy_intro"), ""]
+    lines = ["# " + t("rep_combinations_title"), "", t("heavy_intro"), ""]
 
     def write_report() -> None:
         report_file.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -111,7 +111,7 @@ _GENERIC_SEED: dict[str, list[str]] = {
 
 # B293: ``_lang_dir_name()`` used to be here; it only returned the fixed
 # string "languages" and was never called anywhere; the folder name comes from
-# ``filesystem.talen_dir``.
+# ``filesystem.ProjectPaths.languages_dir``.
 
 
 def generate_language(code: str) -> dict[str, list[str]]:
@@ -365,22 +365,22 @@ def segment_weight(seg: str, config: SegmentConfig) -> float:
     return config.weight_consonant
 
 
-def _enforce_min(duren: list[float], minimum: float,
+def _enforce_min(durations: list[float], minimum: float,
                  total: float) -> list[float]:
-    if minimum * len(duren) >= total or not duren:
-        return [total / len(duren)] * len(duren) if duren else duren
-    d = list(duren)
+    if minimum * len(durations) >= total or not durations:
+        return [total / len(durations)] * len(durations) if durations else durations
+    d = list(durations)
     for _ in range(len(d)):
-        tekort = [(i, minimum - v) for i, v in enumerate(d) if v < minimum]
-        if not tekort:
+        shortfall = [(i, minimum - v) for i, v in enumerate(d) if v < minimum]
+        if not shortfall:
             break
-        nodig = sum(t for _i, t in tekort)
-        gevers = [i for i, v in enumerate(d) if v > minimum]
-        overschot = sum(d[i] - minimum for i in gevers) or 1.0
-        for i, _t in tekort:
+        needed = sum(t for _i, t in shortfall)
+        givers = [i for i, v in enumerate(d) if v > minimum]
+        surplus = sum(d[i] - minimum for i in givers) or 1.0
+        for i, _t in shortfall:
             d[i] = minimum
-        for i in gevers:
-            d[i] = max(minimum, d[i] - nodig * (d[i] - minimum) / overschot)
+        for i in givers:
+            d[i] = max(minimum, d[i] - needed * (d[i] - minimum) / surplus)
     return d
 
 
@@ -409,14 +409,14 @@ def distribute_word(word: str, start: float, end: float,
                and 0.0 < config.last_vowel_fraction < 1 else 0.0)
     rest = duration - reserve
     total_weight = sum(weight_map) or 1.0
-    duren = [rest * g / total_weight for g in weight_map]
+    durations = [rest * g / total_weight for g in weight_map]
     if last_vowel is not None:
-        duren[last_vowel] += reserve
-    duren = _enforce_min(duren, config.min_segment_s, duration)
+        durations[last_vowel] += reserve
+    durations = _enforce_min(durations, config.min_segment_s, duration)
     out: list[tuple[str, float, float]] = []
     t = float(start)
     for k, seg in enumerate(segs):
-        e = end if k == n - 1 else t + duren[k]
+        e = end if k == n - 1 else t + durations[k]
         out.append((seg, round(t, 3), round(e, 3)))
         t = e
     return out

@@ -43,7 +43,7 @@ def test_run_analysis_files_and_stats(tmp_path: Path) -> None:
     assert stats.words == 5
     assert stats.unique_words == 3  # kedeng, oe, koffie
     assert stats.short_words == 1   # only 'oe' (<= 4 letters)
-    assert stats.lage_confidence == 1  # oe with 0.40
+    assert stats.low_confidence == 1  # oe with 0.40
     assert stats.average_confidence == pytest.approx(0.818, abs=1e-3)
 
     for name in ("frequency.csv", "short_words.csv",

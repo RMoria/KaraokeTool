@@ -77,7 +77,7 @@ def test_export_wav_copies(tmp_path: Path) -> None:
     source = tmp_path / "bewerkt.wav"
     _make_wav(source)
     result = export_result(source, _properties(codec="pcm_s16le"),
-                           ".wav", tmp_path / "uit")
+                           ".wav", tmp_path / "out")
     assert result.name == "karaoke_edit.wav"
     assert result.read_bytes() == source.read_bytes()
 
@@ -88,7 +88,7 @@ def test_export_mp3_matches_source_properties(tmp_path: Path) -> None:
         pytest.skip("ffmpeg not available")
     source = tmp_path / "bewerkt.wav"
     _make_wav(source, sample_rate=48_000)
-    result = export_result(source, _properties(), ".mp3", tmp_path / "uit")
+    result = export_result(source, _properties(), ".mp3", tmp_path / "out")
     assert result.name == "karaoke_edit.mp3"
     probed = ffmpeg.probe(result)
     assert probed.sample_rate == 48_000

@@ -77,7 +77,9 @@ def test_every_model_has_a_code_a_name_and_a_level() -> None:
     assert len(codes) == len(set(codes)), "duplicate B numbers"
     for model in model_register.register():
         assert model.code.startswith("B"), model.code
-        assert model.name.strip()
+        assert model.display_name.strip()
+        assert model.display_name != f"model_name_{model.key}", \
+            f"{model.code} has no name in the translations"
         assert model.level in model_register.LEVELS, model.level
         assert model.targets, f"{model.code} cannot be switched off"
 
@@ -87,7 +89,7 @@ def test_a_switched_off_model_says_why() -> None:
     later on."""
     for model in model_register.register():
         if not model.default_on:
-            assert model.reason.strip(), model.code
+            assert model.display_reason.strip(), model.code
 
 
 def test_b213_is_on_again_because_the_reference_set_grew() -> None:
@@ -100,7 +102,7 @@ def test_b213_is_on_again_because_the_reference_set_grew() -> None:
     """
     model = model_register.by_code("B213")
     assert model is not None and model.default_on is True
-    assert not model.reason                  # on, so no reason needed
+    assert not model.display_reason          # on, so no reason needed
 
 
 def test_switching_off_replaces_and_switching_on_restores() -> None:
@@ -366,7 +368,7 @@ def test_the_yardstick_is_loaded_only_once() -> None:
 def test_the_last_two_sections_use_both_workers() -> None:
     """They ran in a plain loop and therefore on a single core."""
     source = inspect.getsource(test_panel.big_trial)
-    head = source.index("## Woordkoppeling")
+    head = source.index('t("rep_head_coupling")')
     tail = source[head:]
     assert tail.count("across_projects(") == 2
     assert "for song in _projects(context)" not in tail

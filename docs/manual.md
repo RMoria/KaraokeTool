@@ -361,8 +361,14 @@ and the artist — those belong to the song and live on tab 1.
   move along and the references are updated; input and cache stay with
   the app.
 - **Interface language:** Dutch/English (separate from the audio
-  language, which is detected from the songtekst/karaoketekst). Takes
-  effect after a restart.
+  language, which is detected from the lyrics and the karaoke text).
+  Takes effect after a restart. Everything the program writes for you
+  to read follows it: the window, the log, the test panel's reports,
+  and the measurement documents in `docs/`. A document that grows over
+  time, such as `docs/metingen.md`, keeps what it already holds; only
+  the sections written after a switch are in the new language. The one
+  exception is the diagnostics file `timing_diagnostics.txt`, whose
+  header and flags stay as they are.
 - **Video text colours and font:** the colour before, during and after
   singing, the crowd colour and the video background, plus the font
   (`.ttf` from `assets/fonts`, with a sample line). Beside each text

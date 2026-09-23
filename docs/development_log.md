@@ -5242,6 +5242,101 @@ What of the list is NOT in it, and why:
   pause lasts about two. Changing either without measuring is guessing;
   the yardstick (1.5.5/1.5.10) can say what it does.
 
+Included in v1.0.11:
+
+- **B572 - the reports and the log follow the language choice.** The
+  translation table covered the window, the errors and the log lines of
+  `modules/`. It did not cover what the program writes for the user to
+  READ afterwards: the reports of the test panel, the model register
+  (names, levels, reasons - in the startup log and in the matrix), the
+  cluster overview and its HTML page, the lyrics coupling report, the
+  measurement document the yardstick writes into `docs/metingen.md`,
+  and the start script, which lives outside `modules/` and was
+  therefore read by no guard at all: nine log lines and six console
+  lines, all Dutch. About a hundred and fifty new keys, and in
+  Dutch every one of them is byte for byte the text that was there -
+  proven by running the panel's actions over a fixture of three
+  projects in the old tree and the new one and comparing the output,
+  about nine hundred lines, identical apart from a temporary path and
+  one debug line that now prints model codes. The retired trials went
+  along, as the owner chose: they are one word from measuring again.
+  Two things came out of it that are more than words:
+
+  * **A reader of a report has to read both languages.** The cluster
+    trial takes its pairs from the model matrix on disk, by looking for
+    the heading "## Twee tegelijk anders" and reading model labels. It
+    now finds that heading in either language and identifies a model
+    by its CODE, not by its name, because a matrix written in Dutch has
+    to be readable with the interface in English and the other way
+    round - checked in all four combinations. The report of uncoupled
+    words stopped looking for the Dutch note "(niet gekoppeld)" and
+    reads the similarity number instead.
+  * **The first line of the log was always Dutch.** The language was
+    set after the settings had loaded, and by then the log had started.
+    It is now read raw from the settings file before logging starts
+    (`config.read_interface_language`, which also serves the yardstick
+    when it runs on its own and must not write the settings back), and
+    a test starts the program for real with English settings that
+    cannot be loaded and reads the log.
+
+  The measurement documents in `docs/` follow the interface language
+  too. A document that grows, like `docs/metingen.md`, keeps what it
+  holds; only sections written after a switch are in the new language.
+- **B573 - the Dutch a stem list cannot see.** The language guard works
+  with a deny-list of stems, and it is exactly as good as what somebody
+  put on it. Reading the tree with a real Dutch word list turned up
+  some sixty Dutch identifiers it had never seen (`afwijkingen`,
+  `controles`, `verschuiving`, `_TIENTALLEN_EN`, `lage_confidence`...),
+  twenty-five Dutch assertion messages in the tests, some twenty Dutch
+  comments - several of them stale, naming the view modes of the timing
+  editor by Dutch ids they had not had for a long time - and Dutch
+  texts the user does read: the project path check
+  that pops up in a message box, "[uit]" in the timing editor,
+  "onbekende fout" in a video error, and the model descriptions that
+  stood a second time in `models.py` beside the translated ones. All renamed or translated, and
+  `tests/test_dutch_leftovers.py` now reads the tree with WORDS: a hand
+  written list of about three hundred Dutch words that are not also
+  English (`door`, `want`, `met`, `map`, `model`, `stand`, `telling`
+  and `van` are English, and a guard that fires on English gets
+  switched off). It checks identifiers everywhere (exception names
+  too), texts in the program outside `t()`, that every literal handed
+  to `t()` is a key of the table (a missing key shows itself, so
+  `t("een Nederlandse zin")` would have passed the first check),
+  comments, what a test says when it fails or skips, the start
+  script's log and console lines, and that every allowance is still
+  needed. What may stay Dutch is listed per file and per word, each
+  with its reason, so a new Dutch word in a file that already has some
+  still fails. The first version of it had holes, found by the review
+  of this release and each proven closed by planting the case: an
+  exception named `fout`, a Dutch sentence passed to `t()`, a one-word
+  Dutch comment, Dutch in a `pytest.skip`.
+
+  Two renames touch generated files, and neither is read back by
+  anything: the analysis statistics now write `low_confidence` instead
+  of `lage_confidence` - the spelling B299's migration already gave the
+  old files, so there is now one spelling instead of two - and the
+  editor's drag kind `"cel"` is `"cell"`. The yardstick's cache folder
+  in the temp directory keeps its Dutch name on purpose: it exists on
+  the owner's machine, and a new name would mean converting every
+  project again.
+
+  One more thing the trial export found: the published copy leaves the
+  publication tool out, and the smoke test of B565 ran that tool - so
+  the published suite had one red test since v1.0.9. It skips there
+  now, and the published copy runs green.
+
+What is NOT in it, and why:
+
+- The Dutch names in STORED things - the file names in `docs/`, the
+  keys of the transcription history - and the header of
+  `timing_diagnostics.txt`. The owner chose to leave those as they are.
+- Dutch ids that are strings and not text: the level ids of the model
+  register, the colour roles of the video ("voor", "zang", "na"), the
+  drag modes of the damping editor, the damping kinds, the stage ids
+  and flags of the diagnostics. They are identifiers in spirit, several of them are
+  stored, and renaming them is a data change with a migration, not a
+  translation. They are listed, with their reasons, in the new guard.
+
 Included in v1.0.10:
 
 - **B571 - a report that only looks, now really only looks.** Three of

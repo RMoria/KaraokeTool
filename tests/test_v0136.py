@@ -122,17 +122,25 @@ def test_one_slot_still_walks_them_one_by_one(monkeypatch) -> None:
 def test_the_prompt_is_isolated_by_a_variant() -> None:
     from modules import test_panel
 
+    from modules.translations import TRANSLATIONS
+
     source = inspect.getsource(test_panel._chunk_one_song)
-    assert "knippen (globale prompt)" in source
-    assert "globale" in source
+    assert "chunked_global" in test_panel._CHUNK_PLAN
+    assert 'name == "chunked_global"' in source
+    assert (TRANSLATIONS["nl"]["rep_chunk_run_chunked_global"]
+            == "knippen (globale prompt)")
 
 
 def test_cutting_with_vad_is_measured() -> None:
     from modules import test_panel
 
+    from modules.translations import TRANSLATIONS
+
     source = inspect.getsource(test_panel._chunk_one_song)
-    assert "knippen + vad" in source
+    assert "chunked_vad" in test_panel._CHUNK_PLAN
+    assert 'name == "chunked_vad"' in source
     assert 'VARIANTS["vad"]' in source
+    assert TRANSLATIONS["nl"]["rep_chunk_run_chunked_vad"] == "knippen + vad"
 
 
 # --------------------------------------------------------------------------

@@ -118,7 +118,7 @@ def test_the_pool_is_made_once_and_kept() -> None:
         first = measure_pool._shared_pool(9)
         second = measure_pool._shared_pool(9)
     assert first is second
-    assert made == [9], "één keer maken, daarna hergebruiken"
+    assert made == [9], "make once, reuse after that"
     measure_pool.close_pool()
 
 

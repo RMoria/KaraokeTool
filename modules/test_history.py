@@ -155,12 +155,12 @@ def remember(code: str, song: str, version: str, fingerprint: str,
         data = _load()
         entries = [e for e in data.get(_key(code, song), [])
                    if e.get("version") != version]
-        ingang = {"version": version, "fingerprint": fingerprint,
+        new_entry = {"version": version, "fingerprint": fingerprint,
                   "when": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
                   "result": result}
         if seconds is not None:
-            ingang["seconds"] = round(float(seconds), 1)
-        entries.append(ingang)
+            new_entry["seconds"] = round(float(seconds), 1)
+        entries.append(new_entry)
         # Newest at the back; older than KEEP_VERSIONS drops out.
         data[_key(code, song)] = entries[-KEEP_VERSIONS:]
         _save(data)
@@ -233,12 +233,12 @@ def remember_duration(code: str, version: str, seconds: float) -> None:
 
 def durations(code: str) -> list[tuple[str, float]]:
     """(version, seconds) of the kept runs, oldest first."""
-    uit = []
+    found = []
     for entry in history(code, TOTAL):
-        seconden = entry.get("seconds")
-        if seconden is not None:
-            uit.append((entry.get("version", "?"), float(seconden)))
-    return uit
+        run_seconds = entry.get("seconds")
+        if run_seconds is not None:
+            found.append((entry.get("version", "?"), float(run_seconds)))
+    return found
 
 
 def version_number(version: str) -> int:
@@ -260,10 +260,10 @@ def versions_ago(code: str, version: str) -> int | None:
     ``None`` if it has never run yet - then there is nothing to skip
     and it simply has to.
     """
-    gedraaid = [version_number(v) for v, _s in durations(code)]
-    gedraaid += [version_number(e.get("version", ""))
+    ran_versions = [version_number(v) for v, _s in durations(code)]
+    ran_versions += [version_number(e.get("version", ""))
                  for e in history(code, TOTAL)]
-    gedraaid = [n for n in gedraaid if n]
-    if not gedraaid:
+    ran_versions = [n for n in ran_versions if n]
+    if not ran_versions:
         return None
-    return max(0, version_number(version) - max(gedraaid))
+    return max(0, version_number(version) - max(ran_versions))

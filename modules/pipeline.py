@@ -422,30 +422,33 @@ def check_project_paths(context: AppContext) -> tuple[bool, str]:
 
     After a project switch the input, output and cache folder and the
     project administration (``project.json``) must all point to the
-    same subdir (the active title). Returns ``(ok, melding)``; on a
+    same subdir (the active title). Returns ``(ok, message)``; on a
     mismatch the message describes what deviates.
     """
     title = context.config.song.title
     expected = ProjectPaths(root=context.paths.root, song=title,
                             output_base=context.paths.output_base)
-    afwijkingen: list[str] = []
+    deviations: list[str] = []
     if context.paths.song != title:
-        afwijkingen.append(
-            f"paden.song='{context.paths.song}' != titel='{title}'")
-    controles = {
+        deviations.append(
+            t("paths_song_mismatch").format(song=context.paths.song,
+                                            title=title))
+    checks = {
         "input": (context.paths.input_dir, expected.input_dir),
         "output": (context.paths.output_dir, expected.output_dir),
         "cache": (context.paths.cache_dir, expected.cache_dir),
     }
-    for item_name, (actueel, expected_path) in controles.items():
-        if actueel != expected_path:
-            afwijkingen.append(f"{item_name}: {actueel} != {expected_path}")
+    for item_name, (actual, expected_path) in checks.items():
+        if actual != expected_path:
+            deviations.append(f"{item_name}: {actual} != {expected_path}")
     if context.store.path != expected.project_file:
-        afwijkingen.append(
+        deviations.append(
             f"project.json: {context.store.path} != {expected.project_file}")
-    if afwijkingen:
-        return False, "Projectpaden wijken af: " + "; ".join(afwijkingen)
-    return True, f"Projectpaden consistent voor '{title or '(geen titel)'}'."
+    if deviations:
+        return False, t("paths_deviate").format(
+            details="; ".join(deviations))
+    return True, t("paths_consistent").format(
+        title=title or t("paths_no_title"))
 
 
 def output_writable(directory: Path) -> tuple[bool, str]:
@@ -690,9 +693,9 @@ def set_project_title(context: AppContext, key: str, value: str) -> None:
     """Keep one title field per project in project.json (B210)."""
     if key not in VIDEO_TITLE_KEYS:
         return
-    titels = dict(context.store.get_meta("video_titles") or {})
-    titels[key] = value
-    context.store.set_meta("video_titles", titels)
+    titles = dict(context.store.get_meta("video_titles") or {})
+    titles[key] = value
+    context.store.set_meta("video_titles", titles)
 
 
 def apply_project_titles(context: AppContext) -> AppContext:
@@ -708,9 +711,9 @@ def apply_project_titles(context: AppContext) -> AppContext:
     saved = context.store.get_meta("video_titles")
     video = context.config.video
     if saved is None:
-        migratie = {k: getattr(video, k, "") for k in VIDEO_TITLE_KEYS}
-        if any(v.strip() for v in migratie.values()):
-            context.store.set_meta("video_titles", migratie)
+        migrated = {k: getattr(video, k, "") for k in VIDEO_TITLE_KEYS}
+        if any(v.strip() for v in migrated.values()):
+            context.store.set_meta("video_titles", migrated)
         return context
     # B470: keys that this project does not have were SKIPPED, so the
     # value of the previously opened project stayed in the config and was
@@ -757,7 +760,7 @@ def input_start_dir(context: AppContext, key: str) -> str:
             return str(path)
     try:
         return str(Path.home())
-    except (OSError, RuntimeError):     # noqa: BLE001 - geen thuismap
+    except (OSError, RuntimeError):     # noqa: BLE001 - no home folder
         return ""
 
 
@@ -1596,11 +1599,11 @@ def word_coupling_view(context: AppContext) -> dict | None:
     # Creative addition (B228): 2-to-1 ("fort minable" -> "formidable") and
     # real 1-to-1 gaps within the anchor window. Pinned words stay as the
     # user set them.
-    verbeterd = song_text.creative_couplings(
+    improved = song_text.creative_couplings(
         [w["text"] for w in words], transcript,
         [w["transcript_indices"] for w in words], blocked=blocked)
     from .cluster import phonetic_key as _pk, similarity as _sim
-    for w, new in zip(words, verbeterd):
+    for w, new in zip(words, improved):
         if w["pinned"] or new == w["transcript_indices"]:
             continue
         w["transcript_indices"] = new
@@ -4069,11 +4072,11 @@ def _filter_hallucinations(
     for seg in segments:
         word_objs = list(seg.words) if seg.words else []
         if word_objs:
-            paren = [(cluster_module.normalize_for_filter(w.text),
+            word_pairs = [(cluster_module.normalize_for_filter(w.text),
                      w.confidence) for w in word_objs]
         else:
-            paren = [(cluster_module.normalize_for_filter(seg.text), None)]
-        paren = [(w, c) for w, c in paren if w]
+            word_pairs = [(cluster_module.normalize_for_filter(seg.text), None)]
+        word_pairs = [(w, c) for w, c in word_pairs if w]
         # B536: with the model off, a word from the B258 list counts as
         # neither a signal nor a defence - it drops out of the judgement
         # the way a function word does. Exonerating it would have taken
@@ -4084,7 +4087,7 @@ def _filter_hallucinations(
         skip = set(_HALLUCINATION_FILLERS)
         if not song_wide:
             skip |= set(_HALLUCINATION_SEGMENT_WORDS)
-        core_pairs = [(w, c) for w, c in paren if w not in skip]
+        core_pairs = [(w, c) for w, c in word_pairs if w not in skip]
         core_words = [w for w, _c in core_pairs]
 
         def _is_a_hallucination_word(w: str) -> bool:
@@ -4264,13 +4267,13 @@ def _filter_hallucinations_in_position(
     for seg in segments:
         word_objs = list(seg.words) if seg.words else []
         if word_objs:
-            paren = [(cluster_module.normalize_for_filter(w.text),
+            word_pairs = [(cluster_module.normalize_for_filter(w.text),
                       w.confidence) for w in word_objs]
         else:
-            paren = [(cluster_module.normalize_for_filter(seg.text), None)]
-        paren = [(w, c) for w, c in paren if w]
+            word_pairs = [(cluster_module.normalize_for_filter(seg.text), None)]
+        word_pairs = [(w, c) for w, c in word_pairs if w]
         fillers = _language_words(language, "fillers")
-        core_words = [w for w, _c in paren if w not in fillers]
+        core_words = [w for w, _c in word_pairs if w not in fillers]
         if _segment_has_coupling(seg, aligned):
             kept.append(seg)
             continue
@@ -4309,7 +4312,7 @@ def _filter_hallucinations_in_position(
         if best_match >= _SEGMENT_HALLUCINATION_MATCH_FLOOR:
             kept.append(seg)
             continue
-        confidences = [c for _w, c in paren if c is not None]
+        confidences = [c for _w, c in word_pairs if c is not None]
         lowest_conf = min(confidences) if confidences else None
         if lowest_conf is not None \
                 and lowest_conf >= _SEGMENT_HALLUCINATION_CONF_CEILING:
@@ -4369,8 +4372,8 @@ def _drop_unsung_segments(context: AppContext, segments: tuple,
         if not words:
             kept.append(segment)
             continue
-        raak = sum(1 for w in words if on_singing(w.start) or on_singing(w.end))
-        if raak / len(words) >= _SUNG_MIN_SHARE:
+        on_target = sum(1 for w in words if on_singing(w.start) or on_singing(w.end))
+        if on_target / len(words) >= _SUNG_MIN_SHARE:
             kept.append(segment)
             continue
         dropped += 1
@@ -4617,7 +4620,7 @@ def _relax_implausible_anchors(anchors: list[bool], times: list,
                 chosen = best
                 break
         if chosen is None:
-            return dropped          # niets meer te verbeteren
+            return dropped          # nothing left to improve
         anchors[chosen] = False
         dropped += 1
 
@@ -5834,8 +5837,8 @@ def _refine_with_vocals(context: AppContext, lines_present: list[int],
     active = rhythm.active_windows(vocals)
 
     # B194: lengthen held notes of reliable lines.
-    for i, betrouwbaar in enumerate(reliable):
-        if not betrouwbaar:
+    for i, is_reliable in enumerate(reliable):
+        if not is_reliable:
             continue
         start, end = filled[i]
         ceil = (filled[i + 1][0] if i + 1 < len(filled)
@@ -6250,7 +6253,7 @@ def _retime_from_templates(context: AppContext, timed: tuple) -> tuple:
 
     try:
         return timing_template.repair(timed, _vocal_windows(context))
-    except Exception:  # noqa: BLE001 - de timing mag hier nooit op vallen
+    except Exception:  # noqa: BLE001 - the timing may never fall over on this
         logger.exception(t("log_template_failed"))
         return timed
 
@@ -6557,10 +6560,10 @@ def timing_project_mismatch(context: AppContext) -> str | None:
 
 
 def _warn_timing_project_mismatch(context: AppContext, path: Path) -> None:
-    afwijkend = timing_project_mismatch(context)
-    if afwijkend:
+    deviating = timing_project_mismatch(context)
+    if deviating:
         logger.warning(t("log_timing_project_mismatch"),
-                       afwijkend, context.config.song.title, path)
+                       deviating, context.config.song.title, path)
 
 
 def mark_inline_pieces(context: AppContext, lines):

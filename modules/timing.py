@@ -285,10 +285,10 @@ def distribute_over_windows(line: TimedLine,
         # Distribute words over windows in proportion to window duration.
         total = sum(e - s for s, e in usable_windows)
         bounds = []
-        opgeteld = 0.0
+        summed = 0.0
         for s, e in usable_windows[:-1]:
-            opgeteld += (e - s)
-            bounds.append(round(opgeteld / total * n_words))
+            summed += (e - s)
+            bounds.append(round(summed / total * n_words))
     # groups of word indexes per window
     groups: list[list[int]] = []
     previous = 0
@@ -361,27 +361,27 @@ def apply_phonetic_timing(lines: Sequence[TimedLine], language: str = "nl",
             for group in words:
                 text_value = "".join(s.text for s in group)
                 leading = " " if text_value.startswith(" ") else ""
-                kaal = text_value.strip()
+                bare = text_value.strip()
                 ws, we = group[0].start, group[-1].end
                 crowd = any(s.crowd for s in group)
                 # B485: without this the mark was lost in the phonetic
                 # step - and that runs on EVERY freshly generated timing,
                 # so no file had it.
                 background = any(s.bg for s in group)
-                had_nadruk = any(s.stress for s in group)
+                had_stress = any(s.stress for s in group)
                 held = group[0].held
-                if "_" in kaal:
+                if "_" in bare:
                     # B252: an underscore word ("'k_heb") is deliberately
                     # one syllable; do not split it phonetically.
-                    new.append(Syllable(text=leading + kaal, start=ws,
-                                          end=we, held=held, stress=had_nadruk,
+                    new.append(Syllable(text=leading + bare, start=ws,
+                                          end=we, held=held, stress=had_stress,
                                           crowd=crowd, bg=background))
                     continue
-                segs = phonetics.distribute_word(kaal, ws, we, language, config)
+                segs = phonetics.distribute_word(bare, ws, we, language, config)
                 # stress -> heaviest vowel segment
                 cfg = config or phonetics.SegmentConfig()
                 stress = None
-                if had_nadruk:
+                if had_stress:
                     best = -1.0
                     for k, (seg, _s, _e) in enumerate(segs):
                         if phonetics._is_vowel_segment(seg):
@@ -717,13 +717,13 @@ def apply_default_stress(lines: Sequence[TimedLine]) -> tuple[TimedLine, ...]:
         # first one) starts a new word.
         starts = [i for i, s in enumerate(syls)
                   if i == 0 or s.text.startswith(" ")]
-        markeer: dict[int, bool] = {}
+        marks: dict[int, bool] = {}
         for w, start in enumerate(starts):
             end = starts[w + 1] if w + 1 < len(starts) else len(syls)
-            meerlettergrepig = (end - start) >= 2
+            multi_syllable = (end - start) >= 2
             for j in range(start, end):
-                markeer[j] = (j == start and meerlettergrepig)
-        new = tuple(replace(s, stress=markeer.get(i, False))
+                marks[j] = (j == start and multi_syllable)
+        new = tuple(replace(s, stress=marks.get(i, False))
                       for i, s in enumerate(syls))
         result.append(replace(line, syllables=new))
     return tuple(result)
@@ -765,15 +765,15 @@ def redistribute_by_stress(lines: Sequence[TimedLine],
 
 def _word_bounds(syllables: Sequence[Any], index: int) -> tuple[int, int]:
     """Start and end index (exclusive) of the word ``index`` falls in."""
-    def leidt_in(i: int) -> bool:
+    def leads_in(i: int) -> bool:
         s = syllables[i]
         text_value = s["text"] if isinstance(s, dict) else s.text
         return i == 0 or text_value.startswith(" ")
     start = index
-    while start > 0 and not leidt_in(start):
+    while start > 0 and not leads_in(start):
         start -= 1
     end = index + 1
-    while end < len(syllables) and not leidt_in(end):
+    while end < len(syllables) and not leads_in(end):
         end += 1
     return start, end
 
@@ -789,9 +789,9 @@ def set_word_stress(syllables: Sequence[Syllable], index: int
     if not (0 <= index < len(syls)):
         return tuple(syls)
     start, end = _word_bounds(syls, index)
-    aanzetten = not syls[index].stress
+    switch_on = not syls[index].stress
     for j in range(start, end):
-        syls[j] = replace(syls[j], stress=(j == index and aanzetten))
+        syls[j] = replace(syls[j], stress=(j == index and switch_on))
     return tuple(syls)
 
 
@@ -842,14 +842,14 @@ def shift_stress_to(line: TimedLine, target_rel: float,
         return line
     cur_rel = ((syls[stressed].start + syls[stressed].end) / 2.0 - start) / span
     avg = span / n
-    verschuiving = (target_rel - cur_rel) * span
+    stress_shift = (target_rel - cur_rel) * span
     bound = max_slots * avg
-    verschuiving = max(-bound, min(bound, verschuiving))
-    if abs(verschuiving) < 1e-3:
+    stress_shift = max(-bound, min(bound, stress_shift))
+    if abs(stress_shift) < 1e-3:
         return line
     minw = min(0.05, avg / 2.0)
-    new_s = syls[stressed].start + verschuiving
-    new_e = syls[stressed].end + verschuiving
+    new_s = syls[stressed].start + stress_shift
+    new_e = syls[stressed].end + stress_shift
     if stressed > 0:
         new_s = max(syls[stressed - 1].start + minw, new_s)
     else:
@@ -881,17 +881,17 @@ def align_karaoke_stress(karaoke_lines: Sequence[TimedLine],
     relative stress position of the original. Lines without a coupling or
     without a stress are left untouched.
     """
-    origineel_frac = {i: stress_fraction(ln.syllables)
+    original_frac = {i: stress_fraction(ln.syllables)
                       for i, ln in enumerate(original_lines)}
-    uit: list[TimedLine] = []
+    shifted_lines: list[TimedLine] = []
     for ki, line in enumerate(karaoke_lines):
         oi = mapping.get(ki)
-        target = origineel_frac.get(oi) if oi is not None else None
+        target = original_frac.get(oi) if oi is not None else None
         if target is None:
-            uit.append(line)
+            shifted_lines.append(line)
         else:
-            uit.append(shift_stress_to(line, target, max_slots=max_slots))
-    return tuple(uit)
+            shifted_lines.append(shift_stress_to(line, target, max_slots=max_slots))
+    return tuple(shifted_lines)
 
 
 def word_spans(syllables: Sequence[Any]
@@ -988,7 +988,7 @@ def _bg_cell(line: dict) -> dict | None:
     return {"text": "".join(str(item["text"]) for item in pieces).strip(),
             "start": min(float(item["start"]) for item in pieces),
             "end": max(float(item["end"]) for item in pieces),
-            "crowd": False, "rows": [], "uit": bool(line.get("disabled")),
+            "crowd": False, "rows": [], "off": bool(line.get("disabled")),
             "bg": True}
 
 
@@ -1012,7 +1012,7 @@ def editor_view_cells(lines: Sequence[dict],
                 cells.append({"text": text_value, "start": start, "end": end,
                                "crowd": bool(line["crowd"]),
                                "rows": [] if background else [pos],
-                               "uit": bool(line.get("disabled")),
+                               "off": bool(line.get("disabled")),
                                "bg": background})
         return cells
     if mode == "blocks":
@@ -1044,7 +1044,7 @@ def editor_view_cells(lines: Sequence[dict],
         start, end = _dict_span(line)
         cells.append({"text": line["text"], "start": start, "end": end,
                        "crowd": bool(line["crowd"]),
-                       "rows": [pos], "uit": bool(line.get("disabled")),
+                       "rows": [pos], "off": bool(line.get("disabled")),
                        # B507: a whole background line is drawn as
                        # background - it is one - but it keeps its rows,
                        # so it stays draggable like any other sentence.
@@ -1144,7 +1144,7 @@ def _block_cell(items: list[tuple[int, dict]]) -> dict:
     return {"text": text_value, "start": start, "end": end,
             "crowd": all(line["crowd"] for line in lines),
             "rows": [pos for pos, _line in items],
-            "uit": all(line.get("disabled") for line in lines)}
+            "off": all(line.get("disabled") for line in lines)}
 
 
 def generate_skeleton(
@@ -1765,8 +1765,9 @@ def couple_timing(
                 crowd_section=crowd_section))
     timed.sort(key=lambda item: item.index)
     logger.info(t("log_sentence_coupling"), quality,
-                "1-op-1" if equal_lines else
-                "per blok" if equal_blocks else "evenredig")
+                t("value_one_to_one") if equal_lines else
+                t("value_per_block") if equal_blocks
+                else t("value_proportional"))
     return tuple(timed), quality, mapping
 
 
@@ -2777,7 +2778,7 @@ def sanitize_timing(lines: Sequence[TimedLine],
     over_windows = (tail_over_windows(len(trailing), active_windows or (),
                                       period, kept[last] + _MIN_ANY_S)
                     if (trailing and period is not None) else None)
-    heeft_ref = any(_norm_text(lines[k].text) in ref
+    has_ref = any(_norm_text(lines[k].text) in ref
                     or _norm_text(lines[k].text) in reference
                     for k in trailing)
     tempo_end = kept[last] + sum(_dur_for(lines[k]) for k in trailing)
@@ -2785,7 +2786,7 @@ def sanitize_timing(lines: Sequence[TimedLine],
         logger.info(t("log_tail_on_windows"), len(trailing))
         for k, moment in zip(trailing, over_windows):
             starts[k] = moment
-    elif (not heeft_ref and song_duration and len(trailing) >= 4
+    elif (not has_ref and song_duration and len(trailing) >= 4
             and song_duration - tempo_end > 3.0):
         ta, tb = kept[last], song_duration
         weights = [nsyl(lines[k]) for k in [last] + trailing]
@@ -2849,9 +2850,9 @@ def sanitize_timing(lines: Sequence[TimedLine],
         if next_start is None:
             # Last line: use the reference duration of the same text
             # (B166), otherwise syllable tempo.
-            basisduur = ref.get(_norm_text(line.text),
+            base_duration = ref.get(_norm_text(line.text),
                                 max(baseline * n_syl, _MIN_PHRASE_S))
-            end = start + max(basisduur, lo)
+            end = start + max(base_duration, lo)
         elif reliable:
             # Real sung duration (clamped to [lo, hi]).
             real_end = start + min(max(line.end - line.start, lo), hi_dur)
@@ -2878,11 +2879,11 @@ def sanitize_timing(lines: Sequence[TimedLine],
             # song, because a sentence IS a phrase (B332) - the syllable
             # tempo would give this line six seconds where the song sings
             # three and a half.
-            basisduur = ref.get(_norm_text(line.text),
+            base_duration = ref.get(_norm_text(line.text),
                                 period if period is not None
                                 else max(baseline * n_syl, _MIN_PHRASE_S))
             end = min(max(next_start, start + lo),
-                      start + max(min(basisduur, hi_dur), lo))
+                      start + max(min(base_duration, hi_dur), lo))
         else:
             # Unreliable: fill up to the next one, but never shorter than
             # the minimum duration (which beats the no-overlap bound).

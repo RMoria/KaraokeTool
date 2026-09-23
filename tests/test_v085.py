@@ -216,7 +216,7 @@ def test_whisper_transcribe_passes_the_initial_prompt_on(monkeypatch,
     settings = WhisperSettings(model="large-v3", device="auto",
                               compute_type="auto", language="nl")
 
-    whisper.transcribe(audio, settings, tmp_path / "uit",
+    whisper.transcribe(audio, settings, tmp_path / "out",
                        initial_prompt="Sunday Bloody tonight")
     assert seen["initial_prompt"] == "Sunday Bloody tonight"
 

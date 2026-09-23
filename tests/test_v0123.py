@@ -159,8 +159,8 @@ def test_the_case_that_crashed_on_the_user_machine(tmp_path) -> None:
     _remember(context, signature)
     context.store.set_step("timing", {"dummy": True})
 
-    changed = pipeline.sync_input_changes(context)          # viel hier om
+    changed = pipeline.sync_input_changes(context)          # fell over here
 
     assert "config:models" in changed
     assert context.store.get_step("timing") is None, \
-        "de timing hoort te vervallen als de modelstand verandert"
+        "the timing should lapse when the model settings change"

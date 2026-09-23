@@ -91,7 +91,7 @@ def test_a_clean_measurement_gives_a_reassuring_line() -> None:
     test_panel.reset_alarms()
     test_panel.note_alarms([{"project": "Proef",
                              "sanity": {"flat": 0, "stacked": 0}}])
-    assert len(test_panel.alarm_lines()) == 2      # lege regel + melding
+    assert len(test_panel.alarm_lines()) == 2      # empty line + message
 
 
 def test_the_same_alarm_is_reported_once() -> None:

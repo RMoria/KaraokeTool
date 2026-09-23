@@ -73,7 +73,7 @@ def test_music_with_dynamics_gives_a_measurement() -> None:
                       * numpy.sin(2 * numpy.pi * 300 * moment))
     measured = ffmpeg.measure_loudness(_wav(quiet_and_loud))
     assert measured is not None
-    assert measured.lra > 0, "juist dit getal is positief"
+    assert measured.lra > 0, "this very number is positive"
     assert -99.0 <= measured.integrated <= 0.0
 
 
@@ -214,13 +214,13 @@ def test_ticking_a_letter_starts_the_number(panel) -> None:
     # B491: 1.5.11e is off by now, so it no longer stands in the list
     # of letters; the behaviour this test pins down is that a ticked
     # letter brings the number along with it.
-    aan = [trial.code for box, trial in panel._letters
+    ticked = [trial.code for box, trial in panel._letters
            if trial.code in ("1.5.11a", "1.5.11b")]
     for box, trial in panel._letters:
-        if trial.code in aan:
+        if trial.code in ticked:
             box.setChecked(True)
     assert _heavy_tick(panel).isChecked()
-    assert panel.heavy_choice() == aan
+    assert panel.heavy_choice() == ticked
     assert [action.code for action in panel.chosen()] == ["1.5.11"]
 
 
@@ -286,7 +286,7 @@ def test_a_project_without_an_auto_file_is_named_not_counted(
     assert [song for song, _why in skipped] == ["ZonderAuto"]
     note = "\n".join(test_panel._skipped_projects_note(context))
     assert "ZonderAuto" in note
-    assert "ZonderAlles" not in note, "niets getimed is geen probleem"
+    assert "ZonderAlles" not in note, "nothing timed is not a problem"
 
 
 def test_no_missing_file_no_note(tmp_path) -> None:

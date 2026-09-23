@@ -162,7 +162,7 @@ def test_the_model_is_switched_off_with_a_reason() -> None:
     model = model_register.by_code("B380")
     assert model is not None
     assert model.default_on is False
-    assert "1.00" in model.reason, \
+    assert "1.00" in model.display_reason, \
         "the reason has to name the measurement, not just an opinion"
 
 

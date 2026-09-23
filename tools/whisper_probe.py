@@ -76,9 +76,9 @@ def vocal_stem(root: Path, project: str) -> Path:
     stem = paths.cache_dir / "demucs_stems_original" / "vocals.wav"
     if stem.exists():
         return stem
-    los = paths.cache_dir / "original.wav"
-    if los.exists():
-        return los
+    loose = paths.cache_dir / "original.wav"
+    if loose.exists():
+        return loose
     raise FileNotFoundError(f"No vocal stem found for {project} in "
                             f"{paths.cache_dir}")
 
@@ -168,14 +168,14 @@ def run_once(stem: Path, settings: WhisperSettings, prompt: str,
     model = whisper._load_model(settings)
     audio = str(stem) if (start <= 0.0 and end is None) \
         else _samples(stem, start, end)
-    ruw, _info = model.transcribe(
+    raw, _info = model.transcribe(
         audio, language=None if language == "auto" else language,
         word_timestamps=True, beam_size=5,
         condition_on_previous_text=False, initial_prompt=prompt or None,
         **whisper.decode_options(settings))
     shift = float(start)
     out = []
-    for s in ruw:
+    for s in raw:
         words = [{"text": w.word.strip(), "start": float(w.start) + shift,
                   "end": float(w.end) + shift,
                   "confidence": float(getattr(w, "probability", 0.0))}
@@ -310,7 +310,7 @@ def main() -> int:
                             "segments": segments,
                             "seconds": round(elapsed, 1)}
         row = (f"{name:22s} segments {len(segments):3d}  "
-                 f"woorden ~{sum(len(s['text'].split()) for s in segments):4d}"
+                 f"words ~{sum(len(s['text'].split()) for s in segments):4d}"
                  f"  {elapsed:5.0f} s")
         if args.gap:
             row += (f"  in the gap {coverage(segments, tuple(args.gap)):5.1f}"
@@ -320,7 +320,7 @@ def main() -> int:
     target = out_dir / "whisper_probe.json"
     target.write_text(json.dumps(results, indent=1, ensure_ascii=False),
                     encoding="utf-8")
-    print(f"\nvolledige results: {target}")
+    print(f"\nfull results: {target}")
     print("Put the winning values in config/config.json under 'whisper'; "
           "the transcription is then redone automatically.")
     return 0

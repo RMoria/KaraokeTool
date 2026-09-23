@@ -25,6 +25,7 @@ from .config import WhisperSettings
 from .translations import t
 
 ProgressCallback = Callable[[float, float], None]
+"""Callback (processed seconds, total seconds) for progress."""
 
 #: Whisper models loaded once per (model, device, compute), shared across
 #: tracks. This way the model does not load twice with parallel detection
@@ -32,7 +33,6 @@ ProgressCallback = Callable[[float, float], None]
 #: safe for simultaneous transcribe calls (B114).
 _MODEL_CACHE: dict[tuple[str, str, str], Any] = {}
 _MODEL_LOCK = threading.Lock()
-"""Callback (verwerkte seconden, totale seconden) voor voortgang."""
 
 logger = logging.getLogger(__name__)
 

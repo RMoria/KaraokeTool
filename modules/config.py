@@ -178,6 +178,27 @@ class InterfaceSettings:
     language: str = "nl"
 
 
+def read_interface_language(path: Path) -> str | None:
+    """The interface language in a settings file, without loading it.
+
+    For the moments when the settings cannot or may not be loaded the
+    normal way: before logging is set up (the first lines of the log
+    would otherwise always be Dutch, v1.0.11), and from a measuring tool
+    that has no business writing the settings back - which
+    :func:`load_config` may do with its one-off repairs. Reads the raw
+    JSON and nothing else. ``None`` when the file is missing, unreadable
+    or does not say.
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    interface = raw.get("interface") if isinstance(raw, dict) else None
+    if isinstance(interface, dict) and interface.get("language"):
+        return str(interface["language"])
+    return None
+
+
 @dataclass(frozen=True)
 class AdvancedSettings:
     """Large models and performance options.

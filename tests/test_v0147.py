@@ -63,7 +63,7 @@ def test_clicking_a_word_gives_that_word(qapp) -> None:
     for index in range(3):
         x, y, width = canvas._bot_rect(index)
         hit = canvas._hit_row(QPoint(int(x + width / 2), y + 5), top=False)
-        assert hit == index, f"klik op {index} gaf {hit}"
+        assert hit == index, f"a click on {index} gave {hit}"
 
 
 def test_the_found_words_keep_their_own_column_too(qapp) -> None:
@@ -306,7 +306,7 @@ def test_the_difference_rows_are_a_real_table() -> None:
     rows = test_panel.differences("a", [_word("x", 1.0, 2.0)], "b", [],
                                   [(0.0, 10.0)])
     header = [i for i, r in enumerate(rows) if r.startswith("| plek |")]
-    assert header, "de verschilregels horen een eigen kopregel te hebben"
+    assert header, "the difference lines should have a header line of their own"
     for index in header:
         assert rows[index + 1].startswith("| --- |")
 

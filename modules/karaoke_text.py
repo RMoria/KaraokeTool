@@ -218,9 +218,9 @@ def parse_lines(path: Path) -> tuple[TextLine, ...]:
         # Inline [pause] stays within this sentence, as a separate pause
         # sign (B107); we leave [crowd]/[bg] markers in place so that
         # _parse_inline can mark the words.
-        met_pauze = apply_pause(stripped)
+        with_pause = apply_pause(stripped)
         text_value, is_crowd, crowd_words, is_bg_line, bg_words, bg = \
-            _parse_inline(met_pauze, crowd, bg)
+            _parse_inline(with_pause, crowd, bg)
         if text_value:
             lines.append(TextLine(index=len(lines), text=text_value,
                                   crowd=is_crowd, block=block,

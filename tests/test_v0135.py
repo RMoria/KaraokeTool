@@ -11,6 +11,7 @@ from __future__ import annotations
 import inspect
 
 from modules import song_text
+from modules.translations import TRANSLATIONS
 
 
 # --------------------------------------------------------------------------
@@ -87,7 +88,7 @@ def test_a_pin_after_a_number_moves_along(tmp_path) -> None:
     from modules import pipeline
 
     context = _context(tmp_path, "Another 45 miles to go\n")
-    # oude lijst: Another miles to go -> pin 2 = "to"
+    # old list: Another miles to go -> pin 2 = "to"
     pipeline.set_word_pins(context, {2: [7]})
     context.store.set_step("word_coupling", {"pins": {"2": [7]},
                                              "layout": "full"})
@@ -150,8 +151,8 @@ def test_a_pin_on_a_word_that_fell_apart_takes_the_first_piece(
     words = [w.text for w in song_text.load_lyrics(
         context.paths.input_dir / song_text.LYRICS_FILENAME)]
     assert words == ["zing", "La", "la", "la", "mee"]
-    assert pins[1] == [4]          # "La", het eerste stuk
-    assert pins[4] == [9]          # "mee" schoof twee plaatsen op
+    assert pins[1] == [4]          # "La", the first piece
+    assert pins[4] == [9]          # "mee" moved up two places
 
 
 def test_without_lyrics_nothing_falls_over(tmp_path) -> None:
@@ -224,7 +225,9 @@ def test_both_trials_report_the_share() -> None:
     for name in ("_chunk_one_song",):
         source = inspect.getsource(getattr(test_panel, name))
         assert "in_the_text(" in source, name
-        assert "in tekst" in source, name
+        assert '"rep_chunk_cols"' in source, name
+    assert "in tekst" in TRANSLATIONS["nl"]["rep_chunk_cols"]
+    assert "in text" in TRANSLATIONS["en"]["rep_chunk_cols"]
 
 
 def test_the_slack_is_not_zero() -> None:

@@ -236,7 +236,13 @@ def test_dependency_doc_check_passes_and_writes_nothing() -> None:
 
 def test_github_export_check_reads_an_empty_folder(tmp_path: Path) -> None:
     """Prevents the publication check raising on the two folders it
-    meets most: one that is empty, and one that is not there."""
+    meets most: one that is empty, and one that is not there.
+
+    Skipped in the published copy, which leaves the publication tool
+    itself out - before v1.0.11 this failed there.
+    """
+    if not (TOOLS / "github_export.py").exists():
+        pytest.skip("the published copy has no publication tool")
     empty = tmp_path / "copy"
     empty.mkdir()
 

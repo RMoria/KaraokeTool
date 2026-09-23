@@ -103,21 +103,21 @@ def normalize_for_filter(text: str) -> str:
 #: "10.000.000" does occur in lyrics now and then; "miljard"/"billion" and
 #: higher does not); larger/negative/decimal forms return ``()`` (the caller
 #: then falls back on the digits themselves, as before - no regression).
-_EEN_TWINTIG_NL = ("nul", "een", "twee", "drie", "vier", "vijf", "zes",
+_ONE_TO_TWENTY_NL = ("nul", "een", "twee", "drie", "vier", "vijf", "zes",
                    "zeven", "acht", "negen", "tien", "elf", "twaalf",
                    "dertien", "veertien", "vijftien", "zestien",
                    "zeventien", "achttien", "negentien")
-_TIENTALLEN_NL = ("", "", "twintig", "dertig", "veertig", "vijftig",
+_TENS_NL = ("", "", "twintig", "dertig", "veertig", "vijftig",
                   "zestig", "zeventig", "tachtig", "negentig")
-_EEN_TWINTIG_EN = ("zero", "one", "two", "three", "four", "five", "six",
+_ONE_TO_TWENTY_EN = ("zero", "one", "two", "three", "four", "five", "six",
                    "seven", "eight", "nine", "ten", "eleven", "twelve",
                    "thirteen", "fourteen", "fifteen", "sixteen",
                    "seventeen", "eighteen", "nineteen")
-_TIENTALLEN_EN = ("", "", "twenty", "thirty", "forty", "fifty", "sixty",
+_TENS_EN = ("", "", "twenty", "thirty", "forty", "fifty", "sixty",
                   "seventy", "eighty", "ninety")
 
 
-def _honderdtal_nl(n: int) -> str:
+def _below_thousand_nl(n: int) -> str:
     """Number 0-999 written out in Dutch (joined up, as it is sung).
 
     B412: units FIRST and then the tens, with "en" in between - that is
@@ -130,28 +130,28 @@ def _honderdtal_nl(n: int) -> str:
     turned into a phonetic key, not to be shown to anybody.
     """
     if n < 20:
-        return _EEN_TWINTIG_NL[n]
+        return _ONE_TO_TWENTY_NL[n]
     if n < 100:
-        tien, een = divmod(n, 10)
-        if not een:
-            return _TIENTALLEN_NL[tien]
-        return _EEN_TWINTIG_NL[een] + "en" + _TIENTALLEN_NL[tien]
-    honderd, rest = divmod(n, 100)
-    word = (_EEN_TWINTIG_NL[honderd] if honderd > 1 else "") + "honderd"
-    return word + (_honderdtal_nl(rest) if rest else "")
+        tens, ones = divmod(n, 10)
+        if not ones:
+            return _TENS_NL[tens]
+        return _ONE_TO_TWENTY_NL[ones] + "en" + _TENS_NL[tens]
+    hundreds, rest = divmod(n, 100)
+    word = (_ONE_TO_TWENTY_NL[hundreds] if hundreds > 1 else "") + "honderd"
+    return word + (_below_thousand_nl(rest) if rest else "")
 
 
-def _honderdtal_en(n: int) -> str:
+def _below_thousand_en(n: int) -> str:
     """Number 0-999 written out in English (loose, ``and`` skipped)."""
     if n < 20:
-        return _EEN_TWINTIG_EN[n]
+        return _ONE_TO_TWENTY_EN[n]
     if n < 100:
-        tien, een = divmod(n, 10)
-        word = _TIENTALLEN_EN[tien]
-        return f"{word} {_EEN_TWINTIG_EN[een]}" if een else word
-    honderd, rest = divmod(n, 100)
-    word = f"{_EEN_TWINTIG_EN[honderd]} hundred"
-    return f"{word} {_honderdtal_en(rest)}" if rest else word
+        tens, ones = divmod(n, 10)
+        word = _TENS_EN[tens]
+        return f"{word} {_ONE_TO_TWENTY_EN[ones]}" if ones else word
+    hundreds, rest = divmod(n, 100)
+    word = f"{_ONE_TO_TWENTY_EN[hundreds]} hundred"
+    return f"{word} {_below_thousand_en(rest)}" if rest else word
 
 
 def number_word_forms(n: int) -> tuple[str, ...]:
@@ -169,21 +169,21 @@ def number_word_forms(n: int) -> tuple[str, ...]:
         return ()
     if n == 0:
         return ("nul", "zero")
-    miljoen, rest_m = divmod(n, 1_000_000)
-    duizend, rest = divmod(rest_m, 1000)
+    millions, rest_m = divmod(n, 1_000_000)
+    thousands, rest = divmod(rest_m, 1000)
     nl_parts = []
     en_parts = []
-    if miljoen:
-        nl_parts.append((_honderdtal_nl(miljoen) if miljoen > 1 else "")
+    if millions:
+        nl_parts.append((_below_thousand_nl(millions) if millions > 1 else "")
                         + "miljoen")
-        en_parts.append(f"{_honderdtal_en(miljoen)} million")
-    if duizend:
-        nl_parts.append((_honderdtal_nl(duizend) if duizend > 1 else "")
+        en_parts.append(f"{_below_thousand_en(millions)} million")
+    if thousands:
+        nl_parts.append((_below_thousand_nl(thousands) if thousands > 1 else "")
                         + "duizend")
-        en_parts.append(f"{_honderdtal_en(duizend)} thousand")
-    if rest or not (miljoen or duizend):
-        nl_parts.append(_honderdtal_nl(rest))
-        en_parts.append(_honderdtal_en(rest))
+        en_parts.append(f"{_below_thousand_en(thousands)} thousand")
+    if rest or not (millions or thousands):
+        nl_parts.append(_below_thousand_nl(rest))
+        en_parts.append(_below_thousand_en(rest))
     return ("".join(nl_parts), " ".join(en_parts))
 
 
@@ -400,19 +400,20 @@ def format_overview(clusters: Sequence[Cluster], max_members: int = 6,
     """Make a readable overview of the clusters (console and GUI)."""
     lines: list[str] = []
     for cluster in clusters[:max_clusters]:
-        lines.append(f"Cluster {cluster.id}")
+        lines.append(t("cluster_rep_heading").format(id=cluster.id))
         for member, count in cluster.members[:max_members]:
-            lines.append(f"  {member.upper()}  ({count}x)")
+            lines.append(f"  {member.upper()}  "
+                         + t("cluster_rep_count").format(count=count))
         if len(cluster.members) > max_members:
-            lines.append(f"  ... en {len(cluster.members) - max_members} andere spellingen")
-        lines.append(f"  gevonden: {cluster.frequency} keer, "
-                     f"confidence {cluster.avg_confidence:.2f}, "
-                     f"duur {cluster.avg_duration_s:.2f} s, "
-                     f"pauze {cluster.avg_pause_s:.1f} s")
+            lines.append(t("cluster_rep_more_spellings").format(
+                count=len(cluster.members) - max_members))
+        lines.append(t("cluster_rep_summary").format(
+            frequency=cluster.frequency, confidence=cluster.avg_confidence,
+            duration=cluster.avg_duration_s, pause=cluster.avg_pause_s))
         lines.append("-" * 40)
     if len(clusters) > max_clusters:
-        lines.append(f"... en {len(clusters) - max_clusters} kleinere clusters "
-                     "(zie clusters.csv)")
+        lines.append(t("cluster_rep_more_clusters").format(
+            count=len(clusters) - max_clusters))
     return "\n".join(lines)
 
 
@@ -461,17 +462,17 @@ def _render_html(clusters: Sequence[Cluster],
     sections: list[str] = []
     for cluster in clusters:
         variants = "".join(
-            f"<li>{escape(member.upper())} <span class=aantal>({count}x)"
-            "</span></li>"
+            f"<li>{escape(member.upper())} <span class=count>"
+            f"{t('cluster_rep_count').format(count=count)}</span></li>"
             for member, count in cluster.members)
-        times = " ".join(f"<span class=tijd>{format_time(occ.start)}</span>"
+        times = " ".join(f"<span class=time>{format_time(occ.start)}</span>"
                          for occ in cluster.occurrences)
         segment_numbers = ", ".join(str(index) for index in cluster.segments)
         example = escape(segment_texts.get(cluster.occurrences[0].segment, ""))
         sections.append(f"""
 <section class=cluster>
   <header>
-    <label><input type=checkbox class=kies value={cluster.id}>
+    <label><input type=checkbox class=pick value={cluster.id}>
       <strong>{t("html_cluster").format(id=cluster.id)}</strong> - {escape(cluster.label.upper())}
     </label>
     <span class=freq>{t("html_found_times").format(count=cluster.frequency)}</span>
@@ -481,7 +482,7 @@ def _render_html(clusters: Sequence[Cluster],
     <dt>{t("html_confidence")}</dt><dd>{cluster.avg_confidence:.2f}</dd>
     <dt>{t("html_avg_duration")}</dt><dd>{cluster.avg_duration_s:.2f} s</dd>
     <dt>{t("html_avg_pause")}</dt><dd>{cluster.avg_pause_s:.1f} s</dd>
-    <dt>{t("html_times")}</dt><dd class=tijden>{times}</dd>
+    <dt>{t("html_times")}</dt><dd class=times>{times}</dd>
     <dt>{t("html_segments")}</dt><dd>{segment_numbers}</dd>
     <dt>{t("html_sample_text")}</dt><dd><em>{example}</em></dd>
   </dl>
@@ -507,9 +508,9 @@ def _render_html(clusters: Sequence[Cluster],
   dt {{ color: #666; }}
   dd {{ margin: 0; }}
   ul {{ margin: 0; padding-left: 1.1rem; }}
-  .aantal {{ color: #888; }}
-  .tijden {{ line-height: 1.7; }}
-  .tijd {{ background: #eef; border-radius: 4px; padding: 0 .3rem;
+  .count {{ color: #888; }}
+  .times {{ line-height: 1.7; }}
+  .time {{ background: #eef; border-radius: 4px; padding: 0 .3rem;
           margin-right: .2rem; white-space: nowrap; }}
   footer {{ position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
            border-top: 2px solid #b3261e; padding: .75rem 2rem; }}
@@ -522,18 +523,18 @@ def _render_html(clusters: Sequence[Cluster],
 {body}
 <footer>
   {t("html_footer_label")}
-  <input id=selectie readonly value="" placeholder="{t("html_nothing_selected")}">
-  <button onclick="kopieer()">{t("html_copy")}</button>
+  <input id=selection readonly value="" placeholder="{t("html_nothing_selected")}">
+  <button onclick="copy_selection()">{t("html_copy")}</button>
 </footer>
 <script>
-  const boxes = document.querySelectorAll('.kies');
+  const boxes = document.querySelectorAll('.pick');
   function update() {{
     const ids = [...boxes].filter(b => b.checked).map(b => b.value);
-    document.getElementById('selectie').value = ids.join(',');
+    document.getElementById('selection').value = ids.join(',');
   }}
   boxes.forEach(b => b.addEventListener('change', update));
-  function kopieer() {{
-    navigator.clipboard.writeText(document.getElementById('selectie').value);
+  function copy_selection() {{
+    navigator.clipboard.writeText(document.getElementById('selection').value);
   }}
 </script>
 </body>

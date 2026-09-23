@@ -155,19 +155,19 @@ def deduped_prompt_text(lyrics: Sequence[LyricWord],
     along: even though such a line is not rendered separately, the words
     still help Whisper recognise what can be heard in the recording.
     """
-    gezien: set[str] = set()
-    uniek: list[str] = []
+    seen: set[str] = set()
+    unique: list[str] = []
     for word in lyrics:
         key = word.text.lower()
-        if key in gezien:
+        if key in seen:
             continue
-        gezien.add(key)
-        uniek.append(word.text)
-    text_value = " ".join(uniek)
+        seen.add(key)
+        unique.append(word.text)
+    text_value = " ".join(unique)
     if len(text_value) <= max_chars:
         return text_value
-    ingekort = text_value[:max_chars].rsplit(" ", 1)[0]
-    return ingekort
+    shortened = text_value[:max_chars].rsplit(" ", 1)[0]
+    return shortened
 
 
 def split_word(raw: str) -> list[str]:
@@ -348,12 +348,12 @@ def cut_word(transcript: Sequence[tuple[str, float, float]], index: int,
     if not (0 <= index < len(out)):
         return out, {i: [i] for i in range(len(out))}
     text, start, end = out[index]
-    snijpunt = len(text) // 2 if char_offset is None else char_offset
-    snijpunt = max(1, min(len(text) - 1, snijpunt)) if len(text) >= 2 else 0
-    if snijpunt <= 0:                       # nothing to cut
+    cut_at = len(text) // 2 if char_offset is None else char_offset
+    cut_at = max(1, min(len(text) - 1, cut_at)) if len(text) >= 2 else 0
+    if cut_at <= 0:                       # nothing to cut
         return out, {i: [i] for i in range(len(out))}
-    left, right = text[:snijpunt].strip(), text[snijpunt:].strip()
-    fraction = snijpunt / len(text)
+    left, right = text[:cut_at].strip(), text[cut_at:].strip()
+    fraction = cut_at / len(text)
     middle = round(start + (end - start) * fraction, 3)
     new = out[:index] + [(left, start, middle), (right, middle, end)] \
         + out[index + 1:]
@@ -404,11 +404,11 @@ def remap_pins(pins: dict[int, list[int]],
         for target in targets:
             new.extend(mapping.get(target, [target]))
         # clean up duplicates/order
-        gezien: list[int] = []
+        seen: list[int] = []
         for target in new:
-            if target not in gezien:
-                gezien.append(target)
-        result[li] = gezien
+            if target not in seen:
+                seen.append(target)
+        result[li] = seen
     return result
 
 
@@ -425,11 +425,11 @@ def cut_lyric(lyrics: Sequence[tuple[str, int]], index: int,
     if not (0 <= index < len(out)):
         return out, {i: [i] for i in range(len(out))}
     text_value, line_number = out[index]
-    snijpunt = len(text_value) // 2 if char_offset is None else char_offset
-    snijpunt = max(1, min(len(text_value) - 1, snijpunt)) if len(text_value) >= 2 else 0
-    if snijpunt <= 0:
+    cut_at = len(text_value) // 2 if char_offset is None else char_offset
+    cut_at = max(1, min(len(text_value) - 1, cut_at)) if len(text_value) >= 2 else 0
+    if cut_at <= 0:
         return out, {i: [i] for i in range(len(out))}
-    left, right = text_value[:snijpunt].strip(), text_value[snijpunt:].strip()
+    left, right = text_value[:cut_at].strip(), text_value[cut_at:].strip()
     new = out[:index] + [(left, line_number), (right, line_number)] + out[index + 1:]
     mapping: dict[int, list[int]] = {}
     for i in range(len(out)):
@@ -473,11 +473,11 @@ def remap_pin_keys(pins: dict[int, list[int]],
     for li, targets in pins.items():
         target_list = mapping.get(li, [li])
         first = target_list[0]
-        bestaand = result.get(first, [])
+        existing = result.get(first, [])
         for target in targets:
-            if target not in bestaand:
-                bestaand.append(target)
-        result[first] = bestaand
+            if target not in existing:
+                existing.append(target)
+        result[first] = existing
     return result
 
 
@@ -1014,7 +1014,8 @@ def write_report(aligned: Sequence[AlignedWord], path: Path) -> None:
             current_line = word.lyric.line
             lines.append("")
         if word.start is None:
-            lines.append(f"  {word.lyric.text:<20} -> (niet gekoppeld)")
+            lines.append(f"  {word.lyric.text:<20} -> "
+                         + t("lyrics_rep_not_coupled"))
         else:
             lines.append(f"  {word.lyric.text:<20} -> "
                          f"{word.matched_text or '':<24} "

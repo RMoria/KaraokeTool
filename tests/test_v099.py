@@ -173,7 +173,7 @@ def test_the_log_keys_really_exist() -> None:
         used.update(pattern.findall(path.read_text(encoding="utf-8")))
     missing = sorted(used - set(translations.TRANSLATIONS["nl"]))
     assert not missing, missing
-    assert len(used) > 150, "verwacht ~185 logsleutels, gevonden " \
+    assert len(used) > 150, "expected ~185 log keys, found " \
                             f"{len(used)}"
 
 
@@ -340,10 +340,10 @@ def test_a_lone_anchor_that_demands_too_fast_singing_is_let_go(monkeypatch) -> N
     aligned = _words(spec)
     out = pipeline._place_skipped_on_energy(_context([(0.0, 40.0)], monkeypatch), aligned)
     anchor = out[6]
-    assert anchor.estimated, "het valse anker had losgelaten moeten worden"
+    assert anchor.estimated, "the false anchor should have been let go"
     assert anchor.start < 30.0
     spans = [w.end - w.start for w in out if w.estimated]
-    assert min(spans) > 0.2, "geen enkel woord in een fractie van een seconde"
+    assert min(spans) > 0.2, "not a single word in a fraction of a second"
 
 
 def test_an_anchor_with_neighbours_is_never_let_go(monkeypatch) -> None:

@@ -676,7 +676,7 @@ def _discard(path: Path) -> None:
 
 def _stderr(process: subprocess.Popen) -> str:
     if process.stderr is None:
-        return "onbekende fout"
+        return t("value_unknown_error")
     return process.stderr.read().decode(errors="replace").strip()
 
 
