@@ -3179,9 +3179,88 @@ class MainWindow(QMainWindow):
                                     found_status=view.get(
                                         "found_status"),               # B502
                                     in_lyrics=view.get(
-                                        "in_lyrics", ()))              # B521
+                                        "in_lyrics", ()),              # B521
+                                    origins=view.get("origins", ()),
+                                    can_listen_again=True)       # v1.0.12
         dialog.exec()
+        if dialog.listen_again_requested:
+            self._listen_again()
+            return
         self._report_missing(context)                                   # B350
+
+    def _listen_again(self) -> None:
+        """Hear every problem place of the coupling again (v1.0.12).
+
+        Runs in the background like every other long step, then shows
+        the candidates; what the user takes over is kept, and the
+        coupling editor opens again on the result - also after Stop, a
+        failure, or when another task is still busy, because the user
+        came from the editor and expects to be back in it.
+
+        Stop is NOT the general cancel of a step: that clears the
+        half-made work of the step it stopped, and this step makes
+        nothing until the user accepts - clearing would cost him his
+        couplings for nothing. So the task catches it itself.
+        """
+        context = self._context
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, t("busy_title"),
+                                    t("busy_running_body"))
+            self._open_word_couple()
+            return
+        cancel_event = threading.Event()
+
+        def task(progress: Any, message: Any) -> dict:
+            message(t("listen_again_busy"))
+            try:
+                return {"areas": pipeline.listen_again(
+                    context, progress=progress,
+                    cancelled=cancel_event.is_set)}
+            except whisper.CancelledError:
+                return {"cancelled": True}
+            except PipelineError as exc:
+                return {"error": str(exc)}
+            except Exception as exc:  # noqa: BLE001 - back to the editor
+                logger.exception(t("log_task_error"))
+                return {"error": t("task_failed").format(exc=exc)}
+
+        def on_done(result: dict) -> None:
+            if result.get("cancelled"):
+                self._log(t("cancelled_done"))
+            elif result.get("error"):
+                self._on_failed(result["error"])
+            else:
+                self._choose_heard_again(result.get("areas") or [])
+            self._open_word_couple()
+
+        self._run(task, on_done, cancel_event=cancel_event)
+
+    def _choose_heard_again(self, areas: list) -> None:
+        """Show what was heard again and keep what the user takes."""
+        context = self._context
+        has_earlier = bool(pipeline.heard_again(context))
+        # Places where nothing at all was found offer nothing to take
+        # over: then it is the same as finding no places. Otherwise they
+        # stay in the window, greyed out, so the user sees them.
+        if not any(area.get("candidates") for area in areas):
+            areas = []
+        if not areas and not has_earlier:
+            QMessageBox.information(self, t("listen_again_title"),
+                                    t("listen_again_nothing"))
+            return
+        from .coupling_editor import ListenAgainDialog
+
+        dialog = ListenAgainDialog(areas, has_earlier=has_earlier,
+                                   parent=self)
+        if not dialog.exec():
+            return
+        if dialog.clear_requested:
+            pipeline.clear_heard_again(context)
+            self._log(t("listen_again_cleared"))
+            return
+        count = pipeline.accept_heard_again(context, dialog.chosen())
+        if count:
+            self._log(t("listen_again_saved").format(count=count))
 
     def _report_missing(self, context) -> None:
         """Report what was heard but is not in the lyrics (B350).

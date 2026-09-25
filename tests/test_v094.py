@@ -354,7 +354,8 @@ def test_status_style_three_categories() -> None:
         "suspect_run",                          # B502
         "manually_uncoupled",                   # B506
         "background",                           # B507
-        "repeat_missing"}                       # B521
+        "repeat_missing",                       # B521
+        "heard_again", "aligned"}               # v1.0.12
     keys = [key for _f, _b, key in _STATUS_STYLE.values()]
     assert len(set(keys)) == len(keys)           # each status its own text
     colors = [(fill.name(), border.name())

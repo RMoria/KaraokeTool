@@ -22,8 +22,9 @@ from typing import Callable, Sequence
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QGridLayout,
+                               QHBoxLayout, QLabel, QMessageBox, QPushButton,
+                               QScrollArea, QVBoxLayout, QWidget)
 
 from .translations import t
 
@@ -98,6 +99,14 @@ _STATUS_STYLE: dict[str, tuple[QColor, QColor, str]] = {
     # as coupled. Pale green, like the [bg] block in the timing editor.
     "background": (QColor(214, 238, 216), QColor(70, 130, 75),
                    "legend_background"),
+    # v1.0.12: FOUND words that were not heard in the normal run. Heard
+    # again from "Listen again" in lilac, laid on the singing by the
+    # aligner in sand - both calm, because both are usable, and both
+    # distinct, because neither is the same as a word Whisper heard.
+    "heard_again": (QColor(232, 222, 245), QColor(125, 95, 170),
+                    "legend_heard_again"),
+    "aligned": (QColor(240, 232, 208), QColor(160, 130, 60),
+                "legend_aligned"),
 }
 
 
@@ -165,9 +174,15 @@ class CouplingCanvas(QWidget):
                  on_lyrics: Callable[[list], None] | None = None,
                  filtered: Sequence[int] = (),
                  found_status: dict | None = None,
-                 in_lyrics: Sequence[int] = ()) -> None:
+                 in_lyrics: Sequence[int] = (),
+                 origins: Sequence = ()) -> None:
         super().__init__()
         self._trans = list(transcript)    # [(text,start,end), ...]
+        # v1.0.12: where a found word came from when it was not simply
+        # heard, by its start time - an index would go stale the moment
+        # a word is cut or merged.
+        self._origins = {round(float(start), 3): str(origin)
+                         for start, origin in origins}
         self._words = list(words)       # editor view words (dicts)
         self._filtered = set(filtered)  # B309: filtered found words
         # B521: which found words occur in the lyrics, so that a run of
@@ -474,7 +489,7 @@ class CouplingCanvas(QWidget):
                 # B502: the same colour codes as the lyrics lane, so that
                 # a found word which is coupled to nothing is visible
                 # here too - and a whole run of them stands out.
-                style = _STATUS_STYLE.get(self._found_status.get(i, ""))
+                style = _STATUS_STYLE.get(self._found_style(i))
                 self._draw_box(painter, self._top_rect(i), text_value,
                                selected=(i == self._sel_top),
                                fill=style[0] if style else QColor(225, 228,
@@ -861,6 +876,25 @@ class CouplingCanvas(QWidget):
             return ""
         return str(self._words[self._sel_bot].get("text") or "")
 
+    def _found_style(self, index: int) -> str:
+        """The colour code of a found word.
+
+        v1.0.12: a word that was heard again or laid by the aligner shows
+        where it came from as long as nothing is wrong with it - coupled,
+        or no status at all. A problem status (no match, filtered,
+        suspected) still wins: that is what the user has to act on.
+        """
+        status = self._found_status.get(index, "")
+        if status in ("", "coupled"):
+            return self._origin_at(index) or status
+        return status
+
+    def _origin_at(self, index: int) -> str:
+        """``heard_again``/``aligned`` for a found word, or ""."""
+        if not 0 <= index < len(self._trans):
+            return ""
+        return self._origins.get(round(float(self._trans[index][1]), 3), "")
+
     def _refresh_found_status(self, index: int | None = None) -> None:
         """The colour codes of the found lane after a change (B502/B520).
 
@@ -983,9 +1017,15 @@ class CouplingEditorDialog(QDialog):
                  parent=None, filtered: Sequence[int] = (),
                  on_mark: Callable[[str, str], bool] | None = None,
                  found_status: dict | None = None,
-                 in_lyrics: Sequence[int] = ()) -> None:
+                 in_lyrics: Sequence[int] = (),
+                 origins: Sequence = (),
+                 can_listen_again: bool = False) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("couple_title"))
+        #: v1.0.12: set when the user asks to listen again. The dialog
+        #: then saves and closes, so the long run happens with nothing
+        #: half-edited open, and the caller opens it again afterwards.
+        self.listen_again_requested = False
         self.resize(1000, 320)
         self._on_save = on_save
         self._on_save_transcript = on_save_transcript
@@ -1017,7 +1057,8 @@ class CouplingEditorDialog(QDialog):
                                     on_lyrics=self._lyrics_changed,
                                     filtered=filtered,
                                     found_status=found_status,
-                                    in_lyrics=in_lyrics)      # B521
+                                    in_lyrics=in_lyrics,      # B521
+                                    origins=origins)          # v1.0.12
         scroll = QScrollArea()
         scroll.setWidgetResizable(False)
         scroll.setWidget(self._canvas)
@@ -1037,6 +1078,11 @@ class CouplingEditorDialog(QDialog):
         row.addWidget(cut)
         row.addWidget(merge)
         row.addWidget(release)
+        if can_listen_again:
+            again = QPushButton(t("couple_listen_again"))
+            again.setToolTip(t("couple_listen_again_tip"))
+            again.clicked.connect(self._ask_listen_again)
+            row.addWidget(again)
         row.addStretch()
         save = QPushButton(t("couple_save"))
         save.clicked.connect(self.accept)
@@ -1048,6 +1094,10 @@ class CouplingEditorDialog(QDialog):
 
     def _changed(self, pins: dict) -> None:
         self._pins = pins
+
+    def _ask_listen_again(self) -> None:
+        self.listen_again_requested = True
+        self.accept()
 
     def _mark_selected(self, status: str) -> None:
         """Mark the selected word as hallucination or filler (B337).
@@ -1098,3 +1148,113 @@ class CouplingEditorDialog(QDialog):
         except Exception:  # noqa: BLE001 - saving must not crash
             logger.exception(t("log_couple_save_failed"))
         super().done(result)
+
+
+class ListenAgainDialog(QDialog):
+    """The candidates of "Listen again", one row per place (v1.0.12).
+
+    Per place the best candidate is chosen and ticked; the user unticks
+    what he does not want, or picks another candidate. What he does not
+    take stays as it is and comes up again the next time.
+    """
+
+    def __init__(self, areas: list[dict], has_earlier: bool = False,
+                 parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(t("listen_again_title"))
+        self.resize(900, 420)
+        self._areas = areas
+        #: Set when the user asks to clear what was taken over before.
+        self.clear_requested = False
+        self._rows: list[tuple[QCheckBox, QComboBox]] = []
+
+        layout = QVBoxLayout(self)
+        # Nothing new to hear, but something taken over earlier: the
+        # dialog still opens, so that can be cleared.
+        intro = QLabel(t("listen_again_intro") if areas
+                       else t("listen_again_nothing"))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        grid_host = QWidget()
+        grid = QGridLayout(grid_host)
+        for column, key in enumerate(("listen_again_col_take",
+                                      "listen_again_col_where",
+                                      "listen_again_col_expected",
+                                      "listen_again_col_candidate")):
+            header = QLabel(f"<b>{t(key)}</b>")
+            header.setTextFormat(Qt.RichText)
+            grid.addWidget(header, 0, column)
+        for row, area in enumerate(areas, start=1):
+            take = QCheckBox()
+            choice = QComboBox()
+            for candidate in area.get("candidates", ()):
+                text = " ".join(str(w[0]) for w in candidate["words"])
+                choice.addItem(t("listen_again_candidate").format(
+                    kind=t(f"listen_again_kind_{candidate['kind']}"),
+                    score=float(candidate["score"]), text=text[:80]))
+                # Why it scored what it scored, on hovering over it.
+                parts = candidate.get("evidence") or {}
+                if parts:
+                    choice.setItemData(
+                        choice.count() - 1,
+                        t("listen_again_evidence").format(
+                            evidence=float(parts.get("evidence", 0.0)),
+                            singing=float(parts.get("singing", 0.0)),
+                            rhythm=float(parts.get("rhythm", 0.0)),
+                            echo=(t("listen_again_echo")
+                                  if parts.get("echo") else "")),
+                        Qt.ToolTipRole)
+            if choice.count() == 0:
+                choice.addItem(t("listen_again_none"))
+                take.setEnabled(False)
+            else:
+                take.setChecked(True)
+            where = QLabel(t("listen_again_where").format(
+                low=float(area["low"]), high=float(area["high"])))
+            expected = QLabel(" ".join(area.get("expected", ()))[:90])
+            expected.setWordWrap(True)
+            grid.addWidget(take, row, 0)
+            grid.addWidget(where, row, 1)
+            grid.addWidget(expected, row, 2)
+            grid.addWidget(choice, row, 3)
+            self._rows.append((take, choice))
+        grid.setColumnStretch(2, 1)
+        grid.setColumnStretch(3, 1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(grid_host)
+        layout.addWidget(scroll, stretch=1)
+
+        buttons = QHBoxLayout()
+        if has_earlier:
+            clear = QPushButton(t("listen_again_clear"))
+            clear.clicked.connect(self._clear)
+            buttons.addWidget(clear)
+        buttons.addStretch()
+        if areas:
+            apply = QPushButton(t("listen_again_apply"))
+            apply.clicked.connect(self.accept)
+            buttons.addWidget(apply)
+        cancel = QPushButton(t("close"))
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        layout.addLayout(buttons)
+
+    def _clear(self) -> None:
+        self.clear_requested = True
+        self.accept()
+
+    def chosen(self) -> list[dict]:
+        """The areas the user takes over, each with its chosen words."""
+        out = []
+        for area, (take, choice) in zip(self._areas, self._rows):
+            candidates = area.get("candidates") or []
+            if not take.isChecked() or not candidates:
+                continue
+            candidate = candidates[max(0, choice.currentIndex())]
+            out.append({"low": area["low"], "high": area["high"],
+                        "kind": candidate["kind"],
+                        "words": candidate["words"],
+                        "replaced": area.get("replaced", [])})
+        return out

@@ -202,6 +202,15 @@ def _artefacts() -> dict[str, Artefact]:
         ["whisper_original", "transcript_override", "lyrics_override",
          "input:lyrics", "config:models"],
         "manual word couplings (lyric word -> detected word)")
+    # v1.0.12: deliberately NOT a parent of word_coupling. What was
+    # heard again changes the word list, and the pins find their words
+    # back by description (B506) - lapsing them here would throw away
+    # the one piece of hand work this feature is built around.
+    # Only the transcription itself is its parent (and through it the
+    # lyrics file, which is Whisper's prompt): cutting or merging lyric
+    # words renumbers the lyrics, not the found words it is about.
+    add("heard_again", STEP, ["whisper_original"],
+        "stretches heard again or aligned from the coupling editor")
     add("original_overrides", STEP, ["input:lyrics", "lyrics_override"],
         "hand-corrected line times of the original")
     add("stress_anchors", STEP,
@@ -210,8 +219,14 @@ def _artefacts() -> dict[str, Artefact]:
 
     # -- step 2: analysis and clusters -----------------------------------
     for track in TRACKS:
+        # v1.0.12: the figures of the original count what was heard
+        # again as well, because load_segments does. The clusters do
+        # not lapse on it on purpose: they are the user's selection, and
+        # a few words more in one stretch do not change what a cluster
+        # is.
         add(f"analysis_{track}", STEP,
-            [f"whisper_{track}", "config:analysis"],
+            [f"whisper_{track}", "config:analysis"]
+            + (["heard_again"] if track == "original" else []),
             f"analysis figures for the {track} transcription")
         add(f"output:analysis_{track}", FILE, [f"analysis_{track}"],
             f"output/{track}/statistics.json and the csv reports",
@@ -234,7 +249,7 @@ def _artefacts() -> dict[str, Artefact]:
                 paths.output_dir / _t / "clusters.json",
                 paths.output_dir / _t / "clusters.html"])
     add("output:lyrics_alignment", FILE,
-        ["word_coupling", "input:karaoke_text"],
+        ["word_coupling", "heard_again", "input:karaoke_text"],
         "output/original/lyrics_alignment.txt",
         lambda paths: [paths.output_dir / "original"
                        / "lyrics_alignment.txt"])
@@ -250,11 +265,12 @@ def _artefacts() -> dict[str, Artefact]:
 
     # -- line coupling and timing ----------------------------------------
     add("coupling", STEP,
-        ["word_coupling", "align", "input:lyrics", "input:karaoke_text",
-         "lyrics_override", "transcript_override", "original_overrides",
-         "config:timing", "config:models"],
+        ["word_coupling", "heard_again", "align", "input:lyrics",
+         "input:karaoke_text", "lyrics_override", "transcript_override",
+         "original_overrides", "config:timing", "config:models"],
         "original lines with times + which karaoke line goes with which")
-    add("lyrics", STEP, ["clusters_original", "word_coupling"],
+    add("lyrics", STEP, ["clusters_original", "word_coupling",
+                         "heard_again"],
         "how many extra damping fragments come from the lyrics")
     # B330: the line starts are laid on the vocal onsets, so the timing
     # now also hangs directly off the vocal stem itself and not only off

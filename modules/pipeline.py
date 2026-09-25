@@ -1330,7 +1330,13 @@ def transcript_override(context: AppContext
 def set_transcript_override(
         context: AppContext,
         transcript: list[tuple[str, float, float]] | None) -> None:
-    """Keep (or clear) the edited transcription for the coupling (B153)."""
+    """Keep (or clear) the edited transcription for the coupling (B153).
+
+    v1.0.12: the words the editor only shows because they were heard
+    again are not stored in it - they have their own step.
+    """
+    if transcript:
+        transcript = without_heard_again(context, transcript)
     if not transcript:
         context.store.clear_step("transcript_override")
         logger.info(t("log_transcript_override_cleared"))
@@ -1491,7 +1497,8 @@ def _coupling_transcript(context: AppContext, segments: tuple, clean: tuple
     """
     override = transcript_override(context)
     if override:
-        return override, []
+        return _override_with_heard_again(override,
+                                          heard_again(context)), []
     return _full_transcript(segments, clean)
 
 
@@ -1595,6 +1602,7 @@ def word_coupling_view(context: AppContext) -> dict | None:
             "index": li, "text": aw.lyric.text, "line": aw.lyric.line,
             "transcript_indices": targets, "found": aw.matched_text,
             "sim": round(float(aw.sim), 3), "pinned": li in pins,
+            "bg": bool(aw.lyric.bg),                            # v1.0.12
         })
     # Creative addition (B228): 2-to-1 ("fort minable" -> "formidable") and
     # real 1-to-1 gaps within the anchor window. Pinned words stay as the
@@ -1662,6 +1670,7 @@ def word_coupling_view(context: AppContext) -> dict | None:
     in_lyrics = words_in_the_lyrics(transcript, lyrics)          # B521
     return {"transcript": transcript, "words": words, "filtered": filtered,
             "held": sorted(held), "in_lyrics": sorted(in_lyrics),
+            "origins": _origins(segments),                   # v1.0.12
             "found_status": _transcript_status(transcript, words, filtered,
                                                in_lyrics)}
 
@@ -2060,6 +2069,12 @@ def detect_track(context: AppContext, track: str,
         return DetectResult(track, cached, True)
 
     filled = 0
+    # v1.0.12: the new ways of listening (short forced pieces, the known
+    # text on unheard singing) change what a transcription says. A
+    # project that was transcribed before keeps the old way, so that a
+    # second transcription of it - after "Nu legen", say - gives the same
+    # words and B549 keeps the coupling built on them.
+    anew = _listens_anew(step)
     if in_pieces:
         # B538: the third value is the second language that was REALLY
         # read. Without measured singing there is none, and then it may
@@ -2067,7 +2082,8 @@ def detect_track(context: AppContext, track: str,
         # different key and transcribe the whole song again for nothing.
         segments, filled, second_code = _transcribe_in_pieces(
             context, wav_path, settings, prompt, language_code,
-            track_output_dir(context, track), progress, cancelled)
+            track_output_dir(context, track), progress, cancelled,
+            anew=anew)
     else:
         segments = whisper.transcribe(wav_path, settings,
                                       track_output_dir(context, track),
@@ -2075,16 +2091,30 @@ def detect_track(context: AppContext, track: str,
                                       language_override=language_code,
                                       cancelled=cancelled,
                                       initial_prompt=prompt)
-    if (track == TRACK_ORIGINAL
-            and context.config.advanced.forced_alignment
-            and word_alignment.is_available()):
-        if language_code and language_code != "auto":
+    aligning = (track == TRACK_ORIGINAL
+                and context.config.advanced.forced_alignment
+                and word_alignment.is_available())
+    known_language = bool(language_code) and language_code != "auto"
+    if aligning:
+        if known_language:
             logger.info(t("log_forced_alignment_started"), language_code)
         else:
             logger.info(t("log_forced_alignment_skipped"))
         segments = word_alignment.refine(wav_path, segments, language_code)
+    # B549: the fingerprint of what Whisper heard and the aligner timed,
+    # taken BEFORE the known text below goes in. Where that text goes
+    # depends on more than the audio - the hallucination and filler
+    # lists the user adds to from the editor, the karaoke text - so a
+    # fingerprint over it would call an unchanged transcription new and
+    # cost the coupling that B549 exists to keep.
+    fingerprint = transcript_fingerprint(segments)
+    if aligning and known_language and anew:
+        # v1.0.12: the lyrics for the singing that is still unheard, in
+        # a separate call AFTER the normal one - so what Whisper heard is
+        # aligned exactly as it always was.
+        segments = _with_gap_text(context, segments, wav_path,
+                                  language_code)
     whisper.save_segments(segments, cache_file)
-    fingerprint = transcript_fingerprint(segments)  # B549
     context.store.set_step(f"whisper_{track}", {
         "wav_sha1": checksum,
         "model": settings.model,
@@ -2098,6 +2128,7 @@ def detect_track(context: AppContext, track: str,
         "filled_from_pieces": filled,  # B442
         "second_language": second_code,  # B538
         "transcript_sha1": fingerprint,  # B549
+        **({"listening": LISTENING} if anew else {}),  # v1.0.12
     })
     # B265: this is a real new transcription (not a cache hit from the
     # check above) - any manual word coupling and the alignment/timing
@@ -2238,7 +2269,7 @@ def _second_language_code(context: AppContext, language_code: str,
 
 def _transcribe_in_pieces(context: AppContext, wav_path: Path, settings,
                           prompt: str, language_code: str, output_dir: Path,
-                          progress=None, cancelled=None):
+                          progress=None, cancelled=None, anew: bool = True):
     """The whole song AND its pieces, in one queue (B442).
 
     What the night job of v0.136.0 measured, brought into production.
@@ -2277,7 +2308,9 @@ def _transcribe_in_pieces(context: AppContext, wav_path: Path, settings,
     # projection onto the karaoke would put both beside the truth.
     windows = _original_vocal_windows(context)
     total = max((high for _low, high in windows), default=0.0)
-    pieces = wc.cut_points(windows, total) if windows else ()
+    pieces = (wc.cut_points(windows, total,
+                            forced_s=wc.FORCED_S if anew else wc.WINDOW_S)
+              if windows else ())
     # B538: without measured singing a second reading can contribute
     # nothing at all - a word only counts as a filler when it sits on
     # singing - so it would be a whole Whisper run for certain nothing,
@@ -3441,7 +3474,8 @@ def _drop_phantom_words(segments: tuple) -> tuple:
     return tuple(result)
 
 
-def load_segments(context: AppContext, track: str) -> tuple[Segment, ...]:
+def load_segments(context: AppContext, track: str,
+                  heard: bool = True) -> tuple[Segment, ...]:
     """Load the cached transcription of one track.
 
     THE reading path. Anything that reasons about words - the coupling,
@@ -3455,6 +3489,10 @@ def load_segments(context: AppContext, track: str) -> tuple[Segment, ...]:
     not. That cost the user a set of eighty-two correct couplings
     (B518), and ``tests/test_v0148.py`` now guards it.
 
+    ``heard=False`` leaves out what was accepted in "Listen again"
+    (v1.0.12) - only for "Listen again" itself, which has to know which
+    words of the first listen it replaces.
+
     Raises:
         PipelineError: If step 1 has not yet been executed.
     """
@@ -3467,9 +3505,454 @@ def load_segments(context: AppContext, track: str) -> tuple[Segment, ...]:
     # B373: the lyrics travel along, because they decide whether two
     # equal words on a segment boundary are one cut word or a real
     # repetition.
-    return _drop_phantom_words(_merge_boundary_duplicates(
+    segments = _drop_phantom_words(_merge_boundary_duplicates(
         _drop_repetition_loop(whisper.load_segments(cache_file)),
         lyrics=_lyrics_for_boundaries(context)))
+    if track == TRACK_ORIGINAL and heard:
+        # v1.0.12: what the user accepted in "Listen again" is part of
+        # the transcription from here on - for the coupling, the timing
+        # and every measurement - because this is the one reading path.
+        segments = with_heard_again(segments, heard_again(context))
+    return segments
+
+
+# --------------------------------------------------------------------------
+# v1.0.12: hearing again where the first listen heard nothing
+# --------------------------------------------------------------------------
+
+#: v1.0.12: the way of listening a transcription was made with. A
+#: project whose step has no such number was transcribed before, and a
+#: new transcription of it keeps the old way (see ``detect_track``).
+LISTENING = 2
+
+
+def _listens_anew(step: dict | None) -> bool:
+    """Is this a project that may be transcribed the new way?"""
+    return step is None or int(step.get("listening", 0)) >= LISTENING
+
+
+def _interleaved(segments) -> tuple[Segment, ...]:
+    """The segments in the order of their WORDS.
+
+    Sorting whole segments is not enough once words come in between:
+    a Whisper segment that spans a hole keeps its first word before the
+    hole and its last one after it, and the added words would then stand
+    behind all of it in the flat word list the coupling runs on - which
+    cost the good couplings after the hole in the first version of
+    this. So the words go in time order, and a segment is split where
+    another one's words come in between. A segment that nothing comes
+    into stays the object it was.
+    """
+    tagged = sorted(((float(word.start), number, word)
+                     for number, seg in enumerate(segments)
+                     for word in seg.words), key=lambda row: (row[0], row[1]))
+    out = []
+    current, bucket = None, []
+
+    def flush() -> None:
+        if current is None or not bucket:
+            return
+        seg = segments[current]
+        if len(bucket) == len(seg.words):
+            out.append(seg)
+        else:
+            out.append(replace(seg, words=tuple(bucket),
+                               text=" ".join(w.text for w in bucket),
+                               start=bucket[0].start, end=bucket[-1].end))
+
+    for _start, number, word in tagged:
+        if number != current:
+            flush()
+            current, bucket = number, []
+        bucket.append(word)
+    flush()
+    # A segment without words has only its own start to go by.
+    for seg in segments:
+        if not seg.words:
+            at = next((n for n, other in enumerate(out) if other.words
+                       and float(other.words[0].start) > float(seg.start)),
+                      len(out))
+            out.insert(at, seg)
+    # Numbered in THIS order, not sorted again by segment start: a
+    # segment can start before its first word (a repetition loop taken
+    # off its front keeps the start), and sorting on it would put its
+    # words before the ones that come first.
+    return tuple(replace(seg, index=number) for number, seg in enumerate(out))
+
+
+_ALIGNER_PUNCTUATION = str.maketrans("", "", ".,!?;:\"()")
+
+
+def _align_known_text(wav_path, spans, language: str) -> list[list]:
+    """Lay known text on the voice: ``[(low, high, words)]`` in, the timed
+    words per span out, as ``[text, start, end, confidence]``.
+
+    One call to the aligner for all spans together - it loads its model
+    and the whole vocal stem every time. The punctuation goes, because
+    the aligner splits a text into sentences on it and would then hand
+    back more segments than it got; the words come back to their span by
+    where they landed, not by position.
+    """
+    if not spans:
+        return []
+    asked = tuple(Segment(index=number,
+                          text=" ".join(w.translate(_ALIGNER_PUNCTUATION)
+                                        for w in words).strip(),
+                          start=float(low), end=float(high), words=())
+                  for number, (low, high, words) in enumerate(spans))
+    laid = word_alignment.refine(wav_path, asked, language)
+    found = [(w.text, float(w.start), float(w.end), float(w.confidence))
+             for seg in laid for w in seg.words]
+    return [[list(w) for w in found
+             if low <= (w[1] + w[2]) / 2.0 <= high]
+            for low, high, _words in spans]
+
+
+def _with_gap_text(context: AppContext, segments, wav_path,
+                   language: str) -> tuple[Segment, ...]:
+    """Step 1.1: the known lyrics for every stretch still unheard.
+
+    Called after the forced aligner has done what Whisper heard. For
+    each stretch of measured singing without a heard word
+    (hallucinations do not count as heard - "ZANG EN MUZIEK" is exactly
+    what Whisper writes when it heard nothing), the uncoupled lyric
+    words between the anchors around it are laid on it by the aligner,
+    and come in marked as aligned rather than heard. Anything that goes
+    wrong costs only this addition, never the transcription.
+    """
+    from . import listen_again as again
+
+    lyrics_path = context.paths.input_dir / song_text.LYRICS_FILENAME
+    if not lyrics_path.exists():
+        return tuple(segments)
+    try:
+        windows = _original_vocal_windows(context)
+        if not windows:
+            return tuple(segments)
+        lyrics = _effective_lyrics(context, lyrics_path)
+        clean, aligned = _clean_segments_and_alignment(
+            context, lyrics, tuple(segments))
+        heard = [(w.start, w.end) for seg in clean for w in seg.words]
+        gaps = again.gap_segments(again.unheard_stretches(windows, heard),
+                                  aligned)
+        timed = _align_known_text(
+            wav_path, [(gap.start, gap.end, gap.text.split())
+                       for gap in gaps], language)
+    except Exception:  # noqa: BLE001 - an addition may never cost the run
+        logger.exception(t("log_gap_text_failed"))
+        return tuple(segments)
+    extra = []
+    filled = []
+    for gap, words in zip(gaps, timed):
+        if words:
+            filled.append((float(gap.start), float(gap.end)))
+            items = tuple(Word(text=str(a), start=float(b), end=float(c),
+                               confidence=float(d)) for a, b, c, d in words)
+            extra.append(Segment(index=0,
+                                 text=" ".join(w.text for w in items),
+                                 start=items[0].start, end=items[-1].end,
+                                 words=items,
+                                 origin=whisper.ORIGIN_ALIGNED))
+    if not extra:
+        return tuple(segments)
+    logger.info(t("log_gap_text_added"), len(extra),
+                sum(len(seg.words) for seg in extra))
+    # A filled stretch held no heard word, so whatever Whisper wrote in it
+    # is what the filter threw out - "ZANG EN MUZIEK", typically. It goes:
+    # split up between the known words, its pieces would be judged one
+    # by one, and a lone "EN" is no hallucination to the filter and
+    # would come back to compete with the real one.
+    kept = []
+    for seg in segments:
+        words = tuple(w for w in seg.words if not any(
+            low <= (float(w.start) + float(w.end)) / 2.0 <= high
+            for low, high in filled))
+        if len(words) == len(seg.words):
+            kept.append(seg)
+        elif words:
+            kept.append(replace(seg, words=words,
+                                text=" ".join(w.text for w in words),
+                                start=words[0].start, end=words[-1].end))
+    return _interleaved(kept + extra)
+
+
+def heard_again(context: AppContext) -> list[dict]:
+    """What the user accepted in "Listen again", per area."""
+    step = context.store.get_step("heard_again") or {}
+    return [dict(area) for area in step.get("areas", ())
+            if isinstance(area, dict)]
+
+
+def _origin_of(kind: str) -> str:
+    return (whisper.ORIGIN_ALIGNED if kind == "aligned"
+            else whisper.ORIGIN_HEARD_AGAIN)
+
+
+def _replaced_keys(areas) -> set[tuple[str, float]]:
+    """The found words the accepted areas replace, as (text, start)."""
+    return {(str(row[0]), round(float(row[1]), 3))
+            for area in areas for row in area.get("replaced", ())}
+
+
+def with_heard_again(segments, areas) -> tuple[Segment, ...]:
+    """The transcription with the accepted areas in it.
+
+    The found words an area replaces go - they were the weak or wrong
+    ones between two good anchors - and the area's own words come in as
+    one segment, marked with where they came from. Without areas the
+    segments come back as they were, object for object.
+    """
+    if not areas:
+        return tuple(segments)
+    replaced = _replaced_keys(areas)
+    kept = []
+    for seg in segments:
+        words = tuple(word for word in seg.words
+                      if (word.text, round(float(word.start), 3))
+                      not in replaced)
+        if len(words) == len(seg.words):
+            kept.append(seg)
+        elif words:
+            kept.append(replace(seg, words=words,
+                                text=" ".join(w.text for w in words),
+                                start=words[0].start, end=words[-1].end))
+    for area in areas:
+        words = tuple(Word(text=str(text), start=float(start),
+                           end=float(end), confidence=float(confidence))
+                      for text, start, end, confidence in area.get("words", ()))
+        if words:
+            kept.append(Segment(index=0,
+                                text=" ".join(w.text for w in words),
+                                start=words[0].start, end=words[-1].end,
+                                words=words,
+                                origin=_origin_of(str(area.get("kind")))))
+    return _interleaved(kept)
+
+
+def _override_with_heard_again(override, areas):
+    """The same for the hand-edited word list (B153), when there is one.
+
+    A word of an area is only added where the list has nothing yet: the
+    user may have cut or merged it after taking it over, and then his
+    edited version stands in the list already.
+    """
+    if not areas:
+        return override
+    replaced = _replaced_keys(areas)
+    rows = [row for row in override
+            if (str(row[0]), round(float(row[1]), 3)) not in replaced]
+    spans = [(float(row[1]), float(row[2])) for row in rows]
+    for area in areas:
+        for text, start, end, _c in area.get("words", ()):
+            middle = (float(start) + float(end)) / 2.0
+            if not any(low <= middle <= high for low, high in spans):
+                rows.append((str(text), float(start), float(end)))
+    return sorted(rows, key=lambda row: float(row[1]))
+
+
+def without_heard_again(context: AppContext, transcript):
+    """A word list as the editor shows it, as it is without "Listen
+    again": the words it only shows because they were heard again go -
+    they are kept in their own step, and saving them into the edited
+    list as well would count them twice - and the found words those
+    replace come back, so that clearing what was heard again later
+    brings them back too. A replaced word is only put back where the
+    list has nothing yet.
+    """
+    areas = heard_again(context)
+    if not areas:
+        return transcript
+    words = {(str(text), round(float(start), 3))
+             for area in areas
+             for text, start, _end, _c in area.get("words", ())}
+    rows = [tuple(row) for row in transcript
+            if (str(row[0]), round(float(row[1]), 3)) not in words]
+    present = {(str(row[0]), round(float(row[1]), 3)) for row in rows}
+    for area in areas:
+        for row in area.get("replaced", ()):
+            if len(row) < 3:
+                continue
+            key = (str(row[0]), round(float(row[1]), 3))
+            middle = (float(row[1]) + float(row[2])) / 2.0
+            if key in present or any(float(r[1]) <= middle <= float(r[2])
+                                     for r in rows):
+                continue
+            rows.append((str(row[0]), float(row[1]), float(row[2])))
+            present.add(key)
+    return sorted(rows, key=lambda row: float(row[1]))
+
+
+def _origins(segments) -> list[tuple[float, str]]:
+    """``(start, origin)`` of every word that was not simply heard."""
+    return [(round(float(word.start), 3), seg.origin)
+            for seg in segments if seg.origin for word in seg.words]
+
+
+def listen_again(context: AppContext, progress=None,
+                 cancelled=None) -> list[dict]:
+    """Candidates for every problem area of the coupling (v1.0.12).
+
+    The areas come from the coupling as it stands (see
+    ``listen_again.problem_areas``): good couplings and the user's pins
+    are the anchors and are never touched. Per area, up to two
+    candidates: Whisper on only that stretch of the vocal stem, with the
+    lines that belong there as its hint and without the "nothing is sung
+    here" threshold - the vocal stem already proves that something is -
+    and the aligner laying the expected words on it. The vocal stem then
+    judges both, and they come back best first.
+
+    Reading the coupling view first is not only for the areas: it is
+    also what writes the description of the pins down (B506), so that
+    when the word list changes after accepting, every pin can be found
+    back on the word it meant.
+    """
+    from . import listen_again as again
+    from . import rhythm
+
+    view = word_coupling_view(context)
+    if not view:
+        return []
+    vocals = ensure_original_vocals(context)
+    if vocals is None:
+        raise PipelineError(t("err_listen_again_no_vocals"))
+    lyrics = _effective_lyrics(
+        context, context.paths.input_dir / song_text.LYRICS_FILENAME)
+    lines: dict[int, list[str]] = {}
+    for word in lyrics:
+        if not word.bg:
+            lines.setdefault(int(word.line), []).append(word.text)
+    windows = _original_vocal_windows(context)
+    transcript = view["transcript"]
+    song_end = max([high for _low, high in windows]
+                   + [float(row[2]) for row in transcript] + [0.0])
+    areas = again.problem_areas(
+        view, {line: " ".join(words) for line, words in lines.items()},
+        song_end)
+    logger.info(t("log_listen_again_areas"), len(areas))
+    language = _language_for(context, TRACK_ORIGINAL)
+    settings = replace(context.config.whisper, no_speech_threshold=None)
+    # The aligner only when the user has it on (the same setting as in
+    # step 1.1), it is installed, and the language is known.
+    can_align = (context.config.advanced.forced_alignment
+                 and word_alignment.is_available()
+                 and language not in ("", "auto"))
+    # The words of the first listen, before anything was accepted: an
+    # accepted area has to know which of THEM it replaces, also when the
+    # hand-edited word list it was chosen on is gone again later.
+    first = [(w.text, float(w.start), float(w.end))
+             for seg in load_segments(context, TRACK_ORIGINAL, heard=False)
+             for w in seg.words]
+    # The aligner once for all areas: it loads its model and the whole
+    # vocal stem every time it is called.
+    laid: dict[int, list] = {}
+    asked = [number for number, area in enumerate(areas) if area.expected]
+    if can_align and asked:
+        timed = _align_known_text(
+            vocals, [(areas[n].low, areas[n].high, areas[n].expected)
+                     for n in asked], language)
+        laid = dict(zip(asked, timed))
+    results = []
+    for number, area in enumerate(areas):
+        if cancelled is not None and cancelled():
+            raise whisper.CancelledError()
+        candidates = []
+        try:
+            heard = whisper.transcribe_slice(
+                vocals, settings, max(0.0, area.low - again.MARGIN_S),
+                area.high + again.MARGIN_S, initial_prompt=area.prompt,
+                language_override=language, cancelled=cancelled)
+            candidates.append(again.Candidate("whisper", again.inside(
+                [(w.text, w.start, w.end, w.confidence)
+                 for seg in heard for w in seg.words],
+                area.low, area.high, area.claimed_spans)))
+        except whisper.CancelledError:
+            raise
+        except whisper.WhisperError:
+            logger.exception(t("log_listen_again_failed"),
+                             area.low, area.high)
+        if laid.get(number):
+            candidates.append(again.Candidate("aligned", again.inside(
+                [tuple(w) for w in laid[number]],
+                area.low, area.high, area.claimed_spans)))
+        onsets = (rhythm.energy_onsets(vocals, area.low, area.high)
+                  if rhythm.is_available() else None)
+        judged = sorted((again.score(c, area.expected, onsets, windows)
+                         for c in candidates if c.words),
+                        key=lambda c: -c.score)
+        # The list the area was chosen on first, then the first listen:
+        # both are named, so the word stays out whichever list stands.
+        replaced = []
+        for text, start, end in ([transcript[i] for i in area.replaceable]
+                                 + [row for row in first
+                                    if _replaceable_in(area, row[1],
+                                                       row[2])]):
+            row = [str(text), round(float(start), 3), round(float(end), 3)]
+            if all(row[:2] != other[:2] for other in replaced):
+                replaced.append(row)
+        results.append({
+            "low": area.low, "high": area.high,
+            "expected": list(area.expected),
+            "replaced": replaced,
+            "candidates": [{"kind": c.kind,
+                            "words": [list(w) for w in c.words],
+                            "score": c.score, "evidence": c.evidence}
+                           for c in judged]})
+        if progress is not None:
+            progress(float(number + 1), float(len(areas)))
+    return results
+
+
+def _replaceable_in(area, start: float, end: float) -> bool:
+    """Is a word of the first listen one an accepted area replaces?"""
+    middle = (float(start) + float(end)) / 2.0
+    return (area.low <= middle <= area.high
+            and not any(a <= middle <= b for a, b in area.claimed_spans))
+
+
+def accept_heard_again(context: AppContext, chosen: list[dict]) -> int:
+    """Keep what the user took over, and let the coupling follow.
+
+    ``chosen`` holds per area its span, the found words it replaces and
+    the words of the chosen candidate. A new area takes over the words
+    of earlier ones that fall inside it - that is what doing it again
+    later means - and leaves the rest of them standing. Everything
+    built on the coupling lapses (the line coupling, the timing); the
+    word couplings themselves do not, because the pins are the user's
+    work and find their words back by what they point at (B506).
+    """
+    if not chosen:
+        return 0
+    kept = []
+    for area in heard_again(context):
+        # A later answer takes over only what lies inside it: listening
+        # again at one weak word may not cost the rest of an earlier
+        # answer around it.
+        words = [w for w in area.get("words", ())
+                 if not any(float(new["low"]) <= (float(w[1]) + float(w[2]))
+                            / 2.0 <= float(new["high"]) for new in chosen)]
+        # Kept while it still replaces something, even with no words of
+        # its own left: what it took out has to stay out.
+        if words or area.get("replaced"):
+            kept.append(dict(area, words=words))
+    for new in chosen:
+        kept.append({"low": float(new["low"]), "high": float(new["high"]),
+                     "kind": str(new["kind"]),
+                     "words": [list(w) for w in new["words"]],
+                     "replaced": [list(r) for r in new.get("replaced", ())]})
+    kept.sort(key=lambda area: area["low"])
+    context.store.set_step("heard_again", {"areas": kept})
+    invalidate(context, ["heard_again"])
+    logger.info(t("log_heard_again_saved"), len(chosen))
+    return len(chosen)
+
+
+def clear_heard_again(context: AppContext) -> None:
+    """Take every accepted area out again."""
+    if context.store.get_step("heard_again") is None:
+        return
+    context.store.clear_step("heard_again")
+    invalidate(context, ["heard_again"])
+    logger.info(t("log_heard_again_cleared"))
 
 
 def _lyrics_for_boundaries(context: AppContext):

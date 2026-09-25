@@ -276,7 +276,11 @@ def test_the_found_lane_carries_the_same_colour_codes() -> None:
 
     assert "suspect_run" in coupling_editor._STATUS_STYLE
     source = _source_of(coupling_editor)
-    assert 'style = _STATUS_STYLE.get(self._found_status.get(i, ""))' in source
+    # v1.0.12: the colour goes through _found_style, which shows where a
+    # word came from only while nothing is wrong with it (see
+    # tests/test_listen_again.py for its behaviour).
+    assert "style = _STATUS_STYLE.get(self._found_style(i))" in source
+    assert "self._found_status.get(index, \"\")" in source
     assert "found_status" in inspect.signature(
         coupling_editor.CouplingCanvas.__init__).parameters
 

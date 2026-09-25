@@ -57,6 +57,13 @@ class Word:
     confidence: float
 
 
+#: Where a segment came from, when it was not simply heard by the run
+#: that made the transcription (v1.0.12). Empty for everything Whisper
+#: heard in the normal run - which is nearly all of it.
+ORIGIN_ALIGNED = "aligned"          # known lyrics laid on the vocal stem
+ORIGIN_HEARD_AGAIN = "heard_again"  # a targeted second listen
+
+
 @dataclass(frozen=True)
 class Segment:
     """One recognised segment (sentence/line) with its words."""
@@ -66,6 +73,10 @@ class Segment:
     start: float
     end: float
     words: tuple[Word, ...]
+    #: :data:`ORIGIN_ALIGNED`, :data:`ORIGIN_HEARD_AGAIN` or empty. Only
+    #: written to disk when it is set, so a transcription without either
+    #: keeps exactly the bytes - and the fingerprint (B549) - it had.
+    origin: str = ""
 
 
 def decode_options(settings: WhisperSettings) -> dict[str, Any]:
@@ -268,8 +279,8 @@ def transcribe_slice(audio_path: Path, settings: WhisperSettings,
     if not shift:
         return segments
     return tuple(
-        Segment(index=segment.index, text=segment.text,
-                start=segment.start + shift, end=segment.end + shift,
+        replace(segment, start=segment.start + shift,
+                end=segment.end + shift,
                 words=tuple(replace(word, start=word.start + shift,
                                     end=word.end + shift)
                             for word in segment.words))
@@ -319,8 +330,9 @@ def load_segments(path: Path) -> tuple[Segment, ...]:
 
 def segments_to_dicts(segments: tuple[Segment, ...]) -> list[dict[str, Any]]:
     """Convert segments into JSON-serialisable dicts."""
-    return [
-        {
+    out = []
+    for segment in segments:
+        item: dict[str, Any] = {
             "index": segment.index,
             "text": segment.text,
             "start": segment.start,
@@ -331,8 +343,10 @@ def segments_to_dicts(segments: tuple[Segment, ...]) -> list[dict[str, Any]]:
                 for word in segment.words
             ],
         }
-        for segment in segments
-    ]
+        if segment.origin:
+            item["origin"] = segment.origin
+        out.append(item)
+    return out
 
 
 def segments_from_dicts(data: list[dict[str, Any]]) -> tuple[Segment, ...]:
@@ -349,6 +363,7 @@ def segments_from_dicts(data: list[dict[str, Any]]) -> tuple[Segment, ...]:
                      confidence=float(word["confidence"]))
                 for word in item["words"]
             ),
+            origin=str(item.get("origin", "")),
         )
         for item in data
     )

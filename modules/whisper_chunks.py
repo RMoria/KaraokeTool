@@ -74,6 +74,22 @@ MIN_CHUNK_S = 4.0
 #: where the word is furthest from an edge.
 OVERLAP_S = 4.0
 
+#: How long a piece is when it has to be cut THROUGH singing (v1.0.12).
+#: It used to be a whole ``WINDOW_S``, and that is exactly as long as
+#: Whisper's own window - so on the one stretch where the first run had
+#: failed, the piece handed Whisper the same thirty seconds again and
+#: got the same nothing back. Measured on one of the owner's songs: 31.5
+#: s of singing without a pause, one forced piece of 30.0 s, and 25 s of
+#: it still unheard afterwards. A shorter piece is a different question:
+#: less of the vocalise that talks Whisper into "nothing is sung here",
+#: and more of the words.
+FORCED_S = 12.0
+
+#: The new way (v1.0.12) cuts in the silence before a sung window where
+#: there is one, this far ahead of its measured start, so the first
+#: onset is not on the edge of the piece.
+ONSET_MARGIN_S = 0.5
+
 #: How much room around a piece the lyrics slice gets. The first run
 #: placed the lines, and that placement is least reliable exactly where
 #: we are re-running - so the slice is deliberately generous.
@@ -97,13 +113,25 @@ class Chunk:
 
 
 def cut_points(windows, total: float, first_sound: float = 0.0,
-               window_s: float = WINDOW_S) -> tuple[Chunk, ...]:
+               window_s: float = WINDOW_S,
+               forced_s: float = FORCED_S) -> tuple[Chunk, ...]:
     """Cut the song into pieces, in the silences where possible (B390).
 
     ``windows`` are the measured sung stretches. Between two of them lies
     silence, and a cut in silence costs nothing: no word is split. Only
     where singing runs for longer than ``window_s`` without a pause do we
-    cut through it, and then with an overlap.
+    cut through it, and then in pieces of ``forced_s`` (default
+    :data:`FORCED_S`) with an overlap - all the way through that
+    singing: once a piece has been cut inside it, the next one may end
+    in a silence only when that lies within ``forced_s`` too, or a long
+    stretch would get one short piece and then a long one again. In the
+    silence before a window (an intro, say) it cuts where the singing
+    starts instead of chopping the silence into short pieces.
+
+    A project that was transcribed before v1.0.12 is cut with
+    ``forced_s=window_s``, and that is exactly the old way - none of the
+    above applies then - so a second transcription of it gives the same
+    words and the coupling built on them survives (B549).
 
     Starting at ``first_sound`` is the offset idea in its simplest form:
     begin a couple of seconds in and every window edge lands somewhere
@@ -125,17 +153,31 @@ def cut_points(windows, total: float, first_sound: float = 0.0,
         previous_end = max(previous_end or 0.0, end)
     free = [m for m in free if m > first_sound]
 
+    anew = forced_s < window_s
     chunks: list[Chunk] = []
     cursor = float(first_sound)
     while cursor < total - 1e-6:
-        limit = cursor + window_s
+        inside = anew and any(a < cursor < b for a, b in windows)
+        limit = cursor + (forced_s if inside else window_s)
         usable = [m for m in free if cursor + MIN_CHUNK_S <= m <= limit]
+        upcoming = next((a for a, _b in windows if a > cursor), None)
+        onset = (None if upcoming is None
+                 else max(cursor, upcoming - ONSET_MARGIN_S))
         if usable:
             end, forced = max(usable), False
         elif limit >= total:
             end, forced = total, False
+        elif (anew and not inside and onset is not None
+              and cursor + MIN_CHUNK_S <= onset <= cursor + window_s):
+            end, forced = onset, False
         else:
-            end, forced = limit, True
+            # Through singing short pieces; through silence (the new way
+            # only gets here with no singing within a window) a whole
+            # window, as it always was.
+            sung = any(a < cursor + window_s and b > cursor
+                       for a, b in windows)
+            length = forced_s if sung or not anew else window_s
+            end, forced = cursor + min(length, window_s), True
         chunks.append(Chunk(round(cursor, 3), round(min(end, total), 3),
                             forced))
         if end >= total - 1e-6:

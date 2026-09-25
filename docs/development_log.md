@@ -5242,6 +5242,143 @@ What of the list is NOT in it, and why:
   pause lasts about two. Changing either without measuring is guessing;
   the yardstick (1.5.5/1.5.10) can say what it does.
 
+Included in v1.0.12:
+
+- **B574 - a piece cut through singing is short.** One of the owner's
+  songs sang for 31.5 seconds without a pause, and Whisper heard
+  nothing in 25 of them apart from "ZANG EN MUZIEK", the subtitle it
+  writes when it has decided nothing is sung. The hallucination filter
+  threw that out, correctly - it was a symptom, not the cause. The
+  chunked second listen of B442 could not help: it cuts in silences,
+  and where there is none it cut a whole thirty-second piece through
+  the singing, which is exactly Whisper's own window. The same question
+  twice gives the same answer. Where no silence can be found, pieces
+  are now `FORCED_S` = 12 seconds with the usual 4 s overlap, all the
+  way through that singing: once a piece is cut inside it, the next
+  one may only end in a silence within those 12 seconds, or a long
+  stretch would get one short piece and then a long one again. In the
+  silence before a sung window (an intro) it cuts half a second before
+  the singing starts, so that silence is not chopped into short
+  pieces; pieces cut in a silence are as long as before. Only for a project
+  transcribed for the first time from v1.0.12 on: the step records
+  `"listening": 2`, and a project without it is cut the old way, also
+  when it is transcribed again - see below.
+- **B575 - step 1.1 lays the known lyrics on singing it did not hear.**
+  After the merge and the normal forced alignment, every stretch of
+  measured singing of five seconds or more that still holds no heard
+  word - a filtered hallucination does not count as heard - gets the
+  uncoupled lyric words between the two anchors around it, laid on it
+  by the aligner in one separate call for all stretches. Separate, so
+  what Whisper heard is aligned exactly as before: whisperx splits a
+  text into sentences on its punctuation and hands back more segments
+  than it got, which made matching them to their input by position
+  unreliable - the known text goes in without punctuation, and its
+  words come back to their stretch by where they landed. A stretch is
+  only given words that fit it (between 0.6 and 8 syllables a second),
+  backing vocals stay out because they sound WITH a line and not after
+  it, and the added words go into the word list in time order: a
+  Whisper segment that spans the hole is split around them, so they do
+  not end up behind its last word. Whatever Whisper wrote inside a
+  stretch that gets known text goes: the stretch held no heard word, so
+  it is exactly what the filter threw out ("ZANG EN MUZIEK"), and split
+  up between the known words its pieces would be judged one by one - a
+  lone "EN" is no hallucination to the filter. The fingerprint of B549
+  is taken before the known text goes in, because where that text goes
+  also depends on the word lists the user adds to from the editor.
+  Such words carry their origin
+  (`Segment.origin`, "aligned"), which is only written to disk when it
+  is set - a transcription without additions keeps its bytes.
+  Needs the vocal stem, forced alignment on, whisperx and a known
+  language. Existing projects are not transcribed again for this, and
+  a project transcribed before v1.0.12 keeps the old way (short pieces
+  and known text both off) even when step 1.1 runs again, for instance
+  after "Nu legen": a different transcription would no longer match the
+  fingerprint of B549 and the coupling built on it would lapse. For
+  those projects the button below is the way.
+- **B576 - "Opnieuw horen" (listen again) in the coupling editor.**
+  After 1.2 the program knows far more than in 1.1: which lyric words
+  are coupled well, and so exactly which words are missing between
+  which two anchors. The button takes every problem place - lyric
+  words without a coupling, or with one weaker than 0.5 - and never a
+  good coupling, a pin, a word the user uncoupled on purpose, a
+  backing vocal (neither a problem nor an anchor, because its time
+  says nothing about the words around it; what it was heard as is not
+  replaced either, since no candidate brings a backing vocal back) or
+  a skipped filler. Per place, up to two candidates:
+  Whisper on only that stretch of the vocal stem, with the lines that
+  belong there as its hint and WITHOUT the "nothing is sung here"
+  threshold, since the vocal stem proves something is; and the aligner
+  laying the expected words on it (one call for all places, and only
+  when forced alignment is on). A candidate word that lands on a found
+  word an anchor claims is left out. The vocal stem is the referee,
+  being the one witness that knows nothing of the lyrics: the share of
+  words on measured singing, the number of syllables against the
+  number of onsets, Whisper's match to the expected words weighed by
+  its confidence (for the aligner, which cannot mismatch its own text,
+  the aligner's own score), and a penalty for a Whisper answer that is
+  the hint word for word at a low confidence - the prompt echo of
+  B390 - measured against the expected words, not the whole lines of
+  the hint. A window shows one row per place, best candidate chosen;
+  what the user takes over is stored as the step `heard_again` in
+  `project.json`, merged into the transcription on the one reading
+  path (`load_segments`), in time order, replacing the weak or wrong
+  found words between the anchors instead of standing beside them -
+  named both as the list the user chose on showed them and as the
+  first listen had them, so they stay out also when a hand-edited list
+  goes again. With a hand-edited list (B153) the heard words are not
+  saved into it when the user cuts or merges - they have their own
+  step - the found words they replaced go into it instead, so clearing
+  later brings those back while his cuts stay - and a heard word he cut
+  is not added back beside his halves. Hovering over a candidate shows
+  the parts of its score.
+  It can be done again at any time: a new answer takes over the words
+  of earlier ones inside its own stretch and leaves the rest, and
+  everything can be cleared again. Taking something over or clearing
+  it lapses the line coupling, the timing and the analysis figures of
+  the original, and deliberately NOT the word couplings: the pins find
+  their words back by what they point at (B506), which a test proves
+  by pinning a word, taking over a place before it and checking that
+  the pin still sits on the same word. Nor the clusters, which are the
+  user's selection. Stop while it listens is not the general cancel of
+  a step (that clears the step's half-made work, here the couplings
+  and the timing): nothing is changed and the editor opens again, as
+  it does after a failure or when another task is still busy. The
+  found words that came in this way have their own colours in the
+  editor, lilac for heard again and sand for aligned, as long as no
+  problem status (no match, filtered, suspected) has to be shown.
+
+Also in it: the working agreement at the top of this file said three
+things that were no longer true - that the text files still needed
+their migration (done at v1.0.6), that translations go through
+`modules/taal.py` (it is `translations.py`), and that this
+documentation stays Dutch (English since B543) - and it named the
+block per version "Handled in", while every block says "Included in".
+
+And outside the tree, in the folder above it: `push_to_github.bat`
+now tags every version from this one on as `v<version>` and makes a
+GitHub Release of it (with the GitHub CLI; without it, or not signed
+in, the Release is skipped with a message and the rest still happens).
+Commit, tag and Release all say only "KaraokeTool <version>", and the
+commit and the tag go up in one atomic push. It refuses and changes
+nothing when the version is lower than the newest tag, or when the
+program changed while its version did not; when nothing changed but
+the tag or the Release is missing it makes only those, so running it
+again after a failed push finishes the job. `push_to_github.bat test`
+shows what would happen and publishes nothing. Older versions get no
+tag afterwards.
+
+What is NOT in it, and why:
+
+- A measurement over all projects of whether B574 and B575 help and
+  harm nothing. The owner chose to have them now and a measurement
+  later; the tests prove what they do, not what they are worth.
+- One rare edge is left: an accepted area names the words it replaces
+  by text and start. Cutting or merging lyric words can change how two
+  equal words on a segment boundary are merged (B373), and a found word
+  that only appears through that inside an accepted area stands beside
+  the heard one. Listening again at that place, or clearing, puts it
+  right.
+
 Included in v1.0.11:
 
 - **B572 - the reports and the log follow the language choice.** The

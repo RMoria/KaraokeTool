@@ -233,6 +233,54 @@ and the video; cutting or merging in the songtekst also invalidates the
 saved stresses and the manual line timings, because the words get
 renumbered.
 
+**"Opnieuw horen..."** (listen again) takes every place where the
+link is missing or weak and tries again, aimed at that place only. What
+is linked well and everything you linked by hand stays exactly as it
+is — those words are the anchors that decide where a place begins and
+ends and which lyrics belong in it. Per place the tool makes up to two
+candidates: Whisper on only that stretch of the vocal track, with the
+lines that belong there as a hint, and the known lyrics laid straight
+onto the singing by the aligner. The vocal track then judges both: do
+the words lie on real singing, does their number of syllables match the
+onsets it can hear, and did Whisper really hear the words or only read
+back its hint. A window follows with one row per place, the best
+candidate chosen and ticked; untick what you do not want or choose the
+other candidate, and press **"Overnemen"** (take over). What you do not
+take stays as it is and comes up again the next time you press the
+button, so you can do this as often as you like; a new answer for a
+smaller stretch replaces only the words inside that stretch, not the
+rest of an earlier answer around it. Taking something over recomputes
+the sentence linking and the timing; your hand-made links stay on their
+word. Words that came in this way have their own colour in the top row
+as long as nothing is wrong with them: **lilac** for heard again,
+**sand** for aligned on the singing. **"Eerder opnieuw gehoorde stukken
+wissen"** (clear earlier heard-again stretches) in that window takes all
+of it out again and brings back what Whisper had there, also when you
+have cut or merged words since; the window also opens for that when
+nothing new was found. Hover over a candidate to see how its score came
+about. **Stop** while it listens changes nothing: you are back in the
+editor as you left it.
+
+What it needs: the vocal track (Demucs, step 1.1 with vocal separation
+on) - without it the button says so and does nothing. The aligner
+candidate also needs forced alignment switched on in the settings, the
+aligner (whisperx) installed, and a known song language (not
+"auto"); without those, only Whisper's answer is offered.
+
+Step 1.1 already does part of this by itself, for a song transcribed
+for the first time from this version on. Where the singing runs on for
+more than thirty seconds without a pause, the second, cut-up listening
+(chunked transcription on) uses short pieces of about twelve seconds
+instead of one long one. And a stretch of five seconds or more of
+measured singing that is still unheard afterwards gets the lyrics that
+belong there laid onto it by the aligner, marked as aligned rather than
+heard - with the same needs as above: the vocal track, forced alignment
+on with whisperx installed, and a known language. A project that was
+transcribed before keeps the old way, also when you transcribe it again
+(for instance after "Nu legen"): otherwise the new transcription would
+differ from the old one and your links would lapse. For such a project
+"Opnieuw horen..." is the way.
+
 ### 2.1. Klemtoon bewerken
 
 Click the syllable that carries the stress; click the marked one again

@@ -41,9 +41,9 @@ himself when to render again.
 
 ### `input:original` — input/origineel.* (the original recording)
 
-Change this and 36 derivatives lapse.
+Change this and 37 derivatives lapse.
 
-- Steps: `align`, `analysis_karaoke`, `analysis_original`, `clusters_karaoke`, `clusters_original`, `coupling`, `karaoke`, `lyrics`, `original_restore_resample`, `source_original`, `timing`, `transcript_override`, `whisper_karaoke`, `whisper_original`, `word_coupling`
+- Steps: `align`, `analysis_karaoke`, `analysis_original`, `clusters_karaoke`, `clusters_original`, `coupling`, `heard_again`, `karaoke`, `lyrics`, `original_restore_resample`, `source_original`, `timing`, `transcript_override`, `whisper_karaoke`, `whisper_original`, `word_coupling`
 - Project values: `karaoke_from_original`, `vocal_end_s`, `vocal_onset_s`
 - Files: `cache:demucs_original`, `cache:karaoke_edited`, `cache:karaoke_generated`, `cache:original_for_restore`, `cache:original_vocals`, `cache:original_wav`, `cache:transcription_karaoke`, `cache:transcription_original`, `output:alignment_json`, `output:analysis_karaoke`, `output:analysis_original`, `output:clusters_karaoke`, `output:clusters_original`, `output:demucs_mp3`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
@@ -59,9 +59,9 @@ Change this and 25 derivatives lapse.
 
 ### `input:lyrics` — input/lyrics.txt
 
-Change this and 22 derivatives lapse.
+Change this and 23 derivatives lapse.
 
-- Steps: `analysis_original`, `clusters_original`, `coupling`, `karaoke`, `lyrics`, `lyrics_override`, `original_overrides`, `source_lyrics`, `stress_anchors`, `timing`, `transcript_override`, `whisper_original`, `word_coupling`
+- Steps: `analysis_original`, `clusters_original`, `coupling`, `heard_again`, `karaoke`, `lyrics`, `lyrics_override`, `original_overrides`, `source_lyrics`, `stress_anchors`, `timing`, `transcript_override`, `whisper_original`, `word_coupling`
 - Project values: `language_choice`
 - Files: `cache:karaoke_edited`, `cache:transcription_original`, `output:analysis_original`, `output:clusters_original`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
@@ -83,25 +83,25 @@ Change this and 1 derivatives lapse.
 
 ### `config:whisper` — setting: Whisper model and language
 
-Change this and 23 derivatives lapse.
+Change this and 24 derivatives lapse.
 
-- Steps: `analysis_karaoke`, `analysis_original`, `clusters_karaoke`, `clusters_original`, `coupling`, `karaoke`, `lyrics`, `timing`, `transcript_override`, `whisper_karaoke`, `whisper_original`, `word_coupling`
+- Steps: `analysis_karaoke`, `analysis_original`, `clusters_karaoke`, `clusters_original`, `coupling`, `heard_again`, `karaoke`, `lyrics`, `timing`, `transcript_override`, `whisper_karaoke`, `whisper_original`, `word_coupling`
 - Files: `cache:karaoke_edited`, `cache:transcription_karaoke`, `cache:transcription_original`, `output:analysis_karaoke`, `output:analysis_original`, `output:clusters_karaoke`, `output:clusters_original`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
 
 ### `config:forced_alignment` — setting: more precise word times (wav2vec2)
 
-Change this and 23 derivatives lapse.
+Change this and 24 derivatives lapse.
 
-- Steps: `analysis_karaoke`, `analysis_original`, `clusters_karaoke`, `clusters_original`, `coupling`, `karaoke`, `lyrics`, `timing`, `transcript_override`, `whisper_karaoke`, `whisper_original`, `word_coupling`
+- Steps: `analysis_karaoke`, `analysis_original`, `clusters_karaoke`, `clusters_original`, `coupling`, `heard_again`, `karaoke`, `lyrics`, `timing`, `transcript_override`, `whisper_karaoke`, `whisper_original`, `word_coupling`
 - Files: `cache:karaoke_edited`, `cache:transcription_karaoke`, `cache:transcription_original`, `output:analysis_karaoke`, `output:analysis_original`, `output:clusters_karaoke`, `output:clusters_original`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
 
 ### `config:chunked` — setting: transcription in chunks (fills the gaps)
 
-Change this and 17 derivatives lapse.
+Change this and 18 derivatives lapse.
 
-- Steps: `analysis_original`, `clusters_original`, `coupling`, `karaoke`, `lyrics`, `timing`, `transcript_override`, `whisper_original`, `word_coupling`
+- Steps: `analysis_original`, `clusters_original`, `coupling`, `heard_again`, `karaoke`, `lyrics`, `timing`, `transcript_override`, `whisper_original`, `word_coupling`
 - Files: `cache:karaoke_edited`, `cache:transcription_original`, `output:analysis_original`, `output:clusters_original`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
 
@@ -201,9 +201,10 @@ Change this and 7 derivatives lapse.
 | `transcript_override` | step | the cut and merged transcription (hand work) | `whisper_original` |
 | `lyrics_override` | step | the cut and merged lyric words (hand work) | `input:lyrics` |
 | `word_coupling` | step | manual word couplings (lyric word -> detected word) | `whisper_original`, `transcript_override`, `lyrics_override`, `input:lyrics`, `config:models` |
+| `heard_again` | step | stretches heard again or aligned from the coupling editor | `whisper_original` |
 | `original_overrides` | step | hand-corrected line times of the original | `input:lyrics`, `lyrics_override` |
 | `stress_anchors` | step | hand-coupled pieces of original <-> karaoke, per line | `input:lyrics`, `input:karaoke_text`, `lyrics_override` |
-| `analysis_original` | step | analysis figures for the original transcription | `whisper_original`, `config:analysis` |
+| `analysis_original` | step | analysis figures for the original transcription | `whisper_original`, `config:analysis`, `heard_again` |
 | `output:analysis_original` | file | output/original/statistics.json and the csv reports | `analysis_original` |
 | `analysis_karaoke` | step | analysis figures for the karaoke transcription | `whisper_karaoke`, `config:analysis` |
 | `output:analysis_karaoke` | file | output/karaoke/statistics.json and the csv reports | `analysis_karaoke` |
@@ -211,11 +212,11 @@ Change this and 7 derivatives lapse.
 | `clusters_karaoke` | step | the chosen sound clusters of the karaoke (leftover vocals) | `whisper_karaoke`, `config:cluster` |
 | `output:clusters_original` | file | output/original/clusters.json and clusters.html | `clusters_original` |
 | `output:clusters_karaoke` | file | output/karaoke/clusters.json and clusters.html | `clusters_karaoke` |
-| `output:lyrics_alignment` | file | output/original/lyrics_alignment.txt | `word_coupling`, `input:karaoke_text` |
+| `output:lyrics_alignment` | file | output/original/lyrics_alignment.txt | `word_coupling`, `heard_again`, `input:karaoke_text` |
 | `align` | step | the offset regions between original and karaoke | `cache:original_wav`, `cache:karaoke_wav`, `config:align`, `karaoke_from_original` |
 | `output:alignment_json` | file | output/alignment.json (report) | `align` |
-| `coupling` | step | original lines with times + which karaoke line goes with which | `word_coupling`, `align`, `input:lyrics`, `input:karaoke_text`, `lyrics_override`, `transcript_override`, `original_overrides`, `config:timing`, `config:models` |
-| `lyrics` | step | how many extra damping fragments come from the lyrics | `clusters_original`, `word_coupling` |
+| `coupling` | step | original lines with times + which karaoke line goes with which | `word_coupling`, `heard_again`, `align`, `input:lyrics`, `input:karaoke_text`, `lyrics_override`, `transcript_override`, `original_overrides`, `config:timing`, `config:models` |
+| `lyrics` | step | how many extra damping fragments come from the lyrics | `clusters_original`, `word_coupling`, `heard_again` |
 | `timing` | step | the line and syllable timing for the video | `coupling`, `input:karaoke_text`, `vocal_onset_s`, `align`, `cache:original_vocals`, `language_choice`, `config:timing`, `config:models` |
 | `output:timing` | file | output/settings/timing.json and timing_auto.json | `timing` |
 | `output:timing_diagnostics` | file | output/diagnostics/timing_diagnostics.txt | `timing` |
