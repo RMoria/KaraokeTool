@@ -23,8 +23,36 @@ The buttons below appear in the same order as in the app. Steps marked
      you have no karaoke track, make one with **"Karaoke uit origineel"**
      (Demucs strips out the vocals; the result also lands in the output
      folder as `karaoke_demucs.mp3`).
+   - **Volledige karaoke maken** (make full karaoke, v1.0.19), on the
+     original's row: for a song that has no karaoke version and no
+     lyrics. Pick only the original and click it. The program makes the
+     music from the original, listens to the words and makes a text of
+     them - one line per sung line, an empty line between blocks - as
+     both the songtekst and the karaoketekst. Then a window opens to
+     check that text: correct and complete it, mark a selection or the
+     line the cursor is in as **[bg]** (background vocals) or
+     **[crowd]** (the audience sings), start a new block, and play the
+     line the cursor is in to listen. **Opslaan en verder** (save and go
+     on) listens once more with your text as hint, so words you added
+     get a time too, and makes the timing and the video. **Sluiten**
+     (close) keeps the text; the next click on the button opens it
+     again. A project that already had texts asks first; its texts are
+     kept next to the new ones as `lyrics.txt.before_full_karaoke` and
+     `karaoke_text.txt.before_full_karaoke`. Choosing a text by hand
+     afterwards makes it an ordinary project again.
    - Put the **songtekst** (`lyrics.txt`), the **karaoketekst**
      (`karaoke_text.txt`) and optionally a **logo** in place on this tab.
+   - **Blokken koppelen** (link blocks), next to the karaoke text: a
+     window with every block of the karaoke text (the lines between two
+     empty lines) and the group it is linked in. Blocks with the same
+     text - at most a word or so different, and as many lines - are
+     linked by the program already. Select blocks and press **Koppel
+     gekozen blokken** or **Ontkoppel gekozen blokken** to change it,
+     **Zoals het programma koppelt** to go back to what the program
+     suggests. Linked blocks share their timing inside the
+     block in the timing editor (see 2.3). The links are kept per
+     project; change the text of a block and it falls back to what the
+     program links.
      The original lyrics drive the language detection and the linking;
      the karaoke lyrics and the logo are what go into the video. Behind
      each file you see the name it had on your machine, not the internal
@@ -51,7 +79,7 @@ The buttons below appear in the same order as in the app. Steps marked
      ten numbered investigations until v1.0.8; nine of those asked
      something about the program itself — what a model is worth, what
      leaving a check out costs, whether cutting the transcription
-     helps — and those questions have been answered. Three lines are
+     helps — and those questions have been answered. Five lines are
      left:
 
      - **1.5.1 Cache vullen** (fill the cache) → transcribes what is
@@ -71,6 +99,215 @@ The buttons below appear in the same order as in the app. Steps marked
        measurement: renders every video again, beside the existing
        files, and only moves the old ones aside once the new one has
        passed its own check.
+     - **1.5.14 Welke scheiding** (which separation) → a night job too.
+       Every song with a hand timing is separated again from its
+       original: Demucs as now, Demucs careful, and - when the Roformer
+       environment is installed (KaraokeToolGUI.bat asks the first time) - Roformer, Roformer
+       karaoke (which leaves the backing choir in the music), a newer
+       vocal model, a combination of models for a clean music track and
+       one for a clean voice, three karaoke models together (lead and
+       choir apart; Whisper listens to the lead), a voice without reverb
+       for Whisper, a crowd model as an extra line, and (v1.0.22) the
+       Demucs blend: Demucs and Demucs careful, halved. Since v1.0.23
+       the three combinations of Roformer models are blends too: every
+       model is a round of its own, the blend comes after them. The rounds of
+       the ways a blend is made of keep their stems in `_to_delete`,
+       so a blend does not separate its parts again. Models that are
+       not there yet are fetched the first time they are used.
+       It measures the music (voice Whisper still hears in it while
+       you sing, and seconds where the music drops away while the
+       original plays on) and the transcription (Whisper's certainty,
+       words in the lyrics, unheard singing, line starts). Per song
+       there is an mp3 of the music and the voice of every way in
+       `_to_delete`, to listen to. Your projects are only read. What
+       was measured is kept per song and per way, also across versions,
+       so a way already measured is not done again.
+     - **1.5.15 Blokken samen getimed** (blocks timed together) → the
+       four block ideas against your hand timings: an unheard line of a
+       linked block laid out like its kin, linked blocks heard together
+       (with three widths for "the same spot"), a whole block moved to
+       where its chords come back, and the words of the text laid on the
+       voice - each on its own, the first three together and all four.
+       On the stored transcriptions, on a copy that is thrown away; an
+       evening rather than a night. Per round: the mean error, the
+       lines within 0.3 s, the blocks on the right spot, the error in
+       linked blocks, in verses and in the rest, and a table per song.
+       The four ideas are off until you decide on this.
+     - **1.5.16 Andermans liedjes van voor tot achter (JamendoLyrics)** (other people's songs, v1.0.19) → the
+       79 songs of JamendoLyrics (English, French, German, Spanish),
+       each with every word timed by hand. Each is made the way "Make
+       full karaoke" makes one - the original only, the music made from
+       it, the song text given - and every line start held against the
+       hand timing, per language and together: the share within 0.3 s,
+       the capped mean error, the lines more than 2 s off. The songs are
+       fetched once from Hugging Face into `kt_data\jamendo` next to the
+       work folder (they are Creative Commons, most non-commercial:
+       for testing only, never shipped). Measured per song and version.
+     - **1.5.17 Scheidingen tegen de echte losse sporen (MUSDB18)** (separations against the
+       real parts, v1.0.19) → the free 7-second sample of MUSDB18: 50
+       songs of which the voice and the music exist on their own. Every
+       way of 1.5.14 separates them, and what it makes is held against
+       the real voice and the real accompaniment as a
+       signal-to-distortion ratio in dB (more is better; +3 dB is half
+       the error). Fetched once (147 MB) into `kt_data\musdb`.
+     - **1.5.19 Drums, adem en koor tegen de handtiming** (drums,
+       breaths and choir, v1.0.22) → three ideas that listen to the
+       other stems, against your hand timings: a line start pulled onto
+       the beat of the drums (with three reaches), a line that starts
+       after the lead voice's breath, and `[bg]` timed on the choir -
+       each on its own and the three together. First every song's
+       stems are made once (the drums with Demucs; the lead voice and
+       the choir with the Roformer karaoke model where the network has
+       it), then it measures on the stored transcriptions, on a copy.
+       The three ideas are off until you decide on this.
+     - **1.5.20 De tekst op de stem tegen de handtiming** (the text on
+       the voice, v1.0.23) → instead of only coupling what Whisper
+       heard, the known text is laid on the voice by the forced aligner
+       (WhisperX): every line close to where it stands (B605), and the
+       lines between two heard lines in one piece, in the whole room
+       between them (B651; "strong" counts only the surest lines as
+       anchors), and both together. On the stored transcriptions, on a
+       copy, through the helpers that have WhisperX. Besides the error
+       it says how many lines each way moved, and how many of those came
+       closer to your hand timing and how many went further away. Both
+       ideas are off until you decide on this.
+
+     **1.5.13 Elk liedje van voor tot achter** did its work in two
+     nights (the hint per piece and the stacked-lines idea are on since
+     v1.0.15) and is switched off.
+
+     **Other computers can help** (v1.0.18) with every test. Share the
+     folder that holds KaraokeTool (for the owner `C:/Muziek` as
+     `\\10.0.0.18\Tools`, with permission to change), and on the other
+     computer double-click `install_helper.bat` in the `helper` folder of
+     KaraokeTool on the share, once. It installs everything on that
+     computer - with an NVIDIA card the versions that work on the card
+     - puts **KaraokeTool helper** on the desktop and starts it. Leave
+     the window open: it waits until there is work, and while a
+     test runs it takes rounds, works them out and gives them back. A
+     computer with a working card does two rounds at once, one on the
+     card and one on the processor. The laptop keeps working on the
+     test itself too, unless the helper runs on the laptop as well
+     (worth it when the laptop has an NVIDIA card). Closing a helper is
+     always fine: its round goes back into the queue, and one that falls
+     silent goes back after five minutes. The helper keeps itself up
+     to date (v1.0.20): the installer on the share carries the version
+     of the program, and after every round the helper looks whether it
+     is newer than the one it was installed with. Then it stops, runs
+     that installer in a window of its own - the program, PyTorch,
+     Roformer and its trial separation, whatever the new version needs
+     - and the installer starts the helper again when it is done. A
+     failed update tries again after ten minutes. When the laptop gets
+     another address, the helper
+     finds it again by the laptop's name, its last known addresses and
+     at last by looking over its own network. The report says which
+     computer did how many rounds. What the helper does is in its
+     window and in `%LOCALAPPDATA%\KaraokeToolHelper\logs`.
+
+     Since v1.0.19 the queue shares out by speed. From the answers it
+     knows how long each computer takes for each kind of round. A slow
+     computer leaves the last rounds to a faster one when that one would
+     be done sooner - counting what it still has to do of its current
+     round - so a slow computer does not keep the end of a test
+     waiting. And when nothing waits any more, a fast computer that is
+     idle also does a round a slow one is still on, when it would be
+     done well before; the first good answer counts and the slow one
+     stops.
+
+     Up to v1.0.19 the helper was called "KaraokeTool hulp" and lived in
+     `%LOCALAPPDATA%\KaraokeToolHulp`. Such a helper moves over by
+     itself at its next round: it sees the newer version, fetches the
+     program, and hands over to the new installer, which opens in a
+     window of its own, takes the Roformer models along and starts the
+     helper under its new name. The old window then says it may be
+     closed; the old folder and shortcut go.
+
+     **Ordinary work** (v1.0.20) uses the helpers too, but only where
+     that is sooner done: separating the voice from the music of a song
+     goes to a helper when one waits that can do that way of separating
+     and is expected to be done with it well before this computer (from
+     the times the queue knows). Otherwise it runs here, as always, and
+     its time is noted for the next decision. Whisper always listens
+     here. The render of the video (v1.0.21) goes the same way, and
+     **1.5.12** renders all videos through the queue at once: every
+     helper that is there renders beside this computer, and each video
+     comes back to its project before the old ones go aside.
+
+     **The helper's window** (v1.0.23): the shortcut opens a small
+     window with the KaraokeTool icon instead of a console. It shows per
+     lane what it is doing (waiting, the round it is on and how long it
+     still takes, cooling down) and the lines it writes. **Stoppen na
+     huidige taak** lets every lane finish its round and then ends the
+     helper (click again to take it back); **Nu stoppen** gives the
+     rounds back to the queue at once. Closing the window asks which of
+     the two. A card with less than 6 GB of memory is not used - the
+     computer works on its processor only - unless `lanes.txt` in
+     `%LOCALAPPDATA%\KaraokeToolHelper` says `gpu,cpu` (or `cpu` to keep
+     a card out). On a computer with an NVIDIA card a lane takes no new
+     round above 80 °C, until it is below 70 °C; a round that keeps the
+     card above 88 °C for a minute goes back into the queue and the
+     computer cools down for a quarter of an hour.
+
+     **A small card** (v1.0.24): a card under 6 GB gets one lane
+     ("kaart of processor") that separates on the card and does all
+     other rounds on the processor, one at a time. The card slows
+     itself down when it gets hot; the helper adds no rules of its own.
+     `cpu` in `lanes.txt` leaves the card alone.
+
+     **Starting and removing** (v1.0.24): the shortcut opens the
+     helper's window at once, without a console; the window says
+     whether it found the laptop and when it updates itself.
+     **Helper verwijderen** stops the helper and takes it off the
+     computer: its folder, the shortcut, the downloaded models, and
+     ffmpeg and Python 3.13 when the helper installed them itself (on
+     the laptop, where the program needs them, they stay). Its logs on
+     the laptop stay. `install_helper.bat /remove` does the same.
+
+     **The work folder** (v1.0.23) is `KaraokeTool\helper\kt_work`,
+     next to `install_helper.bat`; the helpers find it on the share
+     themselves. The installer fetches the Whisper model right away, so a
+     helper's first round does not wait for three gigabytes. It also
+     checks that PyTorch loads; when it does not because Microsoft's
+     Visual C++ runtime is missing or too old, winget brings that up to
+     date (Windows may ask for permission), and a helper where PyTorch
+     still does not load leaves the Demucs rounds to another computer.
+
+     **1.5.18 Helpers nakijken** (check the helpers, v1.0.21) sends
+     every helper that is there a check through the queue: the graphics
+     card as its driver sees it (and which programs are on it), the card
+     test, PyTorch in the Roformer environment, the three-second trial
+     separation with the card and without (timed), and the last lines of
+     its logs, and (v1.0.23) on a computer with an NVIDIA card a profile
+     of the card: at rest, then Whisper, one Roformer model (normal and
+     in smaller pieces), Demucs and the three karaoke models together,
+     each on a minute of sound, with the temperature, memory and speed of
+     the card read every five seconds and how long it takes to cool down
+     again. Run it when no test runs. A check goes before every waiting round but waits until a
+     lane of that computer is free. The report is in the test report and
+     in `logs\helpers\<computer>`.
+
+     **What a helper did** (v1.0.21) is on the laptop too, in
+     `KaraokeTool\logs\helpers\<computer>`: the messages of its window,
+     the log of every lane, its start file and its installations (the
+     last two). The helper puts them there every five minutes, at its
+     start and when it stops; while the laptop is away it keeps them and
+     catches up afterwards. Logs older than 30 days go, there and on the
+     helper itself.
+
+     While a test runs, the top bar shows how long it will still take
+     and at what time it will be done. For a test through the helpers
+     (v1.0.20) that is worked out over all computers taking part: every
+     round still waiting goes, in turn, to the computer that would be
+     done with it first, counting what each still has to do of its
+     current round. Until the speeds are known it shares the times of
+     earlier runs over the lanes. The 1.5.14 report says per computer
+     how long a round took and how much of it was separating, and where
+     Whisper listened - to find out why one computer is slow.
+
+     Ordinary steps say how long they still take too: from the progress
+     bar where there is one (Whisper, the render), and for a separation,
+     which has none, from how long it took the times before
+     (`config\step_times.json`).
 
      What was switched off is not deleted — it is one word away from
      measuring again, and its numbers stay in `docs/testhistorie.json`
@@ -86,7 +323,13 @@ The buttons below appear in the same order as in the app. Steps marked
      cleared when the window opens, so you can never kick off a long
      measurement by accident. The two radio buttons underneath choose
      whether the measurements cover all projects or only the one
-     currently open. Stop works here too, between the five parts as
+     currently open. Since v1.0.22 there is a third, and the panel opens
+     on it: **Testset** - a few of your songs in three groups, songs
+     that already go well, songs in the middle and the problem cases -
+     so a night test is one night. "Testset kiezen…" shows every song
+     with its error in the last measurement from the start and lets you
+     put it in a group; "Voorstel uit de laatste meting" fills in a
+     proposal. The set is kept in `config\test_set.json`. Stop works here too, between the five parts as
      well. Each test drops its result into the log window as soon as it
      finishes.
 
@@ -240,32 +483,49 @@ is — those words are the anchors that decide where a place begins and
 ends and which lyrics belong in it. Per place the tool makes up to two
 candidates: Whisper on only that stretch of the vocal track, with the
 lines that belong there as a hint, and the known lyrics laid straight
-onto the singing by the aligner. The vocal track then judges both: do
-the words lie on real singing, does their number of syllables match the
-onsets it can hear, and did Whisper really hear the words or only read
-back its hint. A window follows with one row per place, the best
-candidate chosen and ticked; untick what you do not want or choose the
-other candidate, and press **"Overnemen"** (take over). What you do not
+onto the singing by the aligner, and a third one that lays the lyrics
+on the sung stretches itself, with the pauses as line boundaries - for
+sounds like "jalala" that the aligner cannot follow. Within a line that
+third one uses, in this order, the length and rhythm of the same line
+where Whisper did hear it, the onsets it can hear on the vocal track,
+and only as a last resort an even spread by syllables. The vocal track
+then judges them: do the words lie on real singing, how much of the
+singing of the place do they take up, does their number of syllables
+match the onsets it can hear, and did Whisper really hear the words or
+only read back its hint. A candidate that squeezes a line - more
+syllables per second than anyone sings - or that makes a line far
+shorter or longer than the same line elsewhere is not offered at all;
+the log says which one and why. A window follows with one row per
+place, the best candidate chosen and ticked; untick what you do not
+want or choose another candidate, and press **"Overnemen"** (take over). What you do not
 take stays as it is and comes up again the next time you press the
 button, so you can do this as often as you like; a new answer for a
 smaller stretch replaces only the words inside that stretch, not the
-rest of an earlier answer around it. Taking something over recomputes
-the sentence linking and the timing; your hand-made links stay on their
-word. Words that came in this way have their own colour in the top row
+rest of an earlier answer around it. After taking something over, the
+sentence linking and the timing have to be made again; your hand-made
+links stay on their word. Words that came in this way have their own colour in the top row
 as long as nothing is wrong with them: **lilac** for heard again,
-**sand** for aligned on the singing. **"Eerder opnieuw gehoorde stukken
-wissen"** (clear earlier heard-again stretches) in that window takes all
-of it out again and brings back what Whisper had there, also when you
-have cut or merged words since; the window also opens for that when
-nothing new was found. Hover over a candidate to see how its score came
-about. **Stop** while it listens changes nothing: you are back in the
-editor as you left it.
+**sand** for laid on the singing (by the aligner or by the third
+candidate). Below the new places the window lists what you took over
+before, each with its own tick; **"Aangevinkte eerdere stukken wissen"**
+(clear the ticked earlier stretches) takes out only what you ticked -
+the rest stays - and Whisper's own words come back there, also when
+you have cut or merged words since. Had a later answer taken words
+from an earlier one, clearing only the later one gives them back.
+Press "Opnieuw horen..." again and a cleared place is offered anew.
+The window also opens for this when nothing new was found. Hover over
+a candidate to see how its score came about. **Stop** while it listens
+changes nothing: you are back in the editor as you left it.
 
 What it needs: the vocal track (Demucs, step 1.1 with vocal separation
 on) - without it the button says so and does nothing. The aligner
 candidate also needs forced alignment switched on in the settings, the
 aligner (whisperx) installed, and a known song language (not
 "auto"); without those, only Whisper's answer is offered.
+
+Words laid on this way or taken over here are not used as the measure
+for how long a line usually lasts: the timing still places them, but a
+squeezed line can no longer pull its copies along.
 
 Step 1.1 already does part of this by itself, for a song transcribed
 for the first time from this version on. Where the singing runs on for
@@ -274,7 +534,8 @@ more than thirty seconds without a pause, the second, cut-up listening
 instead of one long one. And a stretch of five seconds or more of
 measured singing that is still unheard afterwards gets the lyrics that
 belong there laid onto it by the aligner, marked as aligned rather than
-heard - with the same needs as above: the vocal track, forced alignment
+heard - unless the aligner squeezed a line or timed it unlike the same
+line elsewhere; then that stretch is left alone - with the same needs as above: the vocal track, forced alignment
 on with whisperx installed, and a known language. A project that was
 transcribed before keeps the old way, also when you transcribe it again
 (for instance after "Nu legen"): otherwise the new transcription would
@@ -309,14 +570,41 @@ even when the tempo differs.
 - Drag an **original sentence** and the karaoke lines linked to it move
   along. It works the other way round as well: a karaoke line that is
   linked one-to-one is mirrored in the original track.
-- **Weergave: Blokken / Zinnen / Woorden** (view: blocks / sentences /
-  words). In *Blokken* you drag a whole block at once (the lines inside
-  scale with it), in *Zinnen* a single line; *Woorden* is for reading
-  only, there is no dragging there.
+- **Weergave: Blokken / Zinnen / Woorden / Lettergrepen** (view:
+  blocks / sentences / words / syllables). In *Blokken* you drag a whole
+  block at once (the lines inside scale with it), in *Zinnen* a single
+  line. In *Woorden* you drag or stretch one word and in *Lettergrepen*
+  one syllable: only its own letters scale along, the rest of the line
+  stays where it is, so a pause between two words is simply dragged
+  open. Inside the line a word stops against its neighbours; the first
+  and the last word are the edges of the sentence and follow the same
+  rules as in *Zinnen* - no collision with another line, crowd lines
+  may overlap, a disabled line may be stretched over. The same holds
+  in *Blokken*.
+- In *Woorden* a line under the words shows which words make one
+  sentence, and in *Lettergrepen* a line under the syllables shows
+  which make one word - in the karaoke lines and in the original lyrics
+  alike. In the syllable view the original words are split into
+  syllables too, evenly. A crowd word inside a sentence is red in both
+  views, like a whole crowd line.
+- **Gekoppelde blokken mee aanpassen** (adjust linked blocks along), a
+  tick box, on
+  by default: move or stretch a sentence, a word or a syllable inside a
+  block, and the same one in the linked blocks moves the same way, each
+  against its own neighbours. Moving a whole block (the *Blokken* view)
+  stays per block, so you can still set each block's offset. Where the
+  change does not fit - it would run into a neighbour - that linked
+  block is left exactly as it was, and a message under the editor says
+  which block, so you can do it there yourself.
 - **Regel uit/aan** (line off/on) disables the selected line (or block,
   or word): it turns grey, gets "[uit]" in front of it and stays out of
   the render. Switching it back on makes room among its neighbours by
   itself.
+- **Uit origineel terughalen** (fetch back from the original) marks the
+  selected sentence - or, in *Woorden* and *Lettergrepen*, the selected
+  word (a syllable marks its whole word; in the original lyrics the
+  word of the sentence under it) - see below at "Uit origineel
+  terughalen (2.3)". A marked sentence wins over its single words.
 - **Herstel origineel-timing** (restore original timing) throws away the
   manual corrections on the original track and rebuilds the linking.
   Careful: it resets the karaoke lines too.
@@ -330,9 +618,17 @@ blocks damp a stretch of karaoke; the green blocks
 (**"Terug uit origineel"**, bring back from the original) do the
 opposite — there the
 matching stretch of the original is laid over the karaoke. That is meant
-for material Demucs removed while it should have stayed. Click in the
+for material Demucs removed while it should have stayed. Blue blocks
+are the same, but marked in the timing editor - a sentence or a single
+word, and the block says which. The legend under the buttons names the
+three colours. Click in the
 waveform to place the playhead, drag a block or its edge, and
-"Verwijderen" (delete) removes the selected block. "Opslaan en
+"Verwijderen" (delete) removes the selected block. No block lies over
+another: a drag stops against its neighbour, whatever its colour, and
+at the end of the song. A new block goes into the first free gap from
+the playhead, shorter than a second when the gap is. While playing you
+hear straight away what the blocks do - quieter over red, the original
+over green and blue - also before saving. "Opslaan en
 toepassen" (save and apply) applies everything and exports again;
 **Sluiten does not save.**
 
@@ -364,15 +660,25 @@ need to do nothing.
 Settings apply to the whole app (not per project), apart from the titles
 and the artist — those belong to the song and live on tab 1.
 
-- **Large models (Demucs / forced alignment):** recommended; without
-  them the transcription runs on the full mix and the timing is less
-  accurate. They fall back gracefully when absent. Ticking the box
-  fetches the model straight away, so the first real run does not have
-  to wait.
+- **Werkwijze** (way of working): one choice instead of a row of model
+  settings. **High performance** (the default) uses the best models and
+  every listening path that measured as a gain - Whisper large-v3, the
+  transcription in pieces, the known lyrics on unheard singing, forced
+  alignment and the vocal-track analysis - and takes the most time.
+  **Normal** uses somewhat faster models and fewer paths (Whisper
+  distil-large-v3, the whole song in one go). **Quick and dirty** uses
+  the fastest models and only the best-tested path (Whisper small and
+  forced alignment). The choice only applies to new projects: a project
+  follows it until its first step and keeps it from then on, and a
+  project made before v1.0.15 keeps the settings it had. What a way of working holds
+  changes only after you have been asked - for instance a Roformer
+  separation in High performance once test 1.5.14 has shown it is
+  better. Below the choice it says whether the Roformer environment is
+  installed.
 - **Parallel detection:** original and karaoke at the same time (faster,
   more memory; falls back to one at a time).
-- **Zangstem-analyse** (vocal-track analysis, sustained notes and
-  filler lines): on by default. It uses the separated vocal track to
+- **Vocal-track analysis** (part of High performance and Normal): it
+  uses the separated vocal track to
   lengthen sustained
   notes, to place "na-na" lines that were not transcribed on their
   energy pulses, to give songtekst words that exact matching skipped a
@@ -440,17 +746,16 @@ and the artist — those belong to the song and live on tab 1.
   that is busy.
 - **Uit origineel terughalen (2.3):** in the timing editor, point out a
   sentence with the **Uit origineel terughalen** (bring back from the
-  original) button. That sentence turns blue in both tracks, and at
+  original) button - in the word or syllable view a single word. That
+  sentence or word turns blue in both tracks, and at
   **1.4. Karaoke aanpassen** it is waiting as a blue block: at that
   moment the sound of the original is put in place of the karaoke
   one-to-one, with a short fade in and out. Handy for stray shouts that
-  have disappeared from the karaoke version. Move the sentence later and
-  the stretch of original moves with it.
-- **Lettergrepen bijstellen (2.3):** the **Lettergrepen bijstellen**
-  (adjust syllables) button redistributes the syllables *within* each
-  sentence on the vocal energy, without touching the sentence
-  boundaries. Meant for after you have put the sentences themselves in
-  place.
+  have disappeared from the karaoke version. Move the sentence or word
+  later and the stretch of original moves with it. Move or delete the
+  block in 1.4 and the timing editor shows it with a dotted border;
+  one more click on the button puts the block back on its sentence or
+  word.
 - **Open video:** the button next to "2.4. Video maken" looks in the
   output folder of the project that is open, so a video from yesterday
   opens just as easily. When there are several versions it asks which
@@ -461,6 +766,19 @@ and the artist — those belong to the song and live on tab 1.
   original makes no difference), **Originele muziek** (original music),
   or **Alleen zang** (vocals only). Beside that you choose which **text**
   appears on screen: the karaoke lyrics or the original lyrics.
+- **Volume:** the separated tracks keep the volume the separation gave
+  them - nothing is normalised or rescaled on the way, so a stretch
+  fetched back from the original fits in without a jump. For projects
+  separated before v1.0.15 the small difference is measured once and
+  matched when fetching back. If the Roformer environment is installed
+  but cannot load, the log and test 1.5.14 say what is wrong; running
+  the setup again (put `J` in `config\roformer_choice.txt`, delete
+  `venv\karaoketool_setup.txt` and start KaraokeToolGUI.bat) repairs it. The volume of
+  the video is set once, at the render.
+- **Crowd lines in the video** are red from the moment they appear, so
+  the crowd knows its turn is coming. While a word is sung it sweeps in
+  the ordinary singing colour, and as soon as the word is done it is
+  red again - also after the line.
 - **Language (phonetic timing):** the audio language is detected from
   the songtekst. When a language model is missing (French for a French
   song, say), the tool puts one in place itself. Dutch, English and

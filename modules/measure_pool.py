@@ -90,6 +90,12 @@ def whisper_lanes() -> int:
     function so the number the model is given and the number of slots
     that are handed out can never drift apart.
     """
+    fixed = os.environ.get("KT_WHISPER_LANES")
+    if fixed and fixed.isdigit():
+        # v1.0.18: a helper lane runs one round at a time and says so; on
+        # a small graphics card every extra copy of the model costs room
+        # the separation needs.
+        return max(1, int(fixed))
     fits = core_count() / WHISPER_THREADS
     return max(1, round(fits * WHISPER_SHARE))
 

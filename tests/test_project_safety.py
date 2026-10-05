@@ -52,6 +52,18 @@ WRITES_ON_PURPOSE = {
              "timing_auto.json (B463) - that IS the job of the action",
     "1.5.12": "renders the videos again (B531) - a job, not a "
               "measurement",
+    "1.5.16": "fetches JamendoLyrics once into kt_data next to the "
+              "program and makes every song in a scratch folder of its "
+              "own; no project is read or written (tests/test_v1019.py)",
+    "1.5.18": "sends every helper a check through the work queue and "
+              "keeps its report in logs\\helpers; no project is read or "
+              "written (tests/test_v1021.py)",
+    "1.5.14": "separates every song again from a copy next to the work "
+              "queue and keeps the stems there; no project is written "
+              "(tests/test_v1014.py)",
+    "1.5.17": "fetches the MUSDB18 sample once into kt_data next to the "
+              "program and separates it there; no project is read or "
+              "written (tests/test_v1019.py)",
 }
 
 #: B571: the visible actions that write NOTHING, with the test in this
@@ -160,6 +172,18 @@ def _snapshot(root: Path) -> dict:
 def _changed(before: dict, after: dict) -> list[str]:
     return sorted(name for name in set(before) | set(after)
                   if before.get(name) != after.get(name))
+
+
+def _not_the_queue(names: list[str]) -> list[str]:
+    """v1.0.23 (B650): the work queue lives in the program's
+    ``helper/kt_work``; rounds going through it are work, not a project
+    being written."""
+    return [name for name in names
+            if name not in ("helper/", "helper/kt_work/")
+            and not name.startswith("helper/kt_work/")
+            # v1.0.28 (B663): the yardstick's error per song, for the
+            # test set - the program's own record, no project.
+            and name not in ("config/", "config/song_errors.json")]
 
 
 def _steps(root: Path, song: str) -> dict:
@@ -474,3 +498,42 @@ def test_the_program_still_writes_when_no_song_is_chosen_yet(
     assert other.store.writable and not other.store.quiet
     other.store.set_step("video", {"file": "x.mp4"})
     assert "video" in _steps(root, "Song_B")
+
+
+def test_action_1_5_15_writes_nothing_at_all(tmp_path) -> None:
+    """v1.0.15: the block trial measures on the yardstick's copies.
+
+    Every round rebuilds every song in a folder of its own - with the
+    karaoke track now in its cache for the block placement - and the
+    projects themselves are only read.
+    """
+    root, context = _installation(tmp_path)
+    before = _snapshot(root)
+
+    text = _run(test_panel.block_trial, context)
+
+    assert "1.5.15" in text
+    assert "Song_A" in text
+    # v1.0.27: no round of 1.5.15 needs WhisperX any more.
+    from modules.translations import t
+    assert t("block_trial_no_aligner") not in text
+    assert _not_the_queue(_changed(before, _snapshot(root))) == []
+
+
+def test_action_1_5_20_writes_nothing_at_all(tmp_path, monkeypatch) -> None:
+    """v1.0.23: the text laid on the voice, on the yardstick's copies,
+    like 1.5.15 - and without WhisperX anywhere it says so instead of
+    waiting for a computer that never comes."""
+    from modules import separation_trial
+
+    root, context = _installation(tmp_path)
+    before = _snapshot(root)
+    monkeypatch.setattr(separation_trial, "local_capabilities",
+                        lambda: {"ffmpeg", "whisper"})
+    text = _run(test_panel.lyrics_on_voice_trial, context)
+    assert "WhisperX" in text
+    monkeypatch.setattr(separation_trial, "local_capabilities",
+                        lambda: {"ffmpeg", "whisper", "whisperx"})
+    text = _run(test_panel.lyrics_on_voice_trial, context)
+    assert "Song_A" in text and "B651" in text
+    assert _not_the_queue(_changed(before, _snapshot(root))) == []

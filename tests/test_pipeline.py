@@ -631,7 +631,10 @@ def test_detect_words_uses_cache_along_the_demucs_path(
         stem["vocals"] = vocals
         return {"vocals": vocals, "instrumental": instrumental}
 
-    monkeypatch.setattr(separation, "is_available", lambda: True)
+    # v1.0.28: only Demucs itself - the clean music of the High stand and
+    # the Demucs blend are not there, so this stays the standard way.
+    monkeypatch.setattr(separation, "is_available",
+                        lambda way=None: way is None or way.is_standard)
     monkeypatch.setattr(separation, "separate_cached", _fake_separate)
     transcribed = []
 
@@ -679,17 +682,25 @@ def test_demucs_off_really_skips_the_separation(
     from modules import separation
 
     context = _context(tmp_path)
+    # v1.0.15: the profile decides the listening paths of a new project;
+    # the settings tab here chooses a stand without these two.
+    from modules import profiles
+    monkeypatch.setitem(profiles.PROFILES, "trial", dict(
+        profiles.PROFILES["high"], chunked_transcription=False,
+        forced_alignment=False))
     context = replace(context, config=replace(
         context.config, advanced=replace(
-            context.config.advanced, demucs=False,
-            chunked_transcription=False, forced_alignment=False)))
+            context.config.advanced, demucs=False, profile="trial")))
     mix = context.paths.input_dir / "original.wav"
     _write_tone(mix)
 
     def _refuse(*args, **kwargs):  # pragma: no cover - must not be called
         raise AssertionError("separation ran while the option was off")
 
-    monkeypatch.setattr(separation, "is_available", lambda: True)
+    # v1.0.28: only Demucs itself - the clean music of the High stand and
+    # the Demucs blend are not there, so this stays the standard way.
+    monkeypatch.setattr(separation, "is_available",
+                        lambda way=None: way is None or way.is_standard)
     monkeypatch.setattr(separation, "separate_cached", _refuse)
     transcribed = []
     monkeypatch.setattr(pipeline.whisper, "transcribe",

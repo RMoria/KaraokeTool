@@ -109,7 +109,7 @@ def test_the_runner_hands_over_the_reporter_we_use_here() -> None:
     """
     from modules import gui
 
-    tree = ast.parse(inspect.getsource(gui.MainWindow._do_fill_cache).lstrip())
+    tree = ast.parse(inspect.getsource(gui.MainWindow._start_tests).lstrip())
     inside = [k for k in ast.walk(tree)
               if isinstance(k, ast.FunctionDef) and k.name == "report"]
     assert len(inside) == 1, "where has the runner's reporter gone?"

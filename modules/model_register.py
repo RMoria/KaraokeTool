@@ -116,6 +116,7 @@ class Model:
 
 def _build() -> tuple[Model, ...]:
     """The register, built late so the imports stay circular-free."""
+    from . import listen_again as again
     from . import pipeline
     from . import song_text as song
     from . import timing as tim
@@ -257,6 +258,68 @@ def _build() -> tuple[Model, ...]:
               targets=((song, "creative_couplings",
                         lambda texts, transcript, targets, **k:
                         [list(x) for x in targets]),)),
+        # v1.0.13: what "Listen again" and the known text of step 1.1 may
+        # offer. They only shape what is laid on or offered, so they
+        # count as view models: the yardstick on a stored transcription
+        # cannot see them, 1.5.13 measures them from the start.
+        Model("B578", "venster",
+              targets=((again, "squeezed", lambda words, lines: []),
+                       (again, "coverage", lambda *a, **k: None))),
+        Model("B579", "venster",
+              targets=((again, "unlike_elsewhere",
+                        lambda *a, **k: []),)),
+        Model("B580", "venster",
+              targets=((again, "on_singing", lambda *a, **k: None),)),
+        Model("B581", "zin",
+              targets=((pipeline, "_made_starts",
+                        lambda segments: frozenset()),)),
+        # B583: a hint per cut piece. Off at first - B424 measured the
+        # whole text as the better hint. ON since v1.0.15: the second
+        # 1.5.13 night (27 September) measured +0.014 s over 22 songs,
+        # and +0.029 s on the third of the songs it was not chosen on.
+        Model("B583", "venster",
+              targets=((pipeline, "_placed_for_prompts",
+                        lambda *a, **k: None),)),
+        # B595: anchors that cram their lines lose their anchor. ON since
+        # v1.0.15: small (+0.004 s on its own) but one song better and
+        # none worse, and with B583 it leaves 44 lines worse where B583
+        # alone leaves 53 (1.5.13, 27 September).
+        Model("B595", "zin",
+              targets=((tim, "unstack_anchors",
+                        lambda kept, floors, weights, fixed=frozenset():
+                        dict(kept)),)),
+        # v1.0.15: blocks that come back, timed together. All four off
+        # until test 1.5.15 has measured them against the hand timings,
+        # each on its own and together (see ``block_timing``).
+        Model("B602", "blok", default_on=False,
+              targets=((pipeline, "_fill_linked_blocks",
+                        lambda ctx, timed, *a, **k: timed),)),
+        Model("B603", "blok", default_on=False,
+              targets=((pipeline, "_fuse_linked_blocks",
+                        lambda ctx, timed, *a, **k: timed),)),
+        Model("B604", "blok", default_on=False,
+              targets=((pipeline, "_place_blocks",
+                        lambda ctx, timed, *a, **k: timed),)),
+        Model("B605", "woord", default_on=False,
+              targets=((pipeline, "_lyrics_first",
+                        lambda ctx, timed, *a, **k: timed),)),
+        # v1.0.23: the text laid on the voice between the heard lines,
+        # in one piece per stretch. Off until test 1.5.20 has measured it.
+        Model("B651", "woord", default_on=False,
+              targets=((pipeline, "_lyrics_between_anchors",
+                        lambda ctx, timed, *a, **k: timed),)),
+        # v1.0.22: the models on the other stems - the drums, the lead
+        # voice's breaths, the choir (see ``stem_models``). Off until test
+        # 1.5.19 has measured them against the hand timings.
+        Model("B633", "zin", default_on=False,
+              targets=((pipeline, "_drum_grid",
+                        lambda ctx, timed, *a, **k: timed),)),
+        Model("B634", "zin", default_on=False,
+              targets=((pipeline, "_breath_pauses",
+                        lambda ctx, timed, *a, **k: timed),)),
+        Model("B635", "zin", default_on=False,
+              targets=((pipeline, "_bg_on_choir",
+                        lambda ctx, timed, *a, **k: timed),)),
     )
 
 

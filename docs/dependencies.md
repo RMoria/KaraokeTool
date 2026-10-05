@@ -41,18 +41,18 @@ himself when to render again.
 
 ### `input:original` — input/origineel.* (the original recording)
 
-Change this and 37 derivatives lapse.
+Change this and 40 derivatives lapse.
 
 - Steps: `align`, `analysis_karaoke`, `analysis_original`, `clusters_karaoke`, `clusters_original`, `coupling`, `heard_again`, `karaoke`, `lyrics`, `original_restore_resample`, `source_original`, `timing`, `transcript_override`, `whisper_karaoke`, `whisper_original`, `word_coupling`
-- Project values: `karaoke_from_original`, `vocal_end_s`, `vocal_onset_s`
-- Files: `cache:demucs_original`, `cache:karaoke_edited`, `cache:karaoke_generated`, `cache:original_for_restore`, `cache:original_vocals`, `cache:original_wav`, `cache:transcription_karaoke`, `cache:transcription_original`, `output:alignment_json`, `output:analysis_karaoke`, `output:analysis_original`, `output:clusters_karaoke`, `output:clusters_original`, `output:demucs_mp3`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
+- Project values: `karaoke_from_original`, `music_dips`, `own_text_times`, `vocal_end_s`, `vocal_onset_s`
+- Files: `cache:demucs_original`, `cache:karaoke_edited`, `cache:karaoke_generated`, `cache:model_stems`, `cache:original_for_restore`, `cache:original_vocals`, `cache:original_wav`, `cache:transcription_karaoke`, `cache:transcription_original`, `output:alignment_json`, `output:analysis_karaoke`, `output:analysis_original`, `output:clusters_karaoke`, `output:clusters_original`, `output:demucs_mp3`, `output:karaoke_edit`, `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
 
 ### `input:karaoke` — input/karaoke.* (the karaoke version)
 
-Change this and 25 derivatives lapse.
+Change this and 27 derivatives lapse.
 
-- Steps: `align`, `analysis_karaoke`, `clusters_karaoke`, `coupling`, `fragment_exclusions`, `karaoke`, `original_restore_resample`, `restore_fragments`, `restore_lines`, `restore_moved`, `source_karaoke`, `timing`, `whisper_karaoke`
+- Steps: `align`, `analysis_karaoke`, `clusters_karaoke`, `coupling`, `fragment_exclusions`, `karaoke`, `original_restore_resample`, `restore_fragments`, `restore_lines`, `restore_moved`, `restore_moved_words`, `restore_words`, `source_karaoke`, `timing`, `whisper_karaoke`
 - Project values: `karaoke_from_original`
 - Files: `cache:demucs_karaoke`, `cache:karaoke_edited`, `cache:karaoke_wav`, `cache:original_for_restore`, `cache:transcription_karaoke`, `output:alignment_json`, `output:analysis_karaoke`, `output:clusters_karaoke`, `output:karaoke_edit`, `output:timing`, `output:timing_diagnostics`
 
@@ -68,9 +68,9 @@ Change this and 23 derivatives lapse.
 
 ### `input:karaoke_text` — input/karaoke_text.txt
 
-Change this and 7 derivatives lapse.
+Change this and 8 derivatives lapse.
 
-- Steps: `coupling`, `source_karaoke_text`, `stress_anchors`, `timing`
+- Steps: `block_links`, `coupling`, `source_karaoke_text`, `stress_anchors`, `timing`
 - Files: `output:lyrics_alignment`, `output:timing`, `output:timing_diagnostics`
 
 
@@ -187,11 +187,13 @@ Change this and 7 derivatives lapse.
 | `cache:karaoke_wav` | file | cache/karaoke.wav | `source_karaoke` |
 | `cache:demucs_original` | file | cache/demucs_stems_original/ (vocals + instrumental) | `cache:original_wav` |
 | `cache:demucs_karaoke` | file | cache/demucs_stems_karaoke/ | `cache:karaoke_wav` |
+| `cache:model_stems` | file | cache/demucs_stems_karaoke_music/ and cache/model_stems/ (the choir, and stems for the stem models) | `cache:demucs_original` |
 | `cache:original_vocals` | file | cache/original_vocals.wav (vocals for the energy analysis) | `cache:demucs_original` |
 | `cache:karaoke_generated` | file | cache/karaoke_generated.wav (instrumental from the original) | `cache:demucs_original` |
 | `output:demucs_mp3` | file | output/karaoke_demucs.mp3 and vocal_demucs.mp3 | `cache:demucs_original` |
 | `vocal_onset_s` | project value | where the singing starts (anchor for the first line) | `cache:demucs_original` |
 | `vocal_end_s` | project value | where the singing stops (anchor for the tail, B319) | `cache:demucs_original` |
+| `music_dips` | project value | where the music made from the original falls away (B668) | `cache:demucs_original` |
 | `karaoke_from_original` | project value | whether the karaoke was made from the original (skips alignment) | `input:original`, `input:karaoke` |
 | `language_choice` | project value | the language pinned by hand | `input:lyrics` |
 | `whisper_original` | step | transcription of the original (sha1, model, language, prompt) | `cache:demucs_original`, `cache:original_wav`, `input:lyrics`, `config:whisper`, `config:forced_alignment`, `config:chunked` |
@@ -224,13 +226,20 @@ Change this and 7 derivatives lapse.
 | `restore_fragments` | step | 'back from the original' fragments (karaoke timeline) | `cache:karaoke_wav` |
 | `restore_lines` | step | lines fetched back from the original (line numbers) | `cache:karaoke_wav` |
 | `restore_moved` | step | moved 'back from the original' pieces (per line number) | `restore_lines` |
+| `restore_words` | step | words fetched back from the original (line number, word) | `cache:karaoke_wav` |
+| `restore_moved_words` | step | moved 'back from the original' word pieces | `restore_words` |
 | `original_restore_resample` | step | sha1 + sample rate of the reused original | `input:original`, `cache:karaoke_wav` |
 | `cache:original_for_restore` | file | cache/original_for_restore.wav | `original_restore_resample` |
-| `karaoke` | step | the edited karaoke (which fragments are damped) | `cache:karaoke_wav`, `clusters_original`, `clusters_karaoke`, `fragment_exclusions`, `restore_fragments`, `restore_lines`, `restore_moved`, `align`, `config:karaoke` |
-| `cache:karaoke_edited` | file | cache/karaoke_edited.wav | `karaoke` |
+| `karaoke` | step | the edited karaoke (which fragments are damped) | `cache:karaoke_wav`, `clusters_original`, `clusters_karaoke`, `fragment_exclusions`, `restore_fragments`, `restore_lines`, `restore_moved`, `restore_words`, `restore_moved_words`, `align`, `config:karaoke` |
+| `cache:karaoke_edited` | file | cache/karaoke_edited.wav (and its turned-down copy for export) | `karaoke` |
 | `output:karaoke_edit` | file | output/karaoke_edit.mp3 and karaoke_edit.wav | `karaoke` |
 | `display_name` | project value | the readable project name | *(none — always stays valid)* |
 | `input_names` | project value | where the input files came from (for the file chooser) | *(none — always stays valid)* |
 | `input_last_dir` | project value | the last folder used in this project, whatever the input (B413) | *(none — always stays valid)* |
 | `video_titles` | project value | artist/title to show in the video | *(none — always stays valid)* |
+| `block_links` | step | linked blocks of the karaoke text (B600) | `input:karaoke_text` |
+| `separation` | project value | how this project separates vocals and music (B591) | *(none — always stays valid)* |
+| `profile` | project value | the profile this project is made with (B606) | *(none — always stays valid)* |
+| `own_text` | project value | the text was made from what was heard (Full karaoke) | *(none — always stays valid)* |
+| `own_text_times` | project value | times of the heard lines, for playing them in the text check | `input:original` |
 | `video` | step | the rendered video (path + audio source used) | *(none — always stays valid)* |

@@ -1,10 +1,11 @@
 # KaraokeTool
 
-Create karaoke videos for carnival parodies. You supply a recording
-and the official lyrics; KaraokeTool splits the song into an
-instrumental and a vocal track, has Whisper transcribe the vocals,
-lays the lyrics over that transcription word by word and renders a
-karaoke video from it. A second text - the parody - can be placed on
+Make karaoke videos with the original lyrics or with lyrics of your
+own. You supply a recording and its lyrics; KaraokeTool splits the
+song into an instrumental and a vocal track, has Whisper transcribe
+the vocals, lays the lyrics over that transcription word by word and
+renders a karaoke video from it. A second text - a parody for
+carnival, new words for a party, a translation - can be placed on
 exactly the same timing. On top of that, words left behind in a
 purchased karaoke version (e.g. "oe", "koffie") can be tracked down
 and attenuated by 25 dB instead of being removed.
@@ -104,10 +105,22 @@ lower = more aggressive merging).
 
 ## Installation
 
-### 1. Python 3.12
+### 1. Python 3.13
 
-Download it from <https://www.python.org/downloads/> and tick
-**"Add python.exe to PATH"** during the installation.
+`KaraokeToolGUI.bat` looks for Python 3.13 and offers to install it
+through winget; 3.12 still works as a fallback. By hand: download it
+from <https://www.python.org/downloads/> and tick **"Add python.exe to
+PATH"** during the installation. When an installation made with 3.12
+moves to 3.13, the environments are made anew (the old ones go to
+`_to_delete`), the download cache of pip is emptied and the launcher
+asks once whether Python 3.12 itself may go.
+
+With an NVIDIA card the launcher installs the versions of PyTorch and
+the CUDA libraries that compute on the card, and tests the card once
+(a sum in PyTorch and a second of Whisper). The program uses the card
+only for what worked, and should Whisper still fail on it, it listens
+on the processor for the rest of the session. Without a card nothing
+changes.
 
 ### 2. ffmpeg
 
@@ -132,8 +145,41 @@ them there automatically.
 
 ### 3. KaraokeTool
 
-Double-click `install.bat`. This creates a virtual environment (`venv`)
-and installs all the packages from `requirements.txt`.
+Double-click `KaraokeToolGUI.bat`. The first time it creates a virtual
+environment (`venv`), installs all the packages from `requirements.txt`
+and asks once whether to install Roformer (the better separation; the
+answer is kept in `config\roformer_choice.txt`). After that it checks at
+every start whether anything changed - a new version asking for another
+package, say - and only then brings the installation up to date before
+it starts the program. Everything the setup shows also goes into
+`logs\install.log` (the run before is kept as `logs\install_previous.log`),
+with every command, its output and its exit code. (Up to v1.0.18 this
+was a separate `install.bat`.)
+
+### Helper computers (optional)
+
+Other computers in the network can work on the long tests. Share the
+folder that holds `KaraokeTool` (read and write), then on the other
+computer open `\\<laptop>\<share>\KaraokeTool\helper` and double-click
+`install_helper.bat`. It installs everything on that computer (under
+`%LOCALAPPDATA%\KaraokeToolHelper`), with the versions for an NVIDIA card
+when it has one, puts "KaraokeTool helper" on the desktop and starts
+the helper. Leave it open: it waits for work and takes rounds when
+there are some. It keeps itself up to date: after every round it looks
+whether the installer on the share carries a newer version; then it
+stops, runs that installer, and the installer starts it again. When
+the laptop's address
+changes, the helper finds it again itself: by the laptop's name, its
+last known addresses, and at last by looking over its own network.
+Every test goes through the helpers; with none running, the laptop does
+all the work itself. A slow helper leaves the last rounds of a test to a
+faster one, and at the end an idle fast helper also does a round a slow
+one is still on - the first answer counts. Ordinary work uses them
+too, but only where that is sooner done: the separation of a song goes
+to a helper when one waits that is expected to be done with it well
+before this computer. The same goes for the render of the video. What
+a helper did is on the laptop in `logs\helpers\<computer>`: its window's
+messages, its lanes, its start file and its installations, 30 days.
 
 ### 4. Whisper model
 
@@ -257,7 +303,7 @@ command line.
 
 ## Troubleshooting
 
-**"faster-whisper is niet geïnstalleerd" while install.bat has been run**
+**"faster-whisper is niet geïnstalleerd" after the installation**
 
 1. Always start the program through `KaraokeToolGUI.bat` (not with a
    bare `python KaraokeTool.py`); only the bat file uses the virtual
@@ -266,20 +312,21 @@ command line.
 
        venv\Scripts\python.exe -m pip show faster-whisper
 
-   No output? Then the installation failed at the time. Run
-   `install.bat` again; it now checks explicitly at the end whether
-   all packages can be imported and shows the error message if not.
+   No output? Then the installation failed at the time. Delete
+   `venv\karaoketool_setup.txt` and start `KaraokeToolGUI.bat` again:
+   it then sets up again, checks at the end whether all packages can
+   be imported and shows the error message if not.
 3. **Project folder moved or copied to another computer?**
    A virtual environment cannot be moved. Delete the `venv` folder
-   and run `install.bat` again in the new location.
+   and start `KaraokeToolGUI.bat` again in the new location.
 
 **ffmpeg not found:** see Installation above, or put `ffmpeg.exe`
 and `ffprobe.exe` in the `bin` folder.
 
 ## Moving to another computer
 
-Copy the project folder without `venv`, `cache` and `logs` and run
-`install.bat` there. It now detects for itself whether Python 3.12
+Copy the project folder without `venv`, `cache` and `logs` and start
+`KaraokeToolGUI.bat` there. It detects for itself whether Python 3.13
 and ffmpeg are present and offers to install them through winget.
 
 ## Language
@@ -469,4 +516,21 @@ itself.
 | 1.0.10 | **B571: a report that only looks, now really only looks.** Three of the five parts of 1.5.2 saved a `word_coupling` step into the `project.json` of every project they read - the user's own pin work, over a path that can drop a pin. The cause was not in the reports: reading a coupling runs the pin conversions of B309/B417/B506, and those write their result back so it happens once instead of at every read. `pipeline.read_only` splits those two apart - the same project with a record that does not reach the disk, inherited by every sibling project a report walks to. The conversions still run and the report sees exactly what the program sees; only the writing back is gone. 1.5.2 over two projects now leaves the PROJECTS byte for byte as they were - what it writes into `docs/` is the measurement history, which is the point of the action - and the panel's promise that only the two working actions write is exact for the first time. The review of the repair caught three things in it: "may not write" had been folded into the flag that means "there is no project here", and since the program starts without a song that quietly disarmed 1.5.1 and 1.5.12; a report still made six folders per project it looked at; and the syllable checks could start Demucs, in an action that promises to read what is lying there anyway. Also out: `tools/b299_dictionary.py`, the word list of the B299 rename - a later rename wave had run over the data itself, 37 of its 285 entries read `english -> the same english`, and nothing imported it any more. |
 | 1.0.11 | **B572/B573: what the program writes for you to read follows the language choice, and the Dutch a stem list could not see is out.** The reports of the test panel - the retired trials included -, the model register, the cluster overview, the coupling report, the yardstick's measurement document and the start script's log and console lines all go through the translation table: about a hundred and fifty new keys, and in Dutch the output is byte for byte what it was, compared over nine hundred lines of report. A reader of an old report now reads it in either language and knows models by their code, and the first line of the log is no longer Dutch whatever was chosen, because the language is read before logging starts. A real word list, written by hand and limited to words that are not also English, then read the whole tree and found some sixty Dutch identifiers, twenty-five Dutch test messages, some twenty comments and four texts the user does see; all of it is English now, and a new guard reads with words instead of stems. The published copy's suite, red on one test since v1.0.9, is green. |
 | 1.0.12 | **B574-B576: listening again where the first listen heard nothing.** A song sang for half a minute without a pause and Whisper heard nothing in 25 seconds of it; the chunked second listen could not help, because without a silence it cut a whole thirty-second piece - exactly Whisper's own window. Pieces cut through singing are now twelve seconds. Step 1.1 also lays the known lyrics on every stretch of singing it still did not hear, by the forced aligner, marked as aligned rather than heard. And the coupling editor has "Opnieuw horen": every missing or weak place between good anchors gets candidates from Whisper on only that stretch and from the aligner, the vocal stem judges them - words on singing, syllables against onsets, and a penalty for Whisper reciting its hint - and what the user takes over becomes part of the transcription. Good couplings and his pins are never touched, and the pins stay on their word when the list shifts. |
+| 1.0.13 | **B577-B584: a squeezed line is no measurement, and every song measured from the start.** "Opnieuw horen" had laid four long sounds in the first second of seventeen seconds of singing. Every candidate, and the known text of step 1.1, is now judged per line: too fast to sing, or far off the same line where Whisper heard it, and it is not offered or laid on. A third candidate lays the words on the sung stretches with the pauses as line boundaries; a place taken over can be cleared on its own; and laid-on text no longer sets how long a line usually lasts. The timing editor edits single words and, in a new view, single syllables, under the same rules as whole sentences. A crowd line no longer waits in white at the start of a song. And test 1.5.13 makes every song with a hand timing again from 1.1, on copies, first the way v1.0.12 does it and then every new way and a combination, measured against the hand timing. |
+| 1.0.14 | **B585-B595: what the 1.5.13 night taught, the editor wishes, and a choice of separation.** The night's own measure was unfair twice: a hand timing with lines split in two was never measured at all, and a plain mean let one song running seven seconds off decide the whole combination. Lines are now paired on the word they begin on, in 1.5.13 and in the yardstick, and the night judges on the share of lines within 0.3 s, the error capped at 2 s and the songs that got better or worse. Its biggest finding - more than half of all error sits in runs of lines stacked at their minimum length behind an anchor on the wrong spot - becomes a switchable idea that takes such an anchor away as a last resort, off until a short second night has measured it with the hint per piece. The timing editor draws a line under each sentence in the word view and under each word in the syllable view, shows crowd words red, and fetches back from the original a single word as well as a sentence. In "Demping bewerken" blocks no longer lie over one another, the colours have a legend, and playing lets you hear the blocks before saving. And the separation of vocals and music gets a setting - standard, careful, or Roformer in an environment of its own - for new projects only, with test 1.5.14 to compare them first. |
+| 1.0.15 | **B596-B609: blocks that come back, one profile, and volumes that stay put.** The karaoke text now says which blocks belong together: blocks with the same text are linked (filled in by the program, changeable on tab 1), and an edit of a word, syllable or sentence in one of them holds for the others in the timing editor - a block where it does not fit stays as it was, and the editor says so. Four new ideas time such blocks together - a block moved whole to where its chords come back, linked blocks heard together with their certainties added up, an unheard line laid out like its kin, and the words of the text laid on the voice - all off until the new test 1.5.15 has measured them against the hand timings. The settings tab offers one profile (High performance, Normal, Quick and dirty) instead of model choices; what a profile holds changes only after asking. Crowd words are red before they are sung and red again as soon as they are done. The stems keep their volume (normalising only at the render), 1.5.14 measures six more Roformer ways and keeps its results across versions, and every test shows how long it will still take. The second 1.5.13 night switched the hint per piece and the stacked-lines idea on, and 1.5.13 itself off; the second 1.5.14 night showed that the Roformer environment could not load (a library that librosa 1.0 no longer brings), which install.bat now installs and the program now checks. |
+| 1.0.16 | **B610: install.bat keeps a log.** What install.bat and the programs it starts (pip, winget, the checks) show on screen now also goes into `logs\install.log`, command by command with its exit code, and the previous run's log is kept beside it - the messages of the last run had scrolled away before anyone could read them. |
+| 1.0.17 | **B611: Roformer takes its settings, and is tried before a night.** The first install log showed the Roformer separation refusing the setting v1.0.15 used to keep the stems at their level; it now gets one it accepts, the level still stays, and a separation of three seconds of tone - in install.bat and before test 1.5.14 - shows at once whether Roformer really works. |
+| 1.0.18 | **B612: other computers help.** The long tests put their rounds in a folder of jobs on the shared Tools folder, and any computer in the network running the helper takes one, works on it and gives the answer back - two at once on a computer with an NVIDIA card (the card and the processor), waiting when there is nothing to do. The helper is installed from the share with one file and always runs the laptop's version. |
+| 1.0.19 | **B613-B619: the helpers share out by speed, one launcher, and a full karaoke from the original alone.** The queue measures how long each helper takes: a slow one leaves the last rounds to a faster one, and at the end an idle fast one also does a round a slow one holds - the first answer counts. A helper finds the laptop itself when its address changes and brings itself up to date at every start. `install.bat` went up in `KaraokeToolGUI.bat`, which sets up only what changed. "Volledige karaoke maken" makes a karaoke of a song that has none: the music from the original, a text of what is heard for you to check and complete ([bg], [crowd], blocks, play a line), then listens once more with your text and makes timing and video. New tests 1.5.16 (JamendoLyrics: other people's songs against hand timing) and 1.5.17 (MUSDB18: the separations against the real parts); every test goes through the helpers. |
+| 1.0.20 | **B620-B625: helpers that keep themselves up to date, Python 3.13, the NVIDIA card in the program, and how long things still take.** After every round a helper looks whether the installer on the share carries a newer version; then it stops, the installer brings everything up to date and starts it again. The helper has English names now (`helper\install_helper.bat`, `%LOCALAPPDATA%\KaraokeToolHelper`, the work folder `kt_work`); a helper of v1.0.18 moves over by itself. The program and its helpers run on Python 3.13 (3.12 as a fallback); environments of the old Python are made anew and 3.12 may go. With an NVIDIA card the launcher installs what computes on it and tests it, and the program uses the card only for what worked. The separation of an ordinary song goes to a helper when one is sooner done. Tests forecast their end over all computers taking part, ordinary steps say how long they still take, and the 1.5.14 report says where the time of each helper goes. (v1.0.19 was delivered but never installed; it is part of this version.) |
+| 1.0.21 | **B626-B628: the helpers' logs on the laptop, and videos through the queue.** Every helper puts its logs - what its window says, its lanes, its start file and its installations, the ones from before too - in `KaraokeTool\logs\helpers\<computer>` on the laptop, and keeps 30 days of them. A video is rendered on a helper when one is sooner done, and 1.5.12 renders all videos through the queue at once. New test action 1.5.18 checks every helper through the queue (the card, PyTorch in the Roformer environment, a trial separation with and without the card, the last lines of its logs). The bridge for the helpers of v1.0.18 is gone: all of them moved. |
+| 1.0.22 | **B630-B639: a test set, blends of separations, all the stems, and three models on them.** The test panel runs on a test set of your songs by default - good, medium, problem cases - with all projects a click away. Separations can be blended: the Demucs blend (standard and careful, halved) now, blends with Roformer later; 1.5.14 measures it and keeps the stems its parts need. Demucs keeps its four stems, and three new models listen to them - the drums as the anchor, the breaths of the lead voice, and `[bg]` from the choir - off until the new test 1.5.19 has measured them. Python 3.12 and its clean-up are gone, their logs go under the name the helper list shows, and 1.5.18 puts the card under load to find out why Pav's card lane is slow. |
+| 1.0.23 | **B640-B652: after Pav switched itself off with the heat.** The helper has a small window of its own with the program's icon, showing what each lane does, with "stop after the current round" and "stop now". A card with less than 6 GB of memory is not used (a `lanes.txt` per helper says otherwise), and a computer with an NVIDIA card takes no work while it is too hot and gives back a round that keeps it too hot. ffmpeg comes through winget, for the user without rights, and is brought up to date at every setup and helper update. A helper copies a round's input to %TEMP% first and works there, instead of reading it over the network all the time, and cleans up afterwards. 1.5.18 measures what a card can take and how hot each task makes it. The Roformer combinations of 1.5.14 are blends of single models: one round per model, spread over the computers, the blend after them. The helper installer fetches the Whisper model right away, checks that PyTorch loads and brings Microsoft's Visual C++ runtime up to date through winget when it does not; a helper only takes Demucs rounds when PyTorch loads, and its window no longer shows every download request. The work folder `kt_work` lives in the program's `helper` folder now, and is not copied to the helpers. Test 1.5.20 measures laying the known text on the voice with the forced aligner - in one piece between the lines Whisper heard (B651, off until measured) and line by line (B605) - through the helpers, which now get WhisperX too. (v1.0.22 was delivered but not installed; it is part of this version.) |
+| 1.0.24 | **B646, B653-B656: a small card does a round on the card or on the processor, and the helper without a console.** A helper with a card under 6 GB runs one lane that separates on the card (faster) and does everything else on the processor, never two at once and without temperature rules of the program's own - the card slows down by itself; Whisper takes the smaller int8_float16 there, and a round the card cannot take goes on the processor at once. The shortcut opens the helper's window straight away, which finds the laptop, updates and runs the helper without a console. "Helper verwijderen" in the window takes the helper, the models it fetched, and ffmpeg and Python 3.13 when it installed them itself off the computer; the logs on the laptop stay. The Roformer environment keeps the processor's onnxruntime (no more CUDA 13 warnings), and 1.5.18 measures a card whole, the smaller Whisper included. |
+| 1.0.25 | **B671-B672: the yardstick measures every song again.** The yardstick tests (1.5.15, 1.5.19, 1.5.20) measured only songs transcribed after the rename of v1.0.5 - one of 22 - because they demanded a file the measurement does not need; now the stored transcription is enough. A measuring process on the laptop that falls over sends its rounds back into the queue instead of stopping the test. 1.5.14 is done and switched off. |
+| 1.0.26 | **B674: the program no longer falls over on the aligner.** Test rounds that need the WhisperX aligner are left to a helper that has it, and a round meant for a separate process never runs inside the program, also not after that process fell over - a crash then costs the round, not the program. A native crash leaves its traces in `logs/crash.log`. |
+| 1.0.27 | **Analysis of the tests of 5 October.** 1.5.19 is done: no stem model helped, so they stay off. The word-by-word aligner model measured worse and stays off; its rounds are gone from 1.5.15 and 1.5.20. The text-between-heard-lines model never moved a line (it looked for line qualities the coupling never gives) and is fixed. Reports now list rounds without a measurement and compare rounds on the songs all of them measured. A round whose process dies on the laptop goes to a helper, and the processes write into `logs/crash.log`. |
+| 1.0.28 | **The owner's choices after the tests, and the rest in one build.** High and Normal separate with the two Roformer models for clean music (the Demucs blend where Roformer is not installed); Quick stays plain. 1.5.14 measures two new ways: the Demucs blend with clean music, and the Demucs blend with its dips filled from the part that kept the music. 1.5.15 and 1.5.20 are done. The count and the end time keep moving while the laptop works on a round itself, and say "about" when partly guessed. Helpers give a sign every five minutes and count as gone after half an hour; an answer the share cannot take waits on the helper. "Stop after current rounds" in the program, also for the helpers; an option to stop the helpers when everything is in; tests that ran when the program closed go on at the next start. No flashing windows from a helper's rounds; external output read as UTF-8; helpers speak the program's language; every batch file in English. A video without a logo has no intro or outro. The test set builds itself from the yardsticks and appears once there are two songs per group. The log says where a music track falls away. The README says what the program is for. |
+| 1.0.29 | **B678: the GitHub copy is the program again.** The export took the Roformer environment, its models (9 GB, files up to 1.7 GB, more than GitHub accepts) and the folder of things to throw away along, and walked every file of the virtual environments before skipping them. Those folders are now neither walked nor copied, a file above 20 MB never goes out, and the repository ignores them. |
 | Later  | Further refinement: audio waveform analysis for held notes, stressed syllables, AI phonemes, singing styles/profiles |

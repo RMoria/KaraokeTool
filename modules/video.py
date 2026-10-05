@@ -359,7 +359,7 @@ def shift_times(lines: Sequence[TimedLine]) -> list[_Window]:
 def render_video(
     lines: Sequence[TimedLine],
     audio_path: Path,
-    logo_path: Path,
+    logo_path: Path | None,
     title: str,
     target: Path,
     width: int = 1280,
@@ -385,6 +385,10 @@ def render_video(
     intro/outro (B123/B124). ``background_path`` places a background image
     (center-crop) behind all frames (B126).
 
+    v1.0.28 (B664): without a logo (``logo_path`` ``None``) there is no
+    intro and no outro - the lines from the first moment to the end of
+    the song, no silence put in front.
+
     Raises:
         VideoError: On missing times, ffmpeg errors or an
             unreadable logo.
@@ -409,6 +413,8 @@ def render_video(
     from dataclasses import replace as _replace
     first_sing = min((line.start for line in lines), default=0.0)
     lead_padding = max(0.0, INTRO_MIN_S + LEAD_IN_S - first_sing)
+    if logo_path is None:
+        lead_padding = 0.0
     if lead_padding > 0.05:
         def _shift(line):
             syls = tuple(_replace(s, start=round(s.start + lead_padding, 3),
@@ -440,6 +446,12 @@ def render_video(
     outro_start = max(line.full_end for line in ordered) + HOLD_S
     duration = max(audio_duration, outro_start + OUTRO_MIN_S)
     first_text = max(0.0, main_lines[0].start - LEAD_IN_S)
+    if logo_path is None:
+        # B664: no title picture at either end - the text from the start
+        # (the coming lines stand there already) and to the end.
+        duration = max(audio_duration, outro_start)
+        outro_start = duration + 1.0
+        first_text = 0.0
 
     # Body font as large as possible but fitting within 85% width (B102).
     font = _fit_body_font(font_path, main_lines, width, int(height * 0.06))
@@ -452,12 +464,14 @@ def render_video(
                         if part)
     credit_font = _load_font(font_path, size=int(height * 0.04))
     background = _load_background(background_path, width, height)
-    try:
-        logo = Image.open(logo_path).convert("RGBA")
-    except OSError as exc:
-        raise VideoError(
-            t("err_logo_unreadable").format(path=logo_path)) from exc
-    logo_large = _scale(logo, int(height * 0.45))  # larger logo (B71)
+    logo_large = None
+    if logo_path is not None:
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+        except OSError as exc:
+            raise VideoError(
+                t("err_logo_unreadable").format(path=logo_path)) from exc
+        logo_large = _scale(logo, int(height * 0.45))  # larger logo (B71)
 
     executable = ffmpeg_module.find_executable("ffmpeg")
     if executable is None:
@@ -1183,11 +1197,9 @@ def _draw_line(image, draw, line: TimedLine, moment: float, width: int,
                             font, stroke=_stroke_width(font))   # B487
                 x += length
                 continue
-            # Color per syllable: inline crowd (or whole crowd line) red,
-            # otherwise vocal green (B179a).
-            sung_color = (palette["crowd"]
-                          if (line.crowd or getattr(syllable, "crowd", False))
-                          else palette["zang"])
+            # The singing colour; crowd text (inline crowd or a whole
+            # crowd line, B179a) has its own branch below (B596).
+            sung_color = palette["zang"]
             # B447: the colour no longer flips per piece but sweeps
             # THROUGH it, from left to right, in step with the time.
             # Flipping whole pieces was jerky, and the more so the longer
@@ -1205,7 +1217,33 @@ def _draw_line(image, draw, line: TimedLine, moment: float, width: int,
             sung_key = ("crowd" if (line.crowd
                                     or getattr(syllable, "crowd", False))
                         else "zang")
-            if not active_slot:
+            if sung_key == "crowd":
+                # B596: crowd text is red from the moment it shows until
+                # the song is over, so the crowd always sees what is
+                # theirs. Only the word being sung right now gets the
+                # ordinary sweep in the singing colour, over red; the
+                # moment the word is done it is red again, and stays so,
+                # also once the line is past.
+                word_start, word_end = _word_span(line, syllable)
+                singing = (active_slot and line.start <= moment
+                           and word_start <= moment < word_end)
+                red = palette["crowd"]
+                red_edge = palette.get("outline_crowd")
+                if singing:
+                    before, after = palette["zang"], red
+                    share = _sung_share(syllable, moment)
+                    before_edge = palette.get("outline_zang")
+                    after_edge = red_edge
+                else:
+                    before, after, share = red, red, 0.0
+                    before_edge = after_edge = red_edge
+            elif not active_slot or moment < line.start:
+                # B577: the ACTIVE slot before the line has begun is
+                # still waiting, and has to look like it. That only
+                # happens to the very first line - every later one
+                # becomes active at its own start - and a crowd line
+                # then stood white during the whole lead-in, where it is
+                # red everywhere else before it is sung.
                 # B483: a line that is not active was ALWAYS drawn in the
                 # waiting colour, so the sentence that had just been sung
                 # turned white again the moment it moved up to the top
@@ -1219,26 +1257,52 @@ def _draw_line(image, draw, line: TimedLine, moment: float, width: int,
                 # exactly those lines fall away. Every line, always.
                 done = moment >= line.end
                 past_key = "na" if done else "voor"
-                if not done and sung_key == "crowd":
-                    past_key = "crowd"
                 past = palette[past_key]
                 before, after, share = past, past, 0.0
                 before_edge = after_edge = palette.get("outline_" + past_key)
             elif moment >= line.end:
-                done_key = sung_key if keep_sung else "na"
+                done_key = "zang" if keep_sung else "na"
                 done = sung_color if keep_sung else palette["na"]
                 before, after, share = done, done, 1.0
                 before_edge = after_edge = palette.get("outline_" + done_key)
             else:
                 before, after = sung_color, palette["voor"]
                 share = _sung_share(syllable, moment)
-                before_edge = palette.get("outline_" + sung_key)
+                before_edge = palette.get("outline_zang")
                 after_edge = palette.get("outline_voor")
             bold = bool(getattr(syllable, "stress", False))
             _draw_swept(image, draw, x, row_y, _disp(syllable.text), font,
                         before, after, share, bold,
                         before_edge, after_edge, _stroke_width(font))
             x += length
+
+
+def _word_span(line, syllable) -> tuple[float, float]:
+    """Start and end of the word a piece is in (B596): a word begins at a
+    piece with a leading space, as everywhere else."""
+    spans = _cached(("words", id(line)),
+                    lambda: _word_spans_of(_sung_syllables(line)), line)
+    return spans.get(id(syllable), (float(syllable.start),
+                                    float(syllable.end)))
+
+
+def _word_spans_of(pieces) -> dict[int, tuple[float, float]]:
+    out: dict[int, tuple[float, float]] = {}
+    word: list = []
+
+    def close() -> None:
+        if word:
+            span = (float(word[0].start), float(word[-1].end))
+            for item in word:
+                out[id(item)] = span
+
+    for item in pieces:
+        if str(item.text).startswith(" ") and word:
+            close()
+            word = []
+        word.append(item)
+    close()
+    return out
 
 
 def _eased_out(fraction: float) -> float:

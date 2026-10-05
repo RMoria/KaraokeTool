@@ -35,15 +35,15 @@ def test_available_fonts_empty_folder(tmp_path: Path) -> None:
 
 
 def test_the_bundle_contains_fonts() -> None:
-    """The folder assets/fonts holds the fonts install.bat fetches.
+    """The folder assets/fonts holds the fonts KaraokeToolGUI.bat fetches.
 
     Skipped as long as they are not there yet (B542). In a fresh copy of
     the source DejaVu is the only one that comes along - the rest is
-    fetched from Google Fonts by `install.bat`. Turning red would then
+    fetched from Google Fonts by `KaraokeToolGUI.bat`. Turning red would then
     say nothing about the code, only that the install has not run.
     """
     names = {item_name for item_name, _ in fonts.available_fonts()}
     if names <= {"Deja Vu Sans"}:
-        pytest.skip("extra fonts not fetched yet; run install.bat")
+        pytest.skip("extra fonts not fetched yet; start KaraokeToolGUI.bat")
     assert "Bebas Neue" in names
     assert "Anton" in names

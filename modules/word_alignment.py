@@ -120,12 +120,3 @@ def refine(audio_path, segments: tuple[Segment, ...], language: str,
     return tuple(refined) if refined else segments
 
 
-def warmup(language: str, device: str = "cpu") -> None:
-    """Load the alignment model for a language (forces the download)."""
-    if not is_available() or not language or language == "auto":
-        return
-    try:
-        import whisperx  # type: ignore
-        whisperx.load_align_model(language_code=language, device=device)
-    except Exception:  # noqa: BLE001
-        logger.exception(t("log_align_model_failed"))

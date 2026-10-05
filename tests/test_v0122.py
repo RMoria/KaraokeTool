@@ -46,7 +46,7 @@ def test_the_runner_hands_out_the_reporter_shape() -> None:
     from modules import gui
 
     tree = ast.parse(inspect.getsource(
-        gui.MainWindow._do_fill_cache).lstrip())
+        gui.MainWindow._start_tests).lstrip())
     inner = [n for n in ast.walk(tree)
              if isinstance(n, ast.FunctionDef) and n.name == "report"]
     assert len(inner) == 1, "where did the runner's reporter go?"

@@ -341,7 +341,7 @@ def test_listening_again_gives_ranked_candidates(tmp_path,
 
     assert len(areas) == 1
     kinds = [c["kind"] for c in areas[0]["candidates"]]
-    assert set(kinds) == {"whisper", "aligned"}
+    assert set(kinds) == {"whisper", "aligned", "singing"}
     scores = [c["score"] for c in areas[0]["candidates"]]
     assert scores == sorted(scores, reverse=True)
     # Whisper was asked about that stretch only, with its lines as the
@@ -425,7 +425,8 @@ def test_doing_it_again_replaces_the_earlier_answer(tmp_path,
     pipeline.accept_heard_again(context, [first])
     pipeline.accept_heard_again(context, [second])
     kept = pipeline.heard_again(context)
-    assert len(kept) == 1 and kept[0]["kind"] == "whisper"
+    # The earlier answer stays in the history, but nothing of it counts.
+    assert [area["kind"] for area in kept if area["words"]] == ["whisper"]
 
     pipeline.clear_heard_again(context)
     assert pipeline.heard_again(context) == []
@@ -489,7 +490,7 @@ def test_the_dialog_takes_over_the_ticked_places(qapp) -> None:
                    "score": 0.6, "evidence": {}}]},
              {"low": 30.0, "high": 35.0, "expected": ["ja"],
               "replaced": [], "candidates": []}]
-    dialog = ListenAgainDialog(areas, has_earlier=True)
+    dialog = ListenAgainDialog(areas, earlier=[EARLIER])
     chosen = dialog.chosen()
     assert len(chosen) == 1
     assert chosen[0]["kind"] == "whisper"
@@ -750,8 +751,9 @@ def test_a_word_two_holes_would_claim_goes_to_the_first() -> None:
     aligned = [song_text.AlignedWord(lyric=w, start=None, end=None,
                                      matched_text="", sim=0.0)
                for w in lyric]
-    out = again.gap_segments([(1.0, 3.0), (4.0, 6.0)], aligned)
-    assert len(out) == 1 and out[0].text == "de fiets staat hier"
+    out = again.gap_texts([(1.0, 3.0), (4.0, 6.0)], aligned)
+    assert len(out) == 1 and out[0][0].text == "de fiets staat hier"
+    assert out[0][1] == [0, 0, 0, 0]
 
 
 def test_clearing_lets_what_follows_the_coupling_lapse(tmp_path) -> None:
@@ -895,10 +897,35 @@ def test_an_added_word_shows_where_it_came_from(qapp) -> None:
 def test_the_dialog_opens_to_clear_when_nothing_new_was_found(qapp) -> None:
     from modules.coupling_editor import ListenAgainDialog
 
-    dialog = ListenAgainDialog([], has_earlier=True)
+    dialog = ListenAgainDialog([], earlier=[EARLIER, EARLIER])
     assert dialog.chosen() == []
     dialog._clear()
-    assert dialog.clear_requested
+    assert dialog.clear_requested == [], "nothing ticked, nothing cleared"
+    dialog._earlier_rows[1].setChecked(True)
+    dialog._clear()
+    assert dialog.clear_requested == [1]
+
+
+EARLIER = {"low": 2.4, "high": 20.0, "kind": "aligned",
+           "words": [["fiets", 5.0, 5.5, 0.4]], "replaced": []}
+
+
+def test_one_earlier_place_is_cleared_and_the_others_stay(tmp_path) -> None:
+    context = _project(tmp_path)
+    first = dict(EARLIER, replaced=[["muziek", 10.0, 10.8]])
+    second = {"low": 30.0, "high": 40.0, "kind": "whisper",
+              "words": [["stad", 35.0, 35.5, 0.9]], "replaced": []}
+    pipeline.accept_heard_again(context, [first, second])
+    context.store.set_step("timing", {"file": "x"})
+
+    assert pipeline.clear_heard_again(context, [0]) == 1
+
+    kept = pipeline.heard_again(context)
+    assert [area["kind"] for area in kept] == ["whisper"]
+    assert context.store.get_step("timing") is None
+    assert pipeline.clear_heard_again(context, [5]) == 0
+    assert pipeline.clear_heard_again(context) == 1
+    assert pipeline.heard_again(context) == []
 
 
 class _Window:
@@ -981,13 +1008,13 @@ def test_another_busy_task_sends_the_user_back_to_the_editor(
     assert window.task is None and window.reopened == 1
 
 
-def test_without_the_aligner_setting_only_whisper_answers(
+def test_without_the_aligner_setting_the_aligner_does_not_answer(
         tmp_path, stand_ins) -> None:
     context = _project(tmp_path)
     context = replace(context, config=replace(context.config, advanced=replace(
         context.config.advanced, forced_alignment=False)))
     areas = pipeline.listen_again(context)
-    assert [c["kind"] for c in areas[0]["candidates"]] == ["whisper"]
+    assert "aligned" not in [c["kind"] for c in areas[0]["candidates"]]
 
 
 # --------------------------------------------------------------------------
@@ -1107,8 +1134,152 @@ def test_places_where_nothing_was_found_are_not_offered(tmp_path,
     monkeypatch.setattr(gui.QMessageBox, "information",
                         lambda *a, **k: shown.append(a[2]))
     window = _Window(context)
+    window._context = context
     gui.MainWindow._choose_heard_again(window, [
         {"low": 1.0, "high": 3.0, "expected": ["ja"], "replaced": [],
          "candidates": []}])
     from modules.translations import t
     assert shown == [t("listen_again_nothing")]
+
+
+# --------------------------------------------------------------------------
+# v1.0.13: squeezed lines are not offered, not laid on
+# --------------------------------------------------------------------------
+
+def _squeezing(monkeypatch):
+    """An aligner that crams every text into its first second."""
+    def refine(path, segments, language, device="cpu"):
+        return tuple(replace(seg, words=seg.words or _spread(
+            seg.text.split(), seg.start, seg.start + 1.0, 0.05))
+                     for seg in segments)
+
+    monkeypatch.setattr(pipeline.word_alignment, "refine", refine)
+
+
+def test_a_squeezed_candidate_is_not_offered(tmp_path, stand_ins,
+                                             monkeypatch, caplog) -> None:
+    import logging
+
+    _squeezing(monkeypatch)
+    context = _project(tmp_path)
+    with caplog.at_level(logging.INFO):
+        areas = pipeline.listen_again(context)
+    kinds = [c["kind"] for c in areas[0]["candidates"]]
+    assert "aligned" not in kinds
+    assert "singing" in kinds and "whisper" in kinds
+    from modules.translations import t
+
+    said = t("log_listen_again_dropped") % (
+        areas[0]["low"], areas[0]["high"], t("listen_again_kind_aligned"),
+        "2, 3")
+    assert said in [r.getMessage() for r in caplog.records]
+
+
+def test_step_1_1_does_not_lay_a_squeezed_text_on(tmp_path, stand_ins,
+                                                  monkeypatch) -> None:
+    _squeezing(monkeypatch)
+    context = _project(tmp_path)
+    segments = tuple(_segment(i, words) for i, words in enumerate(HEARD))
+    out = pipeline._with_gap_text(context, segments, "vocals.wav", "nl")
+    assert out == segments
+
+
+def test_clearing_a_later_place_gives_an_earlier_one_its_words_back(
+        tmp_path) -> None:
+    context = _project(tmp_path)
+    pipeline.accept_heard_again(context, [{
+        "low": 2.4, "high": 20.0, "kind": "aligned",
+        "words": [["fiets", 5.0, 5.5, 0.4], ["plein", 15.0, 15.5, 0.4]],
+        "replaced": []}])
+    pipeline.accept_heard_again(context, [{
+        "low": 14.0, "high": 16.0, "kind": "whisper",
+        "words": [["plijn", 14.8, 15.3, 0.9]], "replaced": []}])
+    later = next(n for n, area in enumerate(pipeline.heard_again(context))
+                 if area["kind"] == "whisper")
+
+    pipeline.clear_heard_again(context, [later])
+
+    words = sorted((w[0], w[1]) for area in pipeline.heard_again(context)
+                   for w in area["words"])
+    assert words == [("fiets", 5.0), ("plein", 15.0)]
+
+
+def test_an_earlier_place_taken_over_wholly_comes_back_whole(
+        tmp_path) -> None:
+    context = _project(tmp_path)
+    pipeline.accept_heard_again(context, [{
+        "low": 4.0, "high": 6.0, "kind": "aligned",
+        "words": [["fiets", 5.0, 5.5, 0.4]], "replaced": []}])
+    pipeline.accept_heard_again(context, [{
+        "low": 2.4, "high": 20.0, "kind": "whisper",
+        "words": [["fiets", 5.1, 5.6, 0.9]], "replaced": []}])
+    earlier, later = pipeline.heard_again(context)
+    assert earlier["words"] == [] and later["words"]
+
+    pipeline.clear_heard_again(context, [1])
+
+    kept, = pipeline.heard_again(context)
+    assert kept["kind"] == "aligned" and kept["words"] == [
+        ["fiets", 5.0, 5.5, 0.4]]
+
+
+def test_an_area_split_over_two_later_ones_comes_back_whole(
+        tmp_path) -> None:
+    """Found in review: with the words handed around between areas, one
+    of them could get lost. As a history there is nothing to hand."""
+    context = _project(tmp_path)
+    pipeline.accept_heard_again(context, [{
+        "low": 0.0, "high": 10.0, "kind": "aligned",
+        "words": [["e1", 2.0, 2.4, 0.5], ["e2", 7.0, 7.4, 0.5]],
+        "replaced": []}])
+    for low, high, text in ((0.0, 5.0, "n0"), (5.0, 10.0, "n1")):
+        pipeline.accept_heard_again(context, [{
+            "low": low, "high": high, "kind": "whisper",
+            "words": [[text, low + 2.2, low + 2.6, 0.9]], "replaced": []}])
+
+    pipeline.clear_heard_again(context, [1, 2])
+
+    words = [w[0] for area in pipeline.heard_again(context)
+             for w in area["words"]]
+    assert words == ["e1", "e2"]
+
+
+def test_a_word_covered_twice_comes_back_only_when_both_are_gone(
+        tmp_path) -> None:
+    context = _project(tmp_path)
+    for text, low, high in (("d1", 0.0, 10.0), ("e1", 0.0, 10.0),
+                            ("n1", 0.0, 5.0)):
+        pipeline.accept_heard_again(context, [{
+            "low": low, "high": high, "kind": "whisper",
+            "words": [[text, 2.0, 2.4, 0.9]], "replaced": []}])
+
+    pipeline.clear_heard_again(context, [1])
+
+    words = [w[0] for area in pipeline.heard_again(context)
+             for w in area["words"]]
+    assert words == ["n1"], "no two words over each other"
+
+
+def test_step_1_1_drops_only_the_squeezed_line(tmp_path, stand_ins,
+                                               monkeypatch) -> None:
+    """The two missing lines are laid on; the aligner squeezes only the
+    second. The first still goes in."""
+    def refine(path, segments, language, device="cpu"):
+        out = []
+        for seg in segments:
+            if seg.words:
+                out.append(seg)
+                continue
+            texts = seg.text.split()
+            first = _spread(texts[:6], seg.start, seg.start + 6.0, 0.6)
+            second = _spread(texts[6:], seg.start + 6.0, seg.start + 6.3,
+                             0.6)
+            out.append(replace(seg, words=first + second))
+        return tuple(out)
+
+    monkeypatch.setattr(pipeline.word_alignment, "refine", refine)
+    context = _project(tmp_path)
+    segments = tuple(_segment(i, words) for i, words in enumerate(HEARD))
+    out = pipeline._with_gap_text(context, segments, "vocals.wav", "nl")
+    laid = [w.text for seg in out if seg.origin for w in seg.words]
+    assert laid == "de fiets staat bij de deur".split()

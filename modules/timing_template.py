@@ -158,6 +158,9 @@ def collect(lines, windows=()) -> dict[str, Template]:
     for line in lines:
         if line.quality not in GOOD_QUALITY or not line.syllables:
             continue
+        if getattr(line, "made", False):
+            # B581: laid on, not heard - no measure for its copies.
+            continue
         duration = _span(line)
         if duration <= 0:
             continue

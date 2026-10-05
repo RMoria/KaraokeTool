@@ -681,8 +681,16 @@ def test_the_pieces_get_the_global_prompt() -> None:
     piece - and that is exactly what lets everything go in one queue
     instead of waiting for a first transcription."""
     source = inspect.getsource(pipeline._transcribe_in_pieces)
-    assert "chunk_prompt" not in source
     assert "run_over_lanes(wav_path, settings, jobs, prompt" in source
+    # v1.0.13: a hint per piece exists as B583. Shipped ON since
+    # v1.0.15 (1.5.13 measured it a gain); switched off, it hands back
+    # nothing and the one queue stays.
+    from modules import model_register
+
+    model = model_register.by_code("B583")
+    assert model is not None and model.default_on
+    (_module, name, neutral), = model.targets
+    assert name == "_placed_for_prompts" and neutral() is None
 
 
 def test_the_pieces_are_cut_on_the_originals_own_timeline() -> None:

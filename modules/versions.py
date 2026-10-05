@@ -37,8 +37,12 @@ logger = logging.getLogger(__name__)
 PACKAGES = (
     "faster-whisper", "ctranslate2", "torch", "torchaudio", "demucs",
     "whisperx", "librosa", "numpy", "scipy", "soundfile", "rapidfuzz",
-    "PySide6", "pillow", "langdetect", "av",
+    "PySide6", "pillow", "langdetect", "av", "audio-separator",
 )
+
+#: B591: packages that live in the Roformer environment next to the
+#: program and not in its own; their version is read from there.
+SEPARATE_ENV = {"audio-separator": "audio_separator"}
 
 #: Where the history goes. A constant so a test can move it aside.
 VERSION_LOG = Path(__file__).resolve().parents[1] / "docs" / "pakketversies.json"
@@ -50,10 +54,26 @@ UPDATE_FILE = Path(__file__).resolve().parents[1] / "docs" / "updates.json"
 UPDATE_MAX_AGE_DAYS = 14
 
 
+def _separate_env_version(name: str) -> str:
+    """The version of a package in the Roformer environment (B591),
+    from the name of its ``.dist-info`` folder - no import, no process."""
+    from . import separation
+
+    folder = SEPARATE_ENV[name]
+    for env in separation.roformer_env_dirs():
+        for pattern in (f"Lib/site-packages/{folder}-*.dist-info",
+                        f"lib/python*/site-packages/{folder}-*.dist-info"):
+            for info in sorted(env.glob(pattern)):
+                return info.name[len(folder) + 1:-len(".dist-info")]
+    return ""
+
+
 def _version_of(name: str) -> str:
     """The installed version, or an empty string when it is not there."""
     from importlib.metadata import PackageNotFoundError, version
 
+    if name in SEPARATE_ENV:
+        return _separate_env_version(name)
     try:
         return str(version(name))
     except PackageNotFoundError:

@@ -115,8 +115,9 @@ CONTENT = {
     "modules/cluster.py": {"duizend", "een", "honderd",
                            "ondertiteling", "twee", "vier", "vijf"},
     # Kinds of block and drag modes: ids that the damping list stores.
+    # B587: "woord " prefixes a stored label, the way "zin " does.
     "modules/damping_editor.py": {"herstel", "rechts", "verplaats",
-                                  "zin"},
+                                  "woord", "zin"},
     # The markup the user types in his karaoke text: [einde crowd].
     "modules/karaoke_text.py": {"einde"},
     "modules/song_text.py": {"einde", "geschat", "tekst"},
@@ -131,7 +132,7 @@ CONTENT = {
     # whose header the user chose to keep as it is.
     "modules/phonetics.py": {"een", "het"},
     "modules/pipeline.py": {"een", "het", "inzet", "koppeling",
-                            "woorden", "zin", "zinnen"},
+                            "woord", "woorden", "zin", "zinnen"},
     "modules/timing.py": {"bron", "inzet", "koppeling", "kort",
                           "onbekend", "regels", "versie", "woorden",
                           "zinnen"},

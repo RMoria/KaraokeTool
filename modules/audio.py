@@ -42,7 +42,13 @@ def load_audio(path: Path) -> tuple[np.ndarray, int]:
 
 
 def save_wav(path: Path, data: np.ndarray, sample_rate: int) -> None:
-    """Save audio as 16-bit PCM wav.
+    """Save audio as 32-bit float wav.
+
+    v1.0.15 (B597): float, no longer 16-bit PCM. The stems keep the
+    level of the original now, so the music may peak above full scale
+    by a dB or so - Demucs used to scale it down for that. A 16-bit file
+    would clip those peaks hard, before the render sets the volume of
+    the whole; a float file keeps them for it.
 
     Args:
         path: Target path.
@@ -54,7 +60,7 @@ def save_wav(path: Path, data: np.ndarray, sample_rate: int) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        sf.write(path, data, sample_rate, subtype="PCM_16")
+        sf.write(path, data, sample_rate, subtype="FLOAT")
     except (RuntimeError, sf.LibsndfileError) as exc:
         raise AudioError(t("err_audio_save").format(path=path)) from exc
     logger.info(t("log_wav_saved"), path)

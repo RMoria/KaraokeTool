@@ -72,6 +72,7 @@ def export_result(
             t("err_export_processed_missing").format(path=processed_wav))
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = source_suffix.lower()
+    processed_wav = _without_clipping(processed_wav)
 
     if suffix == ".wav":
         target = output_dir / f"{OUTPUT_STEM}.wav"
@@ -100,6 +101,41 @@ def export_result(
 
     raise ExportError(
         t("err_export_unknown_format").format(suffix=source_suffix))
+
+
+#: The loudest a shared file may peak (just under full scale).
+_PEAK = 0.999
+
+
+def _without_clipping(processed_wav: Path) -> Path:
+    """The file to export: as it is, or - when it peaks above full scale
+    - a copy turned down as a whole just far enough (v1.0.15, B597).
+
+    The processed karaoke is float and keeps the level of the original,
+    so its peaks may lie a dB or so above full scale; an ordinary player
+    or a 16-bit file would clip them. The copy is a file of its own next
+    to the processed one: the stems and the processed file keep their
+    level, and the video sets its own volume at the render.
+    """
+    try:
+        import numpy as np
+        import soundfile as sf
+
+        data, rate = sf.read(str(processed_wav), dtype="float32",
+                             always_2d=True)
+    except Exception:  # noqa: BLE001 - export as it is
+        return processed_wav
+    peak = float(np.max(np.abs(data))) if data.size else 0.0
+    if peak <= 1.0:
+        return processed_wav
+    gain = _PEAK / peak
+    quieter = processed_wav.with_name(processed_wav.stem + "_export.wav")
+    try:
+        sf.write(str(quieter), data * gain, rate, subtype="PCM_16")
+    except Exception:  # noqa: BLE001 - export as it is
+        return processed_wav
+    logger.info(t("log_export_turned_down"), 20 * np.log10(gain))
+    return quieter
 
 
 def nearest_cbr_bitrate(bit_rate: int | None) -> int:

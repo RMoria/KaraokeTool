@@ -80,6 +80,31 @@ _BUILDERS = {
 }
 
 
+def _fuse_targets(tolerance: float):
+    """B603 with another width for "the same spot" (1.5.15)."""
+    from . import block_timing
+
+    return lambda: [(block_timing, "FUSE_S", tolerance)]
+
+
+#: Settings of a model rather than orders (v1.0.15): they travel to a
+#: child the same way, by name, but are not orders - 1.5.10 does not
+#: walk them, only the trial that asks for them by name.
+def _drum_reach_targets(reach: float):
+    """B633 with another reach onto the drums' grid (1.5.19)."""
+    from . import stem_models
+
+    return lambda: [(stem_models, "DRUM_REACH_S", reach)]
+
+
+_SETTINGS = {
+    "B603 0.05 s": (_fuse_targets(0.05), ("B603",)),
+    "B603 0.2 s": (_fuse_targets(0.2), ("B603",)),
+    "B633 0.06 s": (_drum_reach_targets(0.06), ("B633",)),
+    "B633 0.2 s": (_drum_reach_targets(0.2), ("B633",)),
+}
+
+
 def names() -> tuple[str, ...]:
     """The orders that can be measured, in report order."""
     return tuple(_BUILDERS)
@@ -109,7 +134,7 @@ def targets(name: str):
     function that is real RIGHT NOW, so building it once at import time
     would freeze whatever happened to be installed then.
     """
-    entry = _BUILDERS.get(name)
+    entry = _BUILDERS.get(name) or _SETTINGS.get(name)
     return entry[0]() if entry else []
 
 
@@ -120,7 +145,7 @@ def models_for(name: str) -> tuple[str, ...]:
     and would report a tidy 0.00 s for it. The caller asks this first
     and says "skipped" instead.
     """
-    entry = _BUILDERS.get(name)
+    entry = _BUILDERS.get(name) or _SETTINGS.get(name)
     return entry[1] if entry else ()
 
 

@@ -21,6 +21,7 @@ minutes. Everything that runs through :func:`run` is registered, and
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -34,6 +35,10 @@ logger = logging.getLogger(__name__)
 #: the same time (the test panel runs two at a time).
 _RUNNING: set = set()
 _RUNNING_LOCK = threading.Lock()
+#: How often :func:`terminate_all` was called: work that does not run as
+#: a process of its own (a round a helper does, v1.0.20) looks at this to
+#: see that Stop was pressed.
+_STOPS = 0
 
 #: ``CREATE_NO_WINDOW`` (0x08000000). On non-Windows the flag is absent.
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -80,9 +85,41 @@ def windowless_python() -> str:
     return executable
 
 
+def hidden_console_python() -> str:
+    """v1.0.28 (B658): ``python.exe`` also when this process runs under
+    ``pythonw.exe`` - for a child that starts programs of its own.
+
+    A child started with ``CREATE_NO_WINDOW`` gets a console without a
+    window, and every console program IT starts (ffmpeg under Demucs or
+    the Roformer library, torch's worker processes) shares that hidden
+    console. Under ``pythonw.exe`` the child has no console at all, and
+    each of those grandchildren opens a window of its own: the flash the
+    owner saw whenever a helper began a round.
+    """
+    executable = sys.executable
+    if is_windows() and executable:
+        candidate = Path(executable)
+        if candidate.name.lower() == "pythonw.exe":
+            console = candidate.with_name("python.exe")
+            if console.exists():
+                return str(console)
+    return executable
+
+
+def child_env(env: dict | None = None) -> dict:
+    """v1.0.28 (B657): what a child gets on top of its environment: its
+    output as UTF-8 (a cp1252 decode of tqdm's bars crashed a helper)
+    and no progress bars (nobody sees them; they only fill the pipe)."""
+    out = dict(os.environ if env is None else env)
+    out.setdefault("PYTHONIOENCODING", "utf-8")
+    out.setdefault("TQDM_DISABLE", "1")
+    return out
+
+
 def run(command: Sequence[str], *, timeout: float | None = None,
         check: bool = True, capture: bool = True,
-        text: bool = True) -> subprocess.CompletedProcess:
+        text: bool = True, env: dict | None = None,
+        cwd: str | None = None) -> subprocess.CompletedProcess:
     """Run an external program, windowless and killable (B356).
 
     The one door for every external program in this project. Registers
@@ -90,11 +127,15 @@ def run(command: Sequence[str], *, timeout: float | None = None,
     stop it - ``subprocess.run`` on its own waits until the program is
     finished, however hard the user presses Stop.
     """
+    # v1.0.28 (B657): read as UTF-8, and a byte that is not is replaced
+    # - never a crash on what a program prints.
+    extra = {"encoding": "utf-8", "errors": "replace"} if text else {}
     process = subprocess.Popen(
         list(command),
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
-        text=text, **no_window_kwargs())
+        text=text, env=child_env(env), cwd=cwd, **extra,
+        **no_window_kwargs())
     with _RUNNING_LOCK:
         _RUNNING.add(process)
     try:
@@ -139,8 +180,10 @@ def terminate_all() -> int:
     would otherwise simply finish. Returns how many processes were
     killed.
     """
+    global _STOPS
     with _RUNNING_LOCK:
         processes = list(_RUNNING)
+        _STOPS += 1
     for process in processes:
         try:
             process.kill()
@@ -149,6 +192,16 @@ def terminate_all() -> int:
     if processes:
         logger.info(t_or_plain("log_processes_killed"), len(processes))
     return len(processes)
+
+
+def stops() -> int:
+    return _STOPS
+
+
+def stopped_since(count: int):
+    """A ``cancelled()`` for work that started when :func:`stops` was
+    ``count``."""
+    return lambda: _STOPS != count
 
 
 def t_or_plain(key: str) -> str:

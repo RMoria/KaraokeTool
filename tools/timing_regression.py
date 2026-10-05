@@ -42,14 +42,17 @@ the console is English.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
+import re
 import shutil
 import statistics
 import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+from typing import Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -107,10 +110,21 @@ def _build_project(project_dir: Path, work: Path) -> tuple | None:
     project data without the manual steps.
     """
     settings = project_dir / "settings"
-    segments = project_dir / "original" / "segments.json"
-    if not (settings / "project.json").exists() or not segments.exists():
-        return None
     song = project_dir.name
+    segments = project_dir / "original" / "segments.json"
+    if not segments.exists():
+        # v1.0.25 (B671): its name up to v1.0.5 (B558). Projects transcribed
+        # before that still have only this one.
+        segments = project_dir / "original" / "segmenten.json"
+    cache = (project_dir.parents[1] / "cache" / song
+             / "transcription_original.json")
+    # B671: the diagnostics copy was demanded even where the cache - the
+    # one the measurement takes first - was there. Since the rename of
+    # B558 that left 21 of the owner's 22 songs out of every yardstick
+    # test through the queue (1.5.15, 1.5.19, 1.5.20 measured one song).
+    if not (settings / "project.json").exists() or not (
+            segments.exists() or cache.exists()):
+        return None
     paths = ProjectPaths(root=work, song=song)
     ensure_directories(paths)
 
@@ -123,6 +137,30 @@ def _build_project(project_dir: Path, work: Path) -> tuple | None:
             shutil.copyfile(origin, paths.input_dir / name)
     if not (paths.input_dir / song_text.LYRICS_FILENAME).exists():
         return None
+    # v1.0.15 (B604): the block placement listens to the chords of the
+    # karaoke track. The copy never had that track in its input - the
+    # duration and the beats the other steps read from it would change
+    # every number the yardstick ever gave - so it goes where only the
+    # block placement looks.
+    karaoke = pipeline.filesystem.find_audio_file(source_input,
+                                                  pipeline.TRACK_KARAOKE)
+    if karaoke is not None:
+        target = paths.cache_dir / (pipeline.BLOCK_AUDIO + karaoke.suffix)
+        if not target.exists() \
+                or target.stat().st_size != karaoke.stat().st_size:
+            shutil.copyfile(karaoke, target)
+
+    # v1.0.22 (B633-B635): the stems the stem models listen to, where a
+    # test put them ready beside the copy (1.5.19); without them those
+    # models do nothing, as in a project that has no such stems.
+    ready = project_dir.parents[1] / "cache" / song / pipeline.MODEL_STEMS
+    if ready.is_dir():
+        into = paths.cache_dir / pipeline.MODEL_STEMS
+        into.mkdir(parents=True, exist_ok=True)
+        for stem in sorted(ready.glob("*.*")):
+            goal = into / stem.name
+            if not goal.exists() or goal.stat().st_size != stem.stat().st_size:
+                shutil.copyfile(stem, goal)
 
     # B348: the app couples on the CACHE, and that holds the segments
     # AFTER forced alignment; ``original/segments.json`` is written by
@@ -133,8 +171,6 @@ def _build_project(project_dir: Path, work: Path) -> tuple | None:
     # So take the real cache where it is still there, fall back to the
     # diagnostics copy where it has been cleared - and say which of the
     # two it was.
-    cache = (project_dir.parents[1] / "cache" / song
-             / "transcription_original.json")
     aligned = cache.exists()
     shutil.copyfile(cache if aligned else segments,
                     pipeline.transcript_cache(paths_context(paths),
@@ -253,6 +289,82 @@ def _vocals_into_cache(project_dir: Path, context) -> None:
         pass
 
 
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", str(text).lower())
+
+
+def paired_lines(first: Sequence[str], second: Sequence[str]
+                 ) -> list[tuple[int, int]]:
+    """Which lines of two timings are the same line: ``(i, j)`` pairs.
+
+    Two timings of one song with as many lines pair one to one, as they
+    always did. B593: with a different count they pair on the words -
+    the owner split the long lines of one song into two in his hand
+    timing, and that song was never measured at all, by 1.5.1 or by
+    1.5.13. Now a line of one pairs with a line of the other when both
+    begin on the same word of the song; a piece split off has nothing
+    to pair with and stays out, the rest counts.
+    """
+    if len(first) == len(second):
+        return [(i, i) for i in range(len(first))]
+    left = [(i, w) for i, text in enumerate(first) for w in _words(text)]
+    right = [(j, w) for j, text in enumerate(second) for w in _words(text)]
+    begins_left = {}
+    for k, (i, _w) in enumerate(left):
+        begins_left.setdefault(i, k)
+    begins_right = {}
+    for k, (j, _w) in enumerate(right):
+        begins_right.setdefault(j, k)
+    line_of_right = {k: j for j, k in begins_right.items()}
+    matcher = difflib.SequenceMatcher(None, [w for _i, w in left],
+                                      [w for _j, w in right], autojunk=False)
+    word_map = {}
+    for block in matcher.get_matching_blocks():
+        for k in range(block.size):
+            word_map[block.a + k] = block.b + k
+    pairs = []
+    for i in sorted(begins_left):
+        k = word_map.get(begins_left[i])
+        if k is not None and k in line_of_right:
+            pairs.append((i, line_of_right[k]))
+    return pairs
+
+
+def timing_for(context, hand: list[dict]) -> tuple | None:
+    """The automatic timing of a prepared project, the yardstick's way.
+
+    Returns ``(lines, coupled)`` - the fresh lines and how many of them
+    carry a real coupling - or ``None`` when there is no coupling.
+    v1.0.13: its own function, so 1.5.13 times a project it made itself
+    exactly the way this tool does. Since B593 the fresh lines may
+    differ in number from ``hand``; :func:`paired_lines` says which
+    belong together.
+    """
+    try:
+        coupling = pipeline.build_coupling(context)
+    except Exception:                           # noqa: BLE001 - measuring
+        coupling = None
+    if coupling is None or not coupling["timed"]:
+        return None
+    source = coupling["timed"]
+    coupled = sum(1 for line in source
+                  if line.quality in ("high", "syllable")
+                  and line.end > line.start)
+    onset = context.store.get_meta("vocal_onset_s")
+    duration = max(_end(line) for line in hand) + 5.0
+    # B352: the app hands the sung windows to sanitize_timing
+    # (pipeline.generate_timing does, via _vocal_windows), the
+    # measurement did not. Everything that leans on those windows - B336
+    # for the tail and B344 for a hole in between - was therefore never
+    # measured at all; that explains why B336 "changed no numbers" back
+    # in v0.104.
+    fresh = timing_module.sanitize_timing(
+        source, first_start=float(onset) if onset is not None else None,
+        song_duration=duration,
+        active_windows=pipeline._vocal_windows(context))
+    return pipeline._snap_lines_to_onsets(context, fresh), coupled
+
+
 def measure(project_dir: Path) -> dict | None:
     settings = project_dir / "settings"
     hand_path = settings / "timing.json"
@@ -261,46 +373,48 @@ def measure(project_dir: Path) -> dict | None:
         return None
     hand = _lines(hand_path)
     auto = _lines(auto_path)
-    if len(hand) != len(auto):
-        return None
 
     # B384: a stable directory per project, so the vocal stem keeps its
     # path and the energy cache in ``rhythm`` actually hits.
-    if True:
-        context = _build_project(project_dir, _work_dir(project_dir.name))
-        if context is None:
-            return None
-        _vocals_into_cache(project_dir, context)
-        try:
-            coupling = pipeline.build_coupling(context)
-        except Exception:                       # noqa: BLE001 - measuring
-            coupling = None
-        if coupling is None or len(coupling["timed"]) != len(hand):
-            return None
-        source = coupling["timed"]
-        coupled = sum(1 for line in source
-                      if line.quality in ("high", "syllable")
-                      and line.end > line.start)
-        onset = context.store.get_meta("vocal_onset_s")
-        duration = max(_end(line) for line in hand) + 5.0
-        # B352: the app hands the sung windows to sanitize_timing
-        # (pipeline.generate_timing does, via _vocal_windows), the
-        # measurement did not. Everything that leans on those windows -
-        # B336 for the tail and B344 for a hole in between - was
-        # therefore never measured at all; that explains why B336
-        # "changed no numbers" back in v0.104.
-        fresh = timing_module.sanitize_timing(
-            source, first_start=float(onset) if onset is not None else None,
-            song_duration=duration,
-            active_windows=pipeline._vocal_windows(context))
-        fresh = pipeline._snap_lines_to_onsets(context, fresh)
+    context = _build_project(project_dir, _work_dir(project_dir.name))
+    if context is None:
+        return None
+    _vocals_into_cache(project_dir, context)
+    made = timing_for(context, hand)
+    if made is None:
+        return None
+    fresh, coupled = made
 
-    hand_starts = [_start(line) for line in hand]
-    auto_starts = [_start(line) for line in auto]
-    new_starts = [line.start for line in fresh]
+    # B593: only the hand lines that pair with both the stored automatic
+    # timing and the fresh one are measured.
+    texts = [str(line.get("text", "")) for line in hand]
+    with_auto = dict(paired_lines(
+        texts, [str(line.get("text", "")) for line in auto]))
+    with_fresh = dict(paired_lines(texts, [line.text for line in fresh]))
+    hand_index = [i for i in range(len(hand))
+                  if i in with_auto and i in with_fresh]
+    if not hand_index:
+        return None
+    hand_starts = [_start(hand[i]) for i in hand_index]
+    auto_starts = [_start(auto[with_auto[i]]) for i in hand_index]
+    new_starts = [fresh[with_fresh[i]].start for i in hand_index]
+    # v1.0.22 (B635): which of them are [bg] lines, and where the inline
+    # [bg] pieces begin - only the start of a line is measured otherwise.
+    bg_rows = [k for k, i in enumerate(hand_index) if hand[i].get("bg")]
+    piece_hand, piece_new = [], []
+    for i in hand_index:
+        first_hand = next((float(s["start"]) for s in
+                           hand[i].get("syllables") or () if s.get("bg")),
+                          None)
+        first_new = next((piece.start for piece in
+                          fresh[with_fresh[i]].syllables if piece.bg), None)
+        if first_hand is not None and first_new is not None \
+                and not hand[i].get("bg"):
+            piece_hand.append(first_hand)
+            piece_new.append(first_new)
     moved = [i for i, (a, h) in enumerate(zip(auto_starts, hand_starts))
              if abs(a - h) > MOVED_S]
-    kept = [i for i in range(len(hand)) if i not in set(moved)]
+    kept = [i for i in range(len(hand_starts)) if i not in set(moved)]
     stored = json.loads(auto_path.read_text(encoding="utf-8"))
 
     def mean(values: list[float]) -> float:
@@ -309,7 +423,9 @@ def measure(project_dir: Path) -> dict | None:
     return {
         "project": project_dir.name,
         "source": SOURCE.get(project_dir.name, "?"),
-        "lines": len(hand),
+        "lines": len(hand_starts),
+        # Which hand lines these are (B593).
+        "hand_index": hand_index,
         "moved": len(moved),
         "coupled": coupled,
         "auto_version": (stored.get("version")
@@ -317,6 +433,9 @@ def measure(project_dir: Path) -> dict | None:
         "hand_starts": hand_starts,
         "new_starts": new_starts,
         "moved_index": moved,
+        "bg_rows": bg_rows,
+        "piece_hand": piece_hand,
+        "piece_new": piece_new,
         "auto_moved": mean([abs(auto_starts[i] - hand_starts[i])
                             for i in moved]),
         "new_moved": mean([abs(new_starts[i] - hand_starts[i])
@@ -347,6 +466,10 @@ def compare(rows: list[dict], earlier: list[dict]) -> None:
         old = before.get(row["project"])
         if old is None or len(old.get("new_starts", ())) != len(
                 row["new_starts"]):
+            continue
+        # B593: the same hand lines, not only as many of them.
+        if old.get("hand_index") != row.get("hand_index") and \
+                old.get("hand_index") is not None:
             continue
         hand = row["hand_starts"]
         moved = row["moved_index"]

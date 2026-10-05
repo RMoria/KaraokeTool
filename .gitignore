@@ -11,13 +11,17 @@ cache/
 logs/
 config/
 bin/
+helper/kt_work/
+venv_separator/
+models/
+_to_delete/
 .write_test
 
 # Written again on every start
 docs/updates.json
 docs/pakketversies.json
 
-# install.bat fetches the fonts; only the fallback lives in the repo
+# KaraokeToolGUI.bat fetches the fonts; only the fallback lives in the repo
 assets/fonts/*.ttf
 !assets/fonts/DejaVuSans-Bold.ttf
 

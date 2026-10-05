@@ -281,7 +281,7 @@ def test_the_chips_are_cleared_when_the_action_is_done() -> None:
     source = inspect.getsource(gui.MainWindow._reset_track_progress)
     assert "_clear_slot_chips()" in source
     # B435: and the same tidying up BETWEEN the rounds as well.
-    assert "_clear_slot_chips" in inspect.getsource(gui.MainWindow._do_fill_cache)
+    assert "_clear_slot_chips" in inspect.getsource(gui.MainWindow._start_tests)
 
 
 def test_the_grey_note_under_the_video_button_is_gone() -> None:

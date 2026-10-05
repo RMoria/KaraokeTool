@@ -136,12 +136,24 @@ def _artefacts() -> dict[str, Artefact]:
         lambda paths: [paths.cache_dir / "karaoke.wav"])
 
     # -- separating the vocals -------------------------------------------
+    # B591: the careful and Roformer ways keep their stems beside these,
+    # in stems_<source>_<way>/, and go with them.
     add("cache:demucs_original", FILE, ["cache:original_wav"],
         "cache/demucs_stems_original/ (vocals + instrumental)",
-        lambda paths: [paths.cache_dir / "demucs_stems_original"])
+        lambda paths: [paths.cache_dir / "demucs_stems_original",
+                       *sorted(paths.cache_dir.glob("stems_original_*"))])
     add("cache:demucs_karaoke", FILE, ["cache:karaoke_wav"],
         "cache/demucs_stems_karaoke/",
-        lambda paths: [paths.cache_dir / "demucs_stems_karaoke"])
+        lambda paths: [paths.cache_dir / "demucs_stems_karaoke",
+                       *sorted(paths.cache_dir.glob("stems_karaoke_*"))])
+    # v1.0.22 (B635): the choir is the karaoke model's music split once
+    # more, and the stems put ready for the stem models: both belong to
+    # the original and go with it.
+    add("cache:model_stems", FILE, ["cache:demucs_original"],
+        "cache/demucs_stems_karaoke_music/ and cache/model_stems/ (the "
+        "choir, and stems for the stem models)",
+        lambda paths: [paths.cache_dir / "demucs_stems_karaoke_music",
+                       paths.cache_dir / "model_stems"])
     add("cache:original_vocals", FILE, ["cache:demucs_original"],
         "cache/original_vocals.wav (vocals for the energy analysis)",
         lambda paths: [paths.cache_dir / "original_vocals.wav"])
@@ -156,6 +168,9 @@ def _artefacts() -> dict[str, Artefact]:
         "where the singing starts (anchor for the first line)")
     add("vocal_end_s", META, ["cache:demucs_original"],
         "where the singing stops (anchor for the tail, B319)")
+    # v1.0.28 (B668): where the music made from the original falls away.
+    add("music_dips", META, ["cache:demucs_original"],
+        "where the music made from the original falls away (B668)")
     add("karaoke_from_original", META, ["input:original", "input:karaoke"],
         "whether the karaoke was made from the original (skips alignment)")
 
@@ -305,6 +320,12 @@ def _artefacts() -> dict[str, Artefact]:
     # the same thing as the marking itself.
     add("restore_moved", STEP, ["restore_lines"],
         "moved 'back from the original' pieces (per line number)")
+    # B587: single words, by line number and word position, and where
+    # such a piece was moved to in 1.4 - the same reasoning as above.
+    add("restore_words", STEP, ["cache:karaoke_wav"],
+        "words fetched back from the original (line number, word)")
+    add("restore_moved_words", STEP, ["restore_words"],
+        "moved 'back from the original' word pieces")
     add("original_restore_resample", STEP,
         ["input:original", "cache:karaoke_wav"],
         "sha1 + sample rate of the reused original")
@@ -314,12 +335,13 @@ def _artefacts() -> dict[str, Artefact]:
     add("karaoke", STEP,
         ["cache:karaoke_wav", "clusters_original", "clusters_karaoke",
          "fragment_exclusions", "restore_fragments", "restore_lines",
-         "restore_moved",
+         "restore_moved", "restore_words", "restore_moved_words",
          "align", "config:karaoke"],
         "the edited karaoke (which fragments are damped)")
     add("cache:karaoke_edited", FILE, ["karaoke"],
-        "cache/karaoke_edited.wav",
-        lambda paths: [paths.cache_dir / "karaoke_edited.wav"])
+        "cache/karaoke_edited.wav (and its turned-down copy for export)",
+        lambda paths: [paths.cache_dir / "karaoke_edited.wav",
+                       paths.cache_dir / "karaoke_edited_export.wav"])
     add("output:karaoke_edit", FILE, ["karaoke"],
         "output/karaoke_edit.mp3 and karaoke_edit.wav",
         lambda paths: [paths.output_dir / "karaoke_edit.mp3",
@@ -336,6 +358,28 @@ def _artefacts() -> dict[str, Artefact]:
         "the last folder used in this project, whatever the input "
         "(B413)")
     add("video_titles", META, [], "artist/title to show in the video")
+    # B600: which blocks of the karaoke text are linked. Hangs on the
+    # text: a new text is new blocks.
+    add("block_links", STEP, ["input:karaoke_text"],
+        "linked blocks of the karaoke text (B600)")
+    # B591: the way this project separates vocals from music, chosen at
+    # its first separation. It describes the project and survives a new
+    # original, like the rest of this group.
+    add("separation", META, [],
+        "how this project separates vocals and music (B591)")
+    # B606: the profile (way of working) the project is made with, fixed
+    # at its first step. Like the separation it describes the project.
+    add("profile", META, [],
+        "the profile this project is made with (B606)")
+    # v1.0.19: the project's text came from what was heard ("Full
+    # karaoke"). Describes the project, like the rest of this group;
+    # choosing a text by hand clears it.
+    add("own_text", META, [],
+        "the text was made from what was heard (Full karaoke)")
+    # The times of the heard lines, to play a line while checking the
+    # text. They are times in the original: a new original, new times.
+    add("own_text_times", META, ["input:original"],
+        "times of the heard lines, for playing them in the text check")
     # -- step 5: video ------------------------------------------------------
     # B353: deliberately belongs to nothing. The rendered video is an end
     # product; changing the timing afterwards does not make the file

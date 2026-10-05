@@ -237,9 +237,13 @@ def qapp():
 
 def test_the_job_sits_last_and_is_not_a_measurement() -> None:
     from modules import test_panel
+    # v1.0.13: 1.5.13, the night of measuring, came after it - also on
+    # request, so the jobs still close the list; v1.0.14 added 1.5.14
+    # and v1.0.15 1.5.15.
     codes = [a.code for a in test_panel.ACTIONS]
-    assert codes[-1] == "1.5.12"
-    action = test_panel.ACTIONS[-1]
+    assert codes[-9:] == ["1.5.12", "1.5.13", "1.5.14", "1.5.15",
+                          "1.5.16", "1.5.17", "1.5.18", "1.5.19", "1.5.20"]
+    action = test_panel.ACTIONS[-9]
     assert action.on_request and not action.heavy
     assert action.function is test_panel.rebuild_videos
 
@@ -301,11 +305,14 @@ def test_the_job_renders_first_and_clears_up_after() -> None:
     a finished video."""
     import inspect
     from modules import test_panel
+    # v1.0.21: the renders go through the queue; what a finished one
+    # does next is in _rebuilt, and it only runs for a render that is back.
     source = inspect.getsource(test_panel.rebuild_videos)
-    assert source.index("run_video") < source.index("shutil.move")
-    assert "next_video_target" in source
+    assert "next_video_target" in source and "run_jobs(" in source
+    after = inspect.getsource(test_panel._rebuilt)
+    assert after.index('"failed" in result') < after.index("shutil.move")
     # And the old video may only be overwritten once it is really gone.
-    assert "if plain in kept:" in source
+    assert "if plain in kept:" in after
 
 
 # --------------------------------------------------------------------------
@@ -788,7 +795,7 @@ def test_the_copy_is_made_before_the_run_writes() -> None:
 # B536 - the shipped setting, and what does and does not ship with it
 # --------------------------------------------------------------------------
 
-def test_the_shipped_setting_is_exactly_these_two(monkeypatch) -> None:
+def test_the_shipped_setting_is_exactly_these_three(monkeypatch) -> None:
     """What the user really gets when he starts the app. The whole test
     run goes with everything on (otherwise half the hallucination tests
     would test code that no longer runs), so this setting is seen
@@ -796,7 +803,12 @@ def test_the_shipped_setting_is_exactly_these_two(monkeypatch) -> None:
     from modules import model_register
     model_register.apply_settings({})
     off = model_register.apply_disabled()
-    assert sorted(off) == ["B258/B285", "B380"]
+    # v1.0.15: the four block models, off until 1.5.15 has measured them.
+    # v1.0.15: B583 and B595 on after the second 1.5.13 night.
+    # v1.0.22: the three stem models, off until 1.5.19 has measured them.
+    # v1.0.23: B651, off until 1.5.20 has measured it.
+    assert sorted(off) == ["B258/B285", "B380", "B602", "B603", "B604",
+                           "B605", "B633", "B634", "B635", "B651"]
 
 
 def _segment(index, text, start, end, words, confidence=0.8):

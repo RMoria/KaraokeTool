@@ -7,7 +7,10 @@ possible.
 
 ffmpeg/ffprobe are looked for in the PATH and in addition in the folder
 ``bin`` of the project, so that installation without a PATH adjustment
-also works (simply put the exe's in ``KaraokeTool/bin``).
+also works (simply put the exe's in ``KaraokeTool/bin``). v1.0.23: the
+PATH first again - winget installs ffmpeg there for the user and keeps
+it up to date (the owner's choice); an old copy in ``bin`` never wins
+over it.
 """
 
 from __future__ import annotations
@@ -119,6 +122,24 @@ def convert_to_wav(source: Path, target: Path) -> Path:
           "-acodec", "pcm_s16le", str(target)])
     logger.info(t("log_converted_wav"), source.name, target.name)
     return target
+
+
+def extract_stems(source: Path, folder: Path) -> dict[str, Path]:
+    """The parts of a MUSDB18 ``.stem.mp4`` (v1.0.19): the mixture, the
+    vocals and the accompaniment (drums, bass and the rest added up) as
+    float wavs. Stream order of the format: mixture, drums, bass, other,
+    vocals."""
+    folder.mkdir(parents=True, exist_ok=True)
+    out = {"mixture": folder / "mixture.wav", "vocals": folder / "vocals.wav",
+           "accompaniment": folder / "accompaniment.wav"}
+    _run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(source),
+          "-map", "0:a:0", "-acodec", "pcm_f32le", str(out["mixture"]),
+          "-map", "0:a:4", "-acodec", "pcm_f32le", str(out["vocals"]),
+          "-filter_complex",
+          "[0:a:1][0:a:2][0:a:3]amix=inputs=3:normalize=0[acc]",
+          "-map", "[acc]", "-acodec", "pcm_f32le",
+          str(out["accompaniment"])])
+    return out
 
 
 def resample_to_match(

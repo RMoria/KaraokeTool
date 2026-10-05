@@ -381,8 +381,9 @@ def test_the_last_two_sections_use_both_workers() -> None:
 def test_there_are_at_most_ten_light_actions() -> None:
     """B371: the ceiling applies to the ordinary work; 1.5.11 stands
     outside it as the heavy bin."""
+    # B531: a job on request does not count towards the ceiling.
     light = [a for a in test_panel.ACTIONS
-             if not a.heavy]
+             if not a.heavy and not a.on_request]
     assert len(light) <= test_panel.MAX_ACTIONS == 10
     # B526: ascending and unique; 1.5.8 is vacant since that action went.
     numbers = [int(a.code.rsplit(".", 1)[1]) for a in test_panel.ACTIONS]
@@ -479,8 +480,8 @@ def test_remeasure_is_off_when_the_panel_opens(qapp) -> None:
 def test_the_runner_passes_remeasure_along() -> None:
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
-    assert "remeasure()" in source
+    assert "remeasure()" in inspect.getsource(gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
     assert source.index("REMEASURE") < source.index("def task")
 
 

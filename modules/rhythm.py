@@ -141,6 +141,44 @@ def _rms_envelope(audio_path) -> tuple[np.ndarray, np.ndarray] | None:
     return result
 
 
+#: Chroma per file (B604), on the same key as the energy envelope.
+_CHROMA_CACHE: dict[tuple[str, float, int], tuple[float, np.ndarray] | None] = {}
+
+#: Chroma frames are averaged in groups of this many (about 0.09 s):
+#: finer than a chord ever changes, and four times less to compare.
+_CHROMA_POOL = 4
+
+
+def chroma(audio_path) -> tuple[float, np.ndarray] | None:
+    """(seconds per frame, 12 x frames chroma) of an audio file, or
+    ``None``; cached per file like :func:`_rms_envelope` (B604)."""
+    if not is_available():
+        return None
+    from pathlib import Path
+    try:
+        stat = Path(audio_path).stat()
+        key = (str(audio_path), stat.st_mtime, stat.st_size)
+    except OSError:
+        return None
+    if key in _CHROMA_CACHE:
+        return _CHROMA_CACHE[key]
+    result = None
+    try:
+        import librosa
+        samples, _ = librosa.load(str(audio_path), sr=_SR, mono=True)
+        if samples.size >= _HOP * _CHROMA_POOL:
+            matrix = librosa.feature.chroma_stft(y=samples, sr=_SR,
+                                                 hop_length=_HOP)
+            frames = matrix.shape[1] // _CHROMA_POOL * _CHROMA_POOL
+            pooled = matrix[:, :frames].reshape(
+                matrix.shape[0], -1, _CHROMA_POOL).mean(axis=2)
+            result = (_HOP * _CHROMA_POOL / _SR, pooled.astype(np.float32))
+    except Exception:  # noqa: BLE001 - a block model must never break
+        logger.exception(t("log_chroma_failed"))
+    _CHROMA_CACHE[key] = result
+    return result
+
+
 #: Minimum duration of a contiguous silent gap (B277) to count as
 #: "the vocals really stopped here", even if AFTER that gap another short
 #: outlier above the threshold still occurs (e.g. the BUILD-UP of the next

@@ -261,17 +261,21 @@ def test_the_runner_reads_the_radio_buttons() -> None:
     """They were there all right, but nobody looked at them."""
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
-    assert "only_this_project()" in source
-    assert "limit_to_current" in source
+    # v1.0.28: the panel is read in _do_fill_cache, the run is
+    # _start_tests (a resumed run has no panel).
+    assert "panel.scope()" in inspect.getsource(
+        gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
+    # v1.0.22: three scopes now - the test set, all, this project.
+    assert "limit_to(" in source
 
 
 def test_the_scope_is_set_afresh_on_every_run() -> None:
     """Otherwise last time's choice stays behind."""
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
-    assert source.index("limit_to_current") < source.index("def task")
+    source = inspect.getsource(gui.MainWindow._start_tests)
+    assert source.index("limit_to(") < source.index("def task")
 
 
 def test_the_bar_moves_even_for_an_action_that_reports_nothing() -> None:
@@ -279,7 +283,7 @@ def test_the_bar_moves_even_for_an_action_that_reports_nothing() -> None:
     label of the previous action stayed put, and that reads as a hang."""
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
     head = source.index("def report")
     tail = source[head:]
     assert "for slot in range(len(self._progress_bars))" in tail

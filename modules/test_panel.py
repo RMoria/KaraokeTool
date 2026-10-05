@@ -40,13 +40,15 @@ from __future__ import annotations
 import logging
 import re
 import statistics
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QGroupBox, QHBoxLayout, QLabel,
-    QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QGroupBox, QHBoxLayout,
+    QLabel, QPushButton, QRadioButton, QScrollArea, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import measure_pool
@@ -98,24 +100,52 @@ class TestAction:
     #: readable and one word away from measuring again. Out of the
     #: panel, so the list is what is still worth clicking.
     done: bool = False
+    #: v1.0.22 (B630): does it take the test set when that is chosen? A
+    #: job - the cache, the videos - is for every project.
+    on_the_set: bool = True
 
 # -- the individual actions ----------------------------------------------
 
 #: B359: the two radio buttons at the bottom of the panel did nothing -
 #: the runner simply handed every action the current context and read
 #: neither this button nor the action's own ``all_projects`` flag. With
-#: this True, ``_projects`` yields only the chosen project. The runner
+#: ``current``, ``_projects`` yields only the chosen project. The runner
 #: sets it afresh on every run, so a previous choice never lingers.
-_ONLY_CURRENT = False
+#: v1.0.22 (B630): a third scope, ``set`` - the test set of the owner's
+#: songs (:mod:`modules.test_set`), which the panel opens on.
+SCOPES = ("set", "all", "current")
+_SCOPE = "all"
+
+
+def limit_to(scope: str) -> None:
+    """Set the scope for the coming run: ``set``, ``all`` or ``current``."""
+    global _SCOPE
+    _SCOPE = scope if scope in SCOPES else "all"
 
 
 def limit_to_current(yes: bool) -> None:
-    """Set the scope for the coming run (B359)."""
-    global _ONLY_CURRENT
-    _ONLY_CURRENT = bool(yes)
+    """Set the scope for the coming run (B359): this project, or all."""
+    limit_to("current" if yes else "all")
 
 
 def _projects(context) -> list[str]:
+    """The projects of the coming run, by the scope of the panel."""
+    names = all_projects(context)
+    if _SCOPE == "current":
+        current = (context.config.song.title or "").strip()
+        return [current] if current in names else []
+    if _SCOPE == "set":
+        from . import test_set
+
+        chosen = test_set.songs(context, names)
+        if chosen:
+            return chosen
+        logger.warning(t("log_test_set_empty"))
+    return names
+
+
+def all_projects(context) -> list[str]:
+    """Every project of the installation, whatever the scope."""
     root = context.paths.output_root
     if not root.is_dir():
         return []
@@ -126,9 +156,6 @@ def _projects(context) -> list[str]:
             output_base=context.paths.output_base)
         if paths.project_file.exists():
             names.append(folder.name)
-    if _ONLY_CURRENT:
-        current = (context.config.song.title or "").strip()
-        return [current] if current in names else []
     return names
 
 
@@ -748,13 +775,16 @@ def unique_against_repeated(context, report: Reporter, cancelled) -> str:
         paths = pipeline.filesystem.ProjectPaths(
             root=context.paths.root, song=row["project"],
             output_base=context.paths.output_base)
+        stored = json.loads(paths.timing_file.read_text(encoding="utf-8"))
+        # An older timing file is a bare list of lines.
         texts = [r["text"].strip().lower() for r in
-                   json.loads(paths.timing_file.read_text(
-                       encoding="utf-8"))["lines"]]
+                 (stored["lines"] if isinstance(stored, dict) else stored)]
         counts = Counter(texts)
         u, h = [], []
-        for index, (hand, new) in enumerate(zip(row["hand_starts"],
-                                                  row["new_starts"])):
+        # B593: the measured lines are the hand lines in ``hand_index``.
+        indices = row.get("hand_index") or range(len(row["hand_starts"]))
+        for index, hand, new in zip(indices, row["hand_starts"],
+                                    row["new_starts"]):
             (h if counts[texts[index]] > 1 else u).append(abs(new - hand))
         unique += u
         repeated += h
@@ -1279,30 +1309,158 @@ class Steps:
     are and ticks one off each time. Guessing a total from the work done
     so far gives a bar that walks backwards, and that is worse than no
     bar.
+
+    v1.0.15 (B599): and how long it will still take, so the owner can
+    plan his other work around a night job. Every round is timed by its
+    kind - a careful Demucs separation is not a quick one - and the time
+    left is what the rounds still to come usually take: measured in this
+    run where there are some, otherwise ``prior`` (seconds per kind from
+    an earlier run), otherwise the mean of everything measured. A round
+    that took under a second was answered from what was kept and says
+    nothing about the work, so it is counted but not timed.
     """
 
-    def __init__(self, report, label: str, total: int) -> None:
+    #: Rounds shorter than this were answered from what was kept.
+    QUICK_S = 1.0
+
+    def __init__(self, report, label: str, total: int,
+                 plan: Sequence[str] | None = None,
+                 prior: dict[str, float] | None = None,
+                 forecast=None) -> None:
+        # v1.0.20: for a test that goes through the work queue, what the
+        # queue knows about the speed of every worker taking part
+        # (:func:`modules.work_queue.forecast`) - the rounds run side by
+        # side there, so adding them up would be several times too long.
+        self._forecast = forecast
         self._report = report
         self._label = label
         self._total = max(1, int(total))
         self._done = 0
+        self._plan = list(plan) if plan else None
+        self._prior = {str(k): float(v) for k, v in (prior or {}).items()
+                       if v and float(v) > 0}
+        self._seen: dict[str, list[float]] = {}
+        self._kind: str | None = None
+        self._last = time.monotonic()
+        self._rough = False
+        self._sent = 0.0
+        if forecast is not None:
+            # v1.0.28 (B662): told at every look at the queue, also while
+            # this computer works on a round of its own.
+            from . import work_queue
+
+            work_queue.watch(self.refresh)
+        left = self.remaining_s()
+        if left is not None:
+            logger.info(t("log_steps_estimate"), label, duration_text(left),
+                        finish_text(left))
         self.tick(0)
 
-    def name(self, label: str) -> None:
-        """Rename the running round (B409).
-
-        1.5.11 is four investigations under one button. With a fixed
-        label the top row read "1.5.11  2/4" and the user could see that
-        something was running but not WHICH of the four - the letter was
-        reported to work slot 0 and overwritten a moment later by the
-        first project name.
-        """
+    def name(self, label: str, kind: str | None = None) -> None:
+        """Rename the running round (B409), and say what kind it is."""
         self._label = label
-        self._report(ACTION_SLOT, self._label, self._done, self._total)
+        if kind is not None:
+            self._kind = kind
+        self._send()
 
-    def tick(self, step: int = 1) -> None:
+    def tick(self, step: int = 1, kind: str | None = None) -> None:
+        now = time.monotonic()
+        if step > 0:
+            spent = (now - self._last) / step
+            if spent >= self.QUICK_S:
+                self._seen.setdefault(str(kind or self._kind or ""),
+                                      []).append(spent)
+        self._last = now
         self._done = min(self._total, self._done + step)
-        self._report(ACTION_SLOT, self._label, self._done, self._total)
+        self._send()
+
+    #: v1.0.28: the bar is redrawn between rounds at most this often.
+    REFRESH_S = 5.0
+
+    def refresh(self) -> None:
+        """The count and the end time again, between two rounds."""
+        if self._done >= self._total:
+            return
+        if time.monotonic() - self._sent < self.REFRESH_S:
+            return
+        self._send()
+
+    def _guess(self, kind: str) -> float | None:
+        seen = self._seen.get(kind)
+        if seen:
+            return statistics.mean(seen)
+        if kind in self._prior:
+            return self._prior[kind]
+        everything = [value for values in self._seen.values()
+                      for value in values]
+        if everything:
+            return statistics.mean(everything)
+        if self._prior:
+            return statistics.mean(self._prior.values())
+        return None
+
+    def remaining_s(self) -> float | None:
+        """Seconds still to go, or ``None`` when nothing says so yet."""
+        left = self._total - self._done
+        if left <= 0:
+            return 0.0
+        found = None
+        if self._forecast is not None:
+            try:
+                found = self._forecast()
+            except Exception:  # noqa: BLE001 - an estimate, never a stop
+                found = None
+            if found and found.get("seconds") is not None:
+                self._rough = bool(found.get("rough"))
+                return float(found["seconds"])
+        kinds = (self._plan[self._done:self._total] if self._plan
+                 else [str(self._kind or "")] * left)
+        total = 0.0
+        for kind in kinds:
+            guess = self._guess(str(kind))
+            if guess is None:
+                return None
+            total += guess
+        # Rounds that run side by side, of which nothing is known yet:
+        # shared out evenly over the lanes.
+        lanes = int((found or {}).get("lanes") or 1)
+        return total / max(1, lanes)
+
+    def _send(self) -> None:
+        label = self._label
+        self._rough = False
+        left = self.remaining_s()
+        self._sent = time.monotonic()
+        if left is not None and self._done < self._total:
+            label += "  " + t("steps_eta_rough" if self._rough
+                              else "steps_eta").format(
+                left=duration_text(left), at=finish_text(left))
+        self._report(ACTION_SLOT, label, self._done, self._total)
+
+
+def duration_text(seconds: float) -> str:
+    """"3 u 20 min", "45 min", "< 1 min" - for a person planning (B599)."""
+    minutes = int(round(max(0.0, float(seconds)) / 60.0))
+    if minutes < 1:
+        return t("duration_under_minute")
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return t("duration_hours").format(hours=hours, minutes=minutes)
+    return t("duration_minutes").format(minutes=minutes)
+
+
+def finish_text(seconds: float) -> str:
+    """The clock time it will be ``seconds`` from now (B599)."""
+    import datetime as _dt
+
+    moment = _dt.datetime.now() + _dt.timedelta(seconds=float(seconds))
+    today = _dt.date.today()
+    clock = moment.strftime("%H:%M")
+    if moment.date() == today:
+        return clock
+    if moment.date() == today + _dt.timedelta(days=1):
+        return t("finish_tomorrow").format(clock=clock)
+    return moment.strftime("%d-%m %H:%M")
 
 
 class TrialSkipped(Exception):
@@ -1539,6 +1697,17 @@ def _measurable_projects(context) -> list[str]:
     songs" while twelve were measured.
     """
     return [song for song, _why in _measurable_split(context)[0]]
+
+
+def _measurable_split_all(context):
+    """:func:`_measurable_split` over every project, whatever the scope
+    (the test set window lists them all)."""
+    global _SCOPE
+    saved, _SCOPE = _SCOPE, "all"
+    try:
+        return _measurable_split(context)
+    finally:
+        _SCOPE = saved
 
 
 def _measurable_split(context):
@@ -2912,8 +3081,14 @@ def rebuild_videos(context, report: Reporter, cancelled) -> str:
     move the old ones to the scrap folder and give the new one the plain
     name. Goes something wrong, then nothing is thrown away and the
     table says so.
+
+    v1.0.21: the renders go through the work queue all at once, so the
+    helpers render beside this computer (each video is made from copies
+    of its inputs next to the queue, and comes back to where it belongs).
     """
     import shutil
+
+    from . import __version__, shared_work, work_queue
 
     songs = _projects(context)
     if not songs:
@@ -2927,18 +3102,17 @@ def rebuild_videos(context, report: Reporter, cancelled) -> str:
                                        background=STANDARD_BACKGROUND), "",
              f"{t('rep_col_project'):32s} {t('rep_col_outcome'):>10s}"
              f"  {t('rep_col_old'):>4s}  {t('rep_col_remarks')}"]
-    made = replaced = 0
-    steps = Steps(report, "1.5.12", len(songs))
+    rows: dict[str, str] = {}
+    queue = work_queue.queue_for(context).ensure()
+    plans: dict[str, dict] = {}
+    jobs = []
     for song in songs:
         if cancelled():
             break
-        steps.tick()
-        steps.name(f"1.5.12  {song}")
         other = pipeline.context_for_project(context, song)
         if not other.paths.timing_file.exists():
-            lines.append(f"{song:32s} {t('rep_outcome_skipped'):>10s}"
-                         f"  {'-':>4s}"
-                         f"  {t('rebuild_no_timing')}")
+            rows[song] = (f"{song:32s} {t('rep_outcome_skipped'):>10s}"
+                          f"  {'-':>4s}  {t('rebuild_no_timing')}")
             continue
         note = ""
         if stored.exists():
@@ -2948,51 +3122,173 @@ def rebuild_videos(context, report: Reporter, cancelled) -> str:
                 note = f"{t('rebuild_background_failed')}: {exc}"
         else:
             note = t("rebuild_background_missing")
-        plain = pipeline.video_target(other)
-        old = pipeline.existing_videos(other, like=plain)
-        fresh = pipeline.next_video_target(plain)
         try:
-            pipeline.run_video(other, target=fresh)
+            other, timed, audio, logo, title, options = \
+                pipeline.video_render_inputs(other)
         except Exception as exc:        # noqa: BLE001 - one project, not the rest
             logger.exception(t("log_test_project_failed"), song)
-            trouble = f"{note}; {exc}" if note else str(exc)
-            lines.append(f"{song:32s} {t('rep_outcome_failed'):>10s}"
-                         f" {len(old):5d}"
-                         f"  {trouble[:70]}")
+            old = pipeline.existing_videos(other,
+                                           like=pipeline.video_target(other))
+            rows[song] = (f"{song:32s} {t('rep_outcome_failed'):>10s}"
+                          f" {len(old):5d}  {(note + '; ' if note else '')}"
+                          f"{str(exc)[:70]}")
             continue
-        made += 1
-        # The render checked itself (B530); only now may the old ones go.
-        folder = scrap / song
-        moved = 0
-        kept = []
-        for path in old:
-            try:
-                folder.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(path), str(folder / path.name))
-                moved += 1
-            except OSError as exc:      # noqa: PERF203
-                kept.append(path)
-                note = (note + "; " if note else "") + str(exc)[:50]
-        replaced += moved
-        # Only give the new render the plain name when the old file of
-        # that name really is out of the way. ``replace`` overwrites, so
-        # doing it anyway would destroy the very video that could not be
-        # put safely aside.
-        if plain in kept:
-            note = (note + "; " if note else "") + t("rebuild_kept_name")
-        else:
-            try:
-                fresh.replace(plain)
-                step = dict(other.store.get_step("video") or {})
-                step["file"] = str(plain)
-                other.store.set_step("video", step)
-            except OSError as exc:
-                note = (note + "; " if note else "") + str(exc)[:50]
-        lines.append(f"{song:32s} {t('rep_outcome_new'):>10s} {moved:5d}"
-                     f"  {note}")
+        plain = pipeline.video_target(other)
+        job = shared_work.render_job(queue, song, timed, audio, logo, title,
+                                     options)
+        plans[job["id"]] = {"song": song, "other": other, "note": note,
+                            "plain": plain, "audio": audio,
+                            "old": pipeline.existing_videos(other,
+                                                            like=plain),
+                            "fresh": pipeline.next_video_target(plain)}
+        jobs.append(job)
+    counts = {"made": 0, "replaced": 0}
+    steps = Steps(report, "1.5.12", len(jobs),
+                  forecast=work_queue.forecaster(queue, __version__))
+
+    def on_answer(answer: dict) -> None:
+        plan = plans.pop(answer["job"]["id"], None)
+        if plan is None:
+            # A render of an earlier run: its files go.
+            shutil.rmtree(queue.out_dir(answer["job"]["id"]),
+                          ignore_errors=True)
+            return
+        steps.tick()
+        steps.name(f"1.5.12  {plan['song']}  ({answer.get('worker', '')})")
+        rows[plan["song"]] = _rebuilt(plan, answer, queue, scrap, counts)
+
+    handlers = {shared_work.RENDER_KIND: shared_work.run_render_round}
+    mine = {job["id"] for job in jobs}
+    have = shared_work.local_capabilities()
+    try:
+        work_queue.run_jobs(
+            queue, jobs, __version__, handlers, on_answer, cancelled,
+            local_accept=lambda job: job.get("id") in mine and
+            work_queue.accept_for(have, handlers)(job),
+            can=sorted(have))
+    finally:
+        for job in jobs:
+            shutil.rmtree(queue.root / job["payload"]["folder"],
+                          ignore_errors=True)
+            shutil.rmtree(queue.out_dir(job["id"]), ignore_errors=True)
+    for plan in plans.values():                 # stopped before these
+        rows[plan["song"]] = (f"{plan['song']:32s} "
+                              f"{t('rep_outcome_skipped'):>10s}"
+                              f" {len(plan['old']):5d}  "
+                              f"{t('rebuild_not_done')}")
+    lines += [rows[song] for song in songs if song in rows]
     lines += ["", t("rebuild_total").format(
-        made=made, replaced=replaced, folder=scrap / "<project>")]
+        made=counts["made"], replaced=counts["replaced"],
+        folder=scrap / "<project>")]
     return "\n".join(lines)
+
+
+def _rebuilt(plan: dict, answer: dict, queue, scrap, counts: dict) -> str:
+    """One video of 1.5.12 back: in place, the old ones aside."""
+    import shutil
+
+    song, note = plan["song"], plan["note"]
+    result = answer.get("result") or {}
+    made = queue.out_dir(answer["job"]["id"]) / str(result.get("video", ""))
+    if "failed" in result or not made.is_file():
+        trouble = str(result.get("failed", t("rep_outcome_failed")))
+        trouble = f"{note}; {trouble}" if note else trouble
+        return (f"{song:32s} {t('rep_outcome_failed'):>10s}"
+                f" {len(plan['old']):5d}  {trouble[:70]}")
+    fresh, plain = plan["fresh"], plan["plain"]
+    try:
+        fresh.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(made), str(fresh))
+    except OSError as exc:
+        return (f"{song:32s} {t('rep_outcome_failed'):>10s}"
+                f" {len(plan['old']):5d}  {str(exc)[:70]}")
+    counts["made"] += 1
+    # The render checked itself (B530); only now may the old ones go.
+    folder = scrap / song
+    moved = 0
+    kept = []
+    for path in plan["old"]:
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(folder / path.name))
+            moved += 1
+        except OSError as exc:      # noqa: PERF203
+            kept.append(path)
+            note = (note + "; " if note else "") + str(exc)[:50]
+    counts["replaced"] += moved
+    # Only give the new render the plain name when the old file of
+    # that name really is out of the way. ``replace`` overwrites, so
+    # doing it anyway would destroy the very video that could not be
+    # put safely aside.
+    if plain in kept:
+        note = (note + "; " if note else "") + t("rebuild_kept_name")
+        final = fresh
+    else:
+        try:
+            fresh.replace(plain)
+            final = plain
+        except OSError as exc:
+            note = (note + "; " if note else "") + str(exc)[:50]
+            final = fresh
+    plan["other"].store.set_step("video", {"file": str(final),
+                                           "audio": str(plan["audio"])})
+    return f"{song:32s} {t('rep_outcome_new'):>10s} {moved:5d}  {note}"
+
+
+def separation_trial(context, report: Reporter, cancelled) -> str:
+    """1.5.14 - which separation gives the best music track (B592)."""
+    from . import separation_trial as trial
+
+    return trial.run(context, report, cancelled)
+
+
+def front_to_back_trial(context, report: Reporter, cancelled) -> str:
+    """1.5.13 - every song from the start, every way (B584)."""
+    from . import front_to_back
+
+    return front_to_back.run(context, report, cancelled)
+
+
+def jamendo_trial(context, report: Reporter, cancelled) -> str:
+    """1.5.16 - other people's songs front to back (JamendoLyrics)."""
+    from . import jamendo_trial as trial
+
+    return trial.run(context, report, cancelled)
+
+
+def musdb_trial(context, report: Reporter, cancelled) -> str:
+    """1.5.17 - the separations against real stems (MUSDB18)."""
+    from . import musdb_trial as trial
+
+    return trial.run(context, report, cancelled)
+
+
+def stem_models_trial(context, report: Reporter, cancelled) -> str:
+    """1.5.19 - the models on the other stems (v1.0.22)."""
+    from . import stem_trial
+
+    return stem_trial.run(context, report, cancelled)
+
+
+def lyrics_on_voice_trial(context, report: Reporter, cancelled) -> str:
+    """1.5.20 - the text laid on the voice (v1.0.23)."""
+    from . import lyrics_trial
+
+    return lyrics_trial.run(context, report, cancelled)
+
+
+def check_helpers(context, report: Reporter, cancelled) -> str:
+    """1.5.18 - look at every helper through the work queue (v1.0.21)."""
+    from . import diagnose
+
+    return diagnose.run(context, report, cancelled)
+
+
+def block_trial(context, report: Reporter, cancelled) -> str:
+    """1.5.15 - blocks that come back, timed together (v1.0.15)."""
+    from . import block_trial as trial
+
+    return trial.run(context, report, cancelled)
 
 
 #: The heavy investigations. With this list empty, 1.5.11 does not
@@ -3355,7 +3651,7 @@ ACTIONS: tuple[TestAction, ...] = (
     # which made a run of many hours one click away from a run of one
     # minute. Filling the cache is a decision, so it is a button.
     TestAction("1.5.1", "test_fill_cache", "test_fill_cache_hint",
-              True, fill_cache, on_request=True),
+              True, fill_cache, on_request=True, on_the_set=False),
     TestAction("1.5.2", "test_check_all", "test_check_all_hint",
               True, check_all_projects),
     # B563: the five that are now parts of 1.5.2. They keep their code
@@ -3390,7 +3686,54 @@ ACTIONS: tuple[TestAction, ...] = (
     # B531: a job and not a measurement, so it stands at the end, never
     # joins the 'all' tick and does not count towards MAX_ACTIONS.
     TestAction("1.5.12", "test_rebuild", "test_rebuild_hint",
-              True, rebuild_videos, on_request=True),
+              True, rebuild_videos, on_request=True, on_the_set=False),
+    # B584: the night of measuring every song from the start. A button
+    # of its own and never in the 'all' tick, like 1.5.1 and 1.5.12 -
+    # it costs hours of Whisper, so it is always a deliberate choice.
+    # Not ``heavy``: that flag means "the letters of 1.5.11".
+    # v1.0.15: done. The second, short night answered what it was for
+    # (B583 and B595 on); switched off, not deleted, like 1.5.9-1.5.11.
+    TestAction("1.5.13", "test_front_to_back", "test_front_to_back_hint",
+              True, front_to_back_trial, on_request=True, done=True),
+    # B592: which separation makes the better music track. A night job
+    # on request, like 1.5.13. v1.0.25: done - all ten ways on all 22
+    # songs (30 September); switched off, not deleted. v1.0.28: on again
+    # for one new way, the Demucs blend with Roformer clean music - the
+    # other ten are kept and not measured again.
+    TestAction("1.5.14", "test_separation", "test_separation_hint",
+              True, separation_trial, on_request=True),
+    # v1.0.15: the block models against the hand timings. On the stored
+    # transcriptions, so an evening and not a night - but every round
+    # measures every song, so still on request.
+    # v1.0.28: done - on 5 October (complete, 21 songs) no block model
+    # was a clear gain; they stay off.
+    TestAction("1.5.15", "test_blocks", "test_blocks_hint",
+              True, block_trial, on_request=True, done=True),
+    # v1.0.19: two data sets that are not the owner's, for testing and
+    # tuning - through the work queue like every test.
+    TestAction("1.5.16", "test_jamendo", "test_jamendo_hint",
+              True, jamendo_trial, on_request=True),
+    TestAction("1.5.17", "test_musdb", "test_musdb_hint",
+              True, musdb_trial, on_request=True),
+    # v1.0.21: not a measurement - a look at every helper, through the
+    # work queue, on request.
+    TestAction("1.5.18", "test_check_helpers", "test_check_helpers_hint",
+              True, check_helpers, on_request=True),
+    # v1.0.22: the drums, the breaths and the choir against the hand
+    # timings - on request, since it separates every song of the set
+    # once to begin with.
+    # v1.0.27: done - on 5 October no stem model helped (B635 changed
+    # nothing, B633 and B634 cost a little on almost every song); they
+    # stay off.
+    TestAction("1.5.19", "test_stem_models", "test_stem_models_hint",
+              True, stem_models_trial, on_request=True, done=True),
+    # v1.0.23: the known text laid on the voice by the forced aligner,
+    # against the hand timings - on the stored transcriptions, through
+    # the helpers that have WhisperX.
+    # v1.0.28: done - the text laid on between the heard lines moved 8
+    # lines, all further from the hand timing; it stays off.
+    TestAction("1.5.20", "test_lyrics_on_voice", "test_lyrics_on_voice_hint",
+              True, lyrics_on_voice_trial, on_request=True, done=True),
 )
 
 
@@ -3521,6 +3864,12 @@ def start_trial_report(codes: Sequence[str], scope: str,
     logger.info(t("log_report_file"), TRIAL_REPORT)
 
 
+def note_in_report(text: str) -> None:
+    """A line under the head of the report of this run (v1.0.22: which
+    songs the test set holds)."""
+    _write_trial_report(str(text).rstrip() + "\n\n", append=True)
+
+
 def add_trial_result(code: str, name: str, text: str,
                      seconds: float, cpu: float,
                      alarms: Sequence[str] = ()) -> None:
@@ -3569,6 +3918,55 @@ def _write_trial_report(text: str, append: bool) -> None:
         logger.warning(t("log_report_write_failed"), target)
 
 
+#: v1.0.28 (B673): the tests that run, so a program that closed or fell
+#: over in the middle goes on with them at its next start. Gone when the
+#: run ends, also when the owner stops it.
+RUNNING_FILE = "tests_running.json"
+
+
+def remember_running(logs_dir: Path, codes: Sequence[str], scope: str,
+                     remeasure: bool = False, heavy: Sequence[str] = (),
+                     stop_helpers: bool = False) -> None:
+    import json
+
+    try:
+        Path(logs_dir).mkdir(parents=True, exist_ok=True)
+        (Path(logs_dir) / RUNNING_FILE).write_text(json.dumps(
+            {"codes": list(codes), "scope": scope,
+             "remeasure": bool(remeasure), "heavy": list(heavy),
+             "stop_helpers": bool(stop_helpers),
+             "at": time.strftime("%Y-%m-%d %H:%M:%S")}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def forget_running(logs_dir: Path) -> None:
+    try:
+        (Path(logs_dir) / RUNNING_FILE).unlink()
+    except OSError:
+        pass
+
+
+def interrupted(logs_dir: Path) -> dict | None:
+    """The run a closed program left, with only the codes that still
+    exist and are not done; ``None`` when there is none."""
+    import json
+
+    try:
+        found = json.loads((Path(logs_dir) / RUNNING_FILE).read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(found, dict):
+        return None
+    known = {action.code for action in visible_actions()}
+    codes = [code for code in found.get("codes") or () if code in known]
+    if not codes:
+        forget_running(logs_dir)
+        return None
+    return dict(found, codes=codes)
+
+
 def visible_actions() -> tuple[TestAction, ...]:
     """The actions that end up in the panel (B371).
 
@@ -3583,8 +3981,9 @@ def visible_actions() -> tuple[TestAction, ...]:
 class TestPanel(QDialog):
     """Tick list with the numbered test functions (TEMPORARY)."""
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, context=None) -> None:
         super().__init__(parent)
+        self._context = context
         self.setWindowTitle(t("test_panel_title"))
         outer = QVBoxLayout(self)
         outer.addWidget(QLabel(t("test_panel_intro")))
@@ -3609,6 +4008,10 @@ class TestPanel(QDialog):
         self._again = QCheckBox(t("test_force_again"))
         self._again.setToolTip(t("test_force_again_hint"))
         top_row.addWidget(self._again)
+        # v1.0.28 (B666): the helpers stop once everything is in.
+        self._stop_helpers = QCheckBox(t("test_stop_helpers"))
+        self._stop_helpers.setToolTip(t("test_stop_helpers_hint"))
+        top_row.addWidget(self._stop_helpers)
         top_row.addStretch(1)
         outer.addLayout(top_row)
 
@@ -3658,11 +4061,36 @@ class TestPanel(QDialog):
         scroll.setWidget(holder)
         outer.addWidget(scroll, stretch=1)
 
+        # v1.0.22 (B630): the test set first, and checked - the owner's
+        # choice to test on a few songs; all of them stay a click away.
+        set_row = QHBoxLayout()
+        self._set_scope = QRadioButton(t("test_scope_set"))
+        set_row.addWidget(self._set_scope)
+        self._set_button = QPushButton(t("test_set_choose"))
+        self._set_button.clicked.connect(self._choose_set)
+        self._set_button.setEnabled(context is not None)
+        set_row.addWidget(self._set_button)
+        set_row.addStretch(1)
+        outer.addLayout(set_row)
+        self._set_label = QLabel()
+        self._set_label.setWordWrap(True)
+        self._set_label.setStyleSheet("color: #666; margin-left: 22px;")
+        outer.addWidget(self._set_label)
+        self._show_set()
         self._current = QRadioButton(t("test_scope_current"))
         self._all_scope = QRadioButton(t("test_scope_all"))
-        self._all_scope.setChecked(True)
+        self._set_scope.setChecked(True)
         outer.addWidget(self._current)
         outer.addWidget(self._all_scope)
+        # v1.0.28 (B663): the set only once there is one - two good, two
+        # medium and two problem songs measured; until then all projects.
+        from . import test_set as _test_set
+
+        if context is not None and not _test_set.ready(context):
+            for widget in (self._set_scope, self._set_button,
+                           self._set_label):
+                widget.setVisible(False)
+            self._all_scope.setChecked(True)
 
         buttons = QDialogButtonBox()
         self._start = QPushButton(t("test_start"))
@@ -3746,6 +4174,10 @@ class TestPanel(QDialog):
         """Ignore stored results and do everything again (B362)."""
         return self._again.isChecked()
 
+    def stop_helpers(self) -> bool:
+        """v1.0.28 (B666): ask the helpers to stop when all is in."""
+        return self._stop_helpers.isChecked()
+
     def chosen(self) -> list[TestAction]:
         """The ticked actions, in numeric order."""
         return [action for action, tick in zip(self._actions, self._ticks)
@@ -3753,3 +4185,121 @@ class TestPanel(QDialog):
 
     def only_this_project(self) -> bool:
         return self._current.isChecked()
+
+    def scope(self) -> str:
+        """``set``, ``current`` or ``all`` (v1.0.22)."""
+        if self._current.isChecked():
+            return "current"
+        if self._set_scope.isChecked():
+            return "set"
+        return "all"
+
+    def _show_set(self) -> None:
+        from . import test_set
+
+        if self._context is None:
+            self._set_label.setText("")
+            return
+        self._set_label.setText(test_set.describe(self._context))
+
+    def _choose_set(self) -> None:
+        if self._context is None:
+            return
+        if TestSetDialog(self._context, self).exec() == \
+                QDialog.DialogCode.Accepted:
+            self._show_set()
+            self._set_scope.setChecked(True)
+
+
+class TestSetDialog(QDialog):
+    """Which songs are in the test set, and in which group (B630)."""
+
+    def __init__(self, context, parent=None) -> None:
+        from . import test_set
+
+        super().__init__(parent)
+        self._context = context
+        self.setWindowTitle(t("test_set_title"))
+        outer = QVBoxLayout(self)
+        intro = QLabel(t("test_set_intro"))
+        intro.setWordWrap(True)
+        outer.addWidget(intro)
+        self._songs = [song for song, _why in _measurable_split_all(context)[0]]
+        self._errors = test_set.errors(context)
+        chosen = test_set.current(context) or {}
+        self._table = QTableWidget(len(self._songs), 3)
+        self._table.setHorizontalHeaderLabels(
+            [t("test_set_col_song"), t("test_set_col_error"),
+             t("test_set_col_group")])
+        self._boxes: list[QComboBox] = []
+        for row, song in enumerate(self._songs):
+            self._table.setItem(row, 0, QTableWidgetItem(song))
+            error = self._errors.get(song)
+            self._table.setItem(row, 1, QTableWidgetItem(
+                "-" if error is None else f"{error:.2f}"))
+            box = QComboBox()
+            box.addItem(t("test_set_out"), "")
+            for kind in test_set.KINDS:
+                box.addItem(t(f"test_set_{kind}"), kind)
+            kind = next((k for k in test_set.KINDS
+                         if song in chosen.get(k, ())), "")
+            box.setCurrentIndex(max(0, box.findData(kind)))
+            self._table.setCellWidget(row, 2, box)
+            self._boxes.append(box)
+        self._table.resizeColumnsToContents()
+        outer.addWidget(self._table, stretch=1)
+        row = QHBoxLayout()
+        propose = QPushButton(t("test_set_propose"))
+        propose.setEnabled(len(self._errors) >= len(test_set.KINDS))
+        propose.clicked.connect(self._propose)
+        row.addWidget(propose)
+        # v1.0.28 (B663): back to the set the program builds itself.
+        automatic = QPushButton(t("test_set_auto"))
+        automatic.setEnabled(test_set.pinned(context))
+        automatic.clicked.connect(self._automatic)
+        row.addWidget(automatic)
+        row.addStretch(1)
+        outer.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+        outer.addWidget(buttons)
+        self.resize(560, 520)
+
+    def _propose(self) -> None:
+        from . import test_set
+
+        errors = {song: error for song, error in self._errors.items()
+                  if song in self._songs}
+        groups = test_set.propose(errors)
+        for song, box in zip(self._songs, self._boxes):
+            kind = next((k for k in test_set.KINDS if song in groups[k]), "")
+            box.setCurrentIndex(max(0, box.findData(kind)))
+
+    def _automatic(self) -> None:
+        from . import test_set
+
+        test_set.unpin(self._context)
+        self.accept()
+
+    def groups(self) -> dict[str, list[str]]:
+        from . import test_set
+
+        out: dict[str, list[str]] = {kind: [] for kind in test_set.KINDS}
+        for song, box in zip(self._songs, self._boxes):
+            kind = box.currentData()
+            if kind in out:
+                out[kind].append(song)
+        return out
+
+    def _save(self) -> None:
+        from . import test_set
+
+        try:
+            test_set.save(self._context, self.groups(), basis="owner")
+        except OSError:
+            logger.warning(t("log_report_write_failed"),
+                           test_set.path_for(self._context))
+            return
+        self.accept()

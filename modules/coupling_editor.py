@@ -1156,17 +1156,23 @@ class ListenAgainDialog(QDialog):
     Per place the best candidate is chosen and ticked; the user unticks
     what he does not want, or picks another candidate. What he does not
     take stays as it is and comes up again the next time.
+
+    ``earlier`` are the places taken over before (v1.0.13): each can be
+    ticked and cleared on its own, so a wrong one goes without the good
+    ones around it - and then comes up again as a place to listen to.
     """
 
-    def __init__(self, areas: list[dict], has_earlier: bool = False,
+    def __init__(self, areas: list[dict], earlier: Sequence = (),
                  parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("listen_again_title"))
-        self.resize(900, 420)
+        self.resize(900, 460)
         self._areas = areas
-        #: Set when the user asks to clear what was taken over before.
-        self.clear_requested = False
+        self._earlier = list(earlier)
+        #: The positions in ``earlier`` the user asked to clear.
+        self.clear_requested: list[int] = []
         self._rows: list[tuple[QCheckBox, QComboBox]] = []
+        self._earlier_rows: list[QCheckBox] = []
 
         layout = QVBoxLayout(self)
         # Nothing new to hear, but something taken over earlier: the
@@ -1203,7 +1209,10 @@ class ListenAgainDialog(QDialog):
                             singing=float(parts.get("singing", 0.0)),
                             rhythm=float(parts.get("rhythm", 0.0)),
                             echo=(t("listen_again_echo")
-                                  if parts.get("echo") else "")),
+                                  if parts.get("echo") else ""))
+                        + (t("listen_again_coverage").format(
+                            coverage=float(parts["coverage"]))
+                           if "coverage" in parts else ""),
                         Qt.ToolTipRole)
             if choice.count() == 0:
                 choice.addItem(t("listen_again_none"))
@@ -1226,8 +1235,21 @@ class ListenAgainDialog(QDialog):
         scroll.setWidget(grid_host)
         layout.addWidget(scroll, stretch=1)
 
+        if self._earlier:
+            layout.addWidget(QLabel(f"<b>{t('listen_again_earlier')}</b>"))
+            for area in self._earlier:
+                words = (" ".join(str(w[0]) for w in area.get("words", ()))
+                         or t("listen_again_covered"))
+                box = QCheckBox(t("listen_again_earlier_row").format(
+                    low=float(area.get("low", 0.0)),
+                    high=float(area.get("high", 0.0)),
+                    kind=t(f"listen_again_kind_{area.get('kind', 'aligned')}"),
+                    text=words[:80]))
+                layout.addWidget(box)
+                self._earlier_rows.append(box)
+
         buttons = QHBoxLayout()
-        if has_earlier:
+        if self._earlier:
             clear = QPushButton(t("listen_again_clear"))
             clear.clicked.connect(self._clear)
             buttons.addWidget(clear)
@@ -1242,8 +1264,10 @@ class ListenAgainDialog(QDialog):
         layout.addLayout(buttons)
 
     def _clear(self) -> None:
-        self.clear_requested = True
-        self.accept()
+        self.clear_requested = [n for n, box in enumerate(self._earlier_rows)
+                                if box.isChecked()]
+        if self.clear_requested:
+            self.accept()
 
     def chosen(self) -> list[dict]:
         """The areas the user takes over, each with its chosen words."""

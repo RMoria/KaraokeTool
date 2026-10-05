@@ -82,8 +82,14 @@ def test_only_sources_have_no_origin() -> None:
     # B413: "input_last_dir" belongs here too - where the user fetched
     # his files from does not go stale because of something the program
     # works out.
+    # B591: "separation" too - the way a project separates is chosen
+    # once and describes the project, whatever the source is replaced by.
+    # B606: "profile" for the same reason.
+    # v1.0.19: "own_text" too - where the text came from describes the
+    # project; choosing a text by hand clears it.
     assert standalone == {"display_name", "input_names", "input_last_dir",
-                          "video_titles", "config_signature", "video"}
+                          "video_titles", "config_signature", "video",
+                          "separation", "profile", "own_text"}
 
 
 # --------------------------------------------------------------------------
@@ -311,14 +317,29 @@ def test_changing_a_setting_is_noticed(tmp_path: Path) -> None:
     pipeline.remember_sources(context)
     context.store.set_step("whisper_original", {"segments": 12})
 
-    off = replace(context.config,
-                  advanced=replace(context.config.advanced,
-                                   forced_alignment=False))
-    context = pipeline.AppContext(paths=context.paths, config=off,
-                                  store=context.store)
+    # v1.0.15 (B606): the forced alignment belongs to the project's
+    # stand now; a change of the stand the project is made with is
+    # noticed the same way.
+    stand = dict(pipeline.project_settings(context), forced_alignment=False)
+    context.store.set_meta("profile", stand)
     assert pipeline.sync_input_changes(context) == \
         ("config:forced_alignment",)
     assert context.store.get_step("whisper_original") is None
+
+
+def test_a_new_stand_on_the_settings_tab_leaves_a_project_alone(
+        tmp_path: Path) -> None:
+    """B606: only new projects take a new stand."""
+    context = _context(tmp_path)
+    pipeline.remember_sources(context)
+    context.store.set_step("whisper_original", {"segments": 12})
+    off = replace(context.config,
+                  advanced=replace(context.config.advanced,
+                                   forced_alignment=False, profile="quick"))
+    context = pipeline.AppContext(paths=context.paths, config=off,
+                                  store=context.store)
+    assert pipeline.sync_input_changes(context) == ()
+    assert context.store.get_step("whisper_original") is not None
 
 
 def test_unchanged_project_throws_nothing_away(tmp_path: Path) -> None:
@@ -437,7 +458,7 @@ def test_stems_of_another_model_are_not_reused(tmp_path: Path) -> None:
 
 def test_stems_of_another_demucs_are_not_reused(tmp_path: Path,
                                                 monkeypatch) -> None:
-    """B548: `pip install -U demucs` is what install.bat invites.
+    """B548: `pip install -U demucs` is what the setup invites.
 
     Without the version in the marker the old model's stems keep
     matching for ever and Whisper keeps transcribing them - the B311

@@ -111,7 +111,7 @@ DUTCH_NAMES = re.compile(
     r"modellen|afhankelijkheden|handleiding|doorontwikkeling|werkwijze|"
     r"hernoeming|verslag|verslagen|meting|metingen|knipwoorden|"
     r"instelling|instellingen|uitlijning|origineel|leesmij|licentie|"
-    r"plaats_fonts_hier|woorden)", re.I)
+    r"plaats_fonts_hier|woorden|hulp|werk|keuze|vorige|programma)", re.I)
 
 #: Files that still have Dutch identifiers. ``modules/`` and ``tools/``
 #: were emptied off this list at v0.122.0; what stands here now came in
@@ -216,13 +216,10 @@ def _prose(path: Path) -> str:
     """
     text = path.read_text(encoding="utf-8", errors="replace")
     if path.suffix.lower() == ".bat":
-        # B550: the same division as for a module. The ``rem`` lines are
-        # this project talking to whoever reads the script; the ``echo``
-        # lines are the program talking to the user, and his interface
-        # is Dutch on purpose - the same reason the manual keeps the
-        # Dutch button names.
-        return "\n".join(line for line in text.splitlines()
-                          if line.strip().lower().startswith(("rem ", "::")))
+        # B550 kept the ``echo`` lines out (Dutch, the owner's interface).
+        # v1.0.28 (B660): a batch file cannot choose a language, and then
+        # it is English - the whole file is read.
+        return text
     if path.suffix != ".py":
         return text
     pieces = re.findall(r"#.*", text)
@@ -344,6 +341,9 @@ def _documents() -> list[Path]:
     return sorted(p for p in [ROOT / "README.md"]
                   + list((ROOT / "docs").glob("*.md"))
                   + list(ROOT.glob("*.txt")) + list(ROOT.glob("*.bat"))
+                  # v1.0.28 (B660): the helper's and the tools' too.
+                  + list((ROOT / "helper").glob("*.bat"))
+                  + list((ROOT / "tools").glob("*.bat"))
                   + list((ROOT / "assets" / "fonts").glob("*.txt"))
                   if _inside(p))
 

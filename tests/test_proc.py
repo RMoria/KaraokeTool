@@ -141,15 +141,16 @@ def test_separation_uses_the_windowless_interpreter(monkeypatch,
         return _R()
 
     monkeypatch.setattr(separation, "is_available", lambda: True)
-    monkeypatch.setattr(separation.proc, "windowless_python",
-                        lambda: "pythonw.exe")
+    # v1.0.28 (B658): a hidden console, shared by Demucs' own children.
+    monkeypatch.setattr(separation.proc, "hidden_console_python",
+                        lambda: "python.exe")
     monkeypatch.setattr(separation.proc, "run", fake_run)
     # Without real stems separate raises a SeparationError after the call.
     try:
         separation.separate(tmp_path / "in.wav", tmp_path / "werk")
     except separation.SeparationError:
         pass
-    assert seen["command"][0] == "pythonw.exe"
+    assert seen["command"][0] == "python.exe"
 
 
 def test_no_bare_subprocess_calls() -> None:
@@ -168,6 +169,12 @@ def test_no_bare_subprocess_calls() -> None:
         for path in sorted((root / folder).glob("*.py")):
             if path.name == "proc.py":
                 continue          # that one IS the door
+            if path.name in ("tee_run.py", "helper.py"):
+                # v1.0.16: the setup's own console, before any venv -
+                # standard library only, and it has to stream what it
+                # runs, which the door (capturing) does not. v1.0.18:
+                # the helper's lanes share its console the same way.
+                continue
             text = path.read_text(encoding="utf-8")
             for hit in re.finditer(r"subprocess\.(run|Popen|check_output)\s*\(",
                                    text):

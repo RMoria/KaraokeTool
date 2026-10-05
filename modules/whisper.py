@@ -141,28 +141,34 @@ def transcribe(
     Raises:
         WhisperError: If faster-whisper is missing or the model fails.
     """
-    model = _load_model(settings)
     logger.info(t("log_transcription_started"), audio_path.name)
     started = time.perf_counter()
-    try:
-        chosen = language_override or settings.language
-        language = None if chosen == "auto" else chosen
-        raw_segments, info = model.transcribe(
-            str(audio_path),
-            language=language,  # None => Whisper detects the language itself
-            word_timestamps=True,
-            beam_size=5,
-            condition_on_previous_text=False,  # fewer hallucination loops
-            initial_prompt=initial_prompt or None,  # B263
-            **decode_options(settings),  # B314
-        )
-        segments = _collect_segments(raw_segments, float(info.duration),
-                                     progress, cancelled)
-    except (WhisperError, CancelledError):
-        raise
-    except Exception as exc:  # noqa: BLE001 - model library has many errors
-        raise WhisperError(
-            t("err_transcription_failed").format(detail=exc)) from exc
+    for attempt in (1, 2):
+        try:
+            model = _load_model(settings)
+            chosen = language_override or settings.language
+            language = None if chosen == "auto" else chosen
+            raw_segments, info = model.transcribe(
+                str(audio_path),
+                language=language,  # None => Whisper detects it itself
+                word_timestamps=True,
+                beam_size=5,
+                condition_on_previous_text=False,  # fewer loops
+                initial_prompt=initial_prompt or None,  # B263
+                **decode_options(settings),  # B314
+            )
+            segments = _collect_segments(raw_segments, float(info.duration),
+                                         progress, cancelled)
+            break
+        except CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - many errors in the library
+            if attempt == 1 and _on_card_trouble(exc, settings):
+                continue
+            if isinstance(exc, WhisperError):
+                raise
+            raise WhisperError(
+                t("err_transcription_failed").format(detail=exc)) from exc
     elapsed = time.perf_counter() - started
 
     word_count = sum(len(segment.words) for segment in segments)
@@ -258,23 +264,29 @@ def transcribe_slice(audio_path: Path, settings: WhisperSettings,
     ``index`` on the segments is local to the piece; the caller renumbers
     once everything has been put together.
     """
-    model = _load_model(settings)
     chosen = language_override or settings.language
     language = None if chosen == "auto" else chosen
     audio = (str(audio_path) if (start <= 0.0 and end is None)
              else audio_slice(audio_path, start, end))
-    try:
-        raw_segments, _info = model.transcribe(
-            audio, language=language, word_timestamps=True, beam_size=5,
-            condition_on_previous_text=False,
-            initial_prompt=initial_prompt or None,
-            **decode_options(settings))
-        segments = _collect_segments(raw_segments, 0.0, None, cancelled)
-    except (WhisperError, CancelledError):
-        raise
-    except Exception as exc:  # noqa: BLE001 - model library has many errors
-        raise WhisperError(
-            t("err_transcription_failed").format(detail=exc)) from exc
+    for attempt in (1, 2):
+        try:
+            model = _load_model(settings)
+            raw_segments, _info = model.transcribe(
+                audio, language=language, word_timestamps=True, beam_size=5,
+                condition_on_previous_text=False,
+                initial_prompt=initial_prompt or None,
+                **decode_options(settings))
+            segments = _collect_segments(raw_segments, 0.0, None, cancelled)
+            break
+        except CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - many errors in the library
+            if attempt == 1 and _on_card_trouble(exc, settings):
+                continue
+            if isinstance(exc, WhisperError):
+                raise
+            raise WhisperError(
+                t("err_transcription_failed").format(detail=exc)) from exc
     shift = float(start)
     if not shift:
         return segments
@@ -300,8 +312,8 @@ def write_outputs(
     # written into ``output/<song>/<track>/``, which is made anew on
     # every run, so unlike the input files of B555 there is nothing to
     # migrate - the old two simply stop being written. A stale pair from
-    # before this version stays behind until the folder is cleared, and
-    # is read by nothing.
+    # before this version stays behind until the folder is cleared; the
+    # yardstick reads it where nothing newer is there (v1.0.25, B671).
     _write_words_json(segments, output_dir / "words.json")
     _write_json(segments_to_dicts(segments), output_dir / "segments.json")
     _write_json(run_info, output_dir / "run_info.json")
@@ -584,23 +596,63 @@ def _load_model(settings: WhisperSettings) -> Any:
 
 
 def _resolve_device(settings: WhisperSettings) -> tuple[str, str]:
-    """Determine device and compute type; 'auto' picks GPU if present."""
+    """Determine device and compute type.
+
+    v1.0.20: ``auto`` takes the card only when the card test of the
+    launcher found that Whisper really listens there (:mod:`modules.cuda`),
+    with the compute type the card does well - and not after Whisper
+    failed on it once in this session. Before, a card the library merely
+    counted was taken, and on a computer without the CUDA libraries the
+    first transcription stopped.
+    """
+    from . import cuda
+
     device = settings.device
+    card_compute = "int8"
     if device == "auto":
-        device = "cuda" if _cuda_available() else "cpu"
+        device, card_compute = cuda.whisper_device()
+    moved = device == "cuda" and _CUDA_FAILED
+    if moved:
+        device = "cpu"
     compute_type = settings.compute_type
-    if compute_type == "auto":
-        compute_type = "float16" if device == "cuda" else "int8"
+    if compute_type == "auto" or (moved and compute_type not in
+                                  ("int8", "float32")):
+        # A card type (float16) on the processor fails to load.
+        compute_type = card_compute if device == "cuda" else "int8"
     return device, compute_type
 
 
-def _cuda_available() -> bool:
-    """Check whether a CUDA GPU is available for ctranslate2."""
-    try:
-        import ctranslate2
-        return ctranslate2.get_cuda_device_count() > 0
-    except Exception:  # noqa: BLE001 - missing library or driver
+#: Whisper failed on the card in this session: the rest goes on the
+#: processor (v1.0.20).
+_CUDA_FAILED = False
+
+
+def _on_card_trouble(exc: Exception, settings: WhisperSettings) -> bool:
+    """Was this a failure of the card (a missing CUDA library, too little
+    memory)? Then mark the card as failed for this session, drop the
+    models and say so; the caller tries once more, on the processor."""
+    global _CUDA_FAILED
+    text = f"{type(exc).__name__} {exc}".lower()
+    if _CUDA_FAILED or _resolve_device(settings)[0] != "cuda" or not any(
+            word in text for word in ("cuda", "cublas", "cudnn", "gpu",
+                                      "out of memory")):
         return False
+    _CUDA_FAILED = True
+    release_models()
+    logger.warning(t("log_whisper_card_failed"), str(exc)[:300])
+    return True
+
+
+def release_models() -> None:
+    """Let go of every loaded model (v1.0.18): a helper on a small
+    graphics card frees the card for the separation that comes next."""
+    _MODEL_CACHE.clear()
+    try:
+        import gc
+
+        gc.collect()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _package_version(name: str) -> str:

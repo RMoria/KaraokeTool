@@ -225,7 +225,7 @@ def test_the_button_passes_the_function_and_not_the_event() -> None:
 
     source = inspect.getsource(test_panel.fill_cache)
     assert "cancelled=cancelled" in source
-    panel = inspect.getsource(gui.MainWindow._do_fill_cache)
+    panel = inspect.getsource(gui.MainWindow._start_tests)
     assert "cancel.is_set" in panel
 
 

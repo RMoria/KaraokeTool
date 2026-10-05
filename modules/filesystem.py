@@ -394,7 +394,9 @@ def clean_logs(logs_dir: Path, keep: int = 5) -> int:
     """
     if not logs_dir.exists():
         return 0
-    log_files = sorted((f for f in logs_dir.glob("*.log") if f.is_file()),
+    # v1.0.28: the daily logs only - crash.log is not one of them.
+    log_files = sorted((f for f in logs_dir.glob("*.log")
+                        if f.is_file() and f.name[:1].isdigit()),
                        reverse=True)
     removed = 0
     for old_log in log_files[keep:]:

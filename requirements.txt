@@ -1,4 +1,4 @@
-# KaraokeTool - Python 3.12
+# KaraokeTool - Python 3.13
 # Core (already in use)
 numpy>=1.26
 soundfile>=0.12
@@ -13,7 +13,8 @@ langdetect>=1.0
 rapidfuzz>=3.0
 
 # Alignment: MFCC, chroma, onsets, cross-correlation (from version 0.4)
-librosa>=0.10
+# librosa 1.0 reads audio differently; the measurements were made on 0.x
+librosa>=0.10,<1
 scipy>=1.11
 
 # Syllable model (Dutch hyphenation for the timing; B150)

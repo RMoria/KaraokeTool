@@ -142,7 +142,10 @@ def test_the_cleanup_runs_after_the_output_folder_is_known() -> None:
 # --------------------------------------------------------------------------
 
 def test_every_render_route_loads_the_titles_of_its_own_project() -> None:
-    source = inspect.getsource(pipeline.run_video)
+    # v1.0.21: the inputs of a render are gathered in one function, which
+    # run_video and 1.5.12 both use.
+    source = inspect.getsource(pipeline.video_render_inputs)
+    assert "video_render_inputs(" in inspect.getsource(pipeline.run_video)
     assert "context = apply_project_titles(context)" in source
     assert (source.index("apply_project_titles")
             < source.index("sync_input_changes"))
@@ -420,7 +423,9 @@ def test_a_filled_in_outline_wins_from_the_contra_colour() -> None:
 
 def test_the_outline_is_swept_along_with_the_fill() -> None:
     source = inspect.getsource(video._draw_line)
-    assert 'before_edge = palette.get("outline_" + sung_key)' in source
+    # v1.0.15 (B596): crowd text has its own branch; the ordinary sweep
+    # carries the singing colour's outline.
+    assert 'before_edge = palette.get("outline_zang")' in source
     assert 'after_edge = palette.get("outline_voor")' in source
     # B487 withdrew the exception for the inactive line again: every
     # line gets one.
@@ -613,9 +618,9 @@ def test_deleting_a_stored_picture_leaves_the_project_alone(
 
 
 def test_the_render_takes_the_copy_of_the_project() -> None:
-    source = inspect.getsource(pipeline.run_video)
+    source = inspect.getsource(pipeline.video_render_inputs)
     assert "background = project_background(context)" in source
-    assert "background_path=str(background or \"\")" in source
+    assert "\"background_path\": str(background or \"\")" in source
 
 
 def test_removing_it_from_the_project_clears_the_input_folder(

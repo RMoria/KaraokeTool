@@ -14,7 +14,7 @@ about and tested without starting a model:
   vocal stem says THAT it is sung; what is missing is only where each
   word goes, and a forced aligner answers exactly that question. In
   step 1.1 that happens automatically for every stretch of measured
-  singing that is still unheard after the merge (:func:`gap_segments`);
+  singing that is still unheard after the merge (:func:`gap_texts`);
 * **listen again, aimed.** After 1.2 far more is known: which lyric
   words are coupled well, and therefore exactly which words are missing
   between which two anchors. The coupling editor asks for that
@@ -143,8 +143,9 @@ def expected_between(aligned, low: float, high: float) -> list:
             if word.start is None and not word.lyric.bg]
 
 
-def gap_segments(holes, aligned) -> list[Segment]:
-    """One segment of known text per hole, for the forced aligner.
+def gap_texts(holes, aligned) -> list[tuple[Segment, list[int]]]:
+    """One segment of known text per hole, for the forced aligner, with
+    the lyric line of each of its words.
 
     The segment has no words yet - the aligner gives them their times -
     and is marked :data:`whisper.ORIGIN_ALIGNED`. A hole whose words do
@@ -160,8 +161,57 @@ def gap_segments(holes, aligned) -> list[Segment]:
         if not plausible(texts, low, high):
             continue
         used.update(w.index for w in lyrics)
-        out.append(Segment(index=0, text=" ".join(texts), start=low,
-                           end=high, words=(), origin=ORIGIN_ALIGNED))
+        out.append((Segment(index=0, text=" ".join(texts), start=low,
+                            end=high, words=(), origin=ORIGIN_ALIGNED),
+                    [int(w.line) for w in lyrics]))
+    return out
+
+
+def heard_lines_of_alignment(aligned) -> list[tuple[str, list]]:
+    """Per lyric line that was fully HEARD in the lyrics alignment of
+    step 1.1: its text and the ``(text, start, end)`` of its words - the
+    material for :func:`line_templates`. A line with a word that was not
+    coupled, or only estimated, is not a measurement and stays out."""
+    per_line: dict[int, list] = {}
+    for word in aligned:
+        if word.lyric.bg:
+            continue
+        per_line.setdefault(int(word.lyric.line), []).append(word)
+    out = []
+    for _line, words in sorted(per_line.items()):
+        if all(w.start is not None and w.end is not None
+               and not getattr(w, "estimated", False) for w in words):
+            out.append((" ".join(w.lyric.text for w in words),
+                        [(w.lyric.text, float(w.start), float(w.end))
+                         for w in words]))
+    return out
+
+
+def heard_lines_of_view(view: dict, made_starts) -> list[tuple[str, list]]:
+    """The same for the coupling of step 1.2: a line whose every word is
+    coupled well - or pinned by the user - to found words none of which
+    was laid on or heard again (``made_starts``: their start times)."""
+    transcript = view.get("transcript") or []
+    made = {round(float(start), 3) for start in made_starts}
+    per_line: dict[int, list] = {}
+    for word in view.get("words") or []:
+        if word.get("bg"):
+            continue
+        per_line.setdefault(int(word.get("line", -1)), []).append(word)
+    out = []
+    for _line, words in sorted(per_line.items()):
+        timed = []
+        for word in words:
+            rows = [transcript[int(i)] for i in word.get("transcript_indices")
+                    or () if 0 <= int(i) < len(transcript)]
+            if not rows or not (_good(word) or word.get("pinned")):
+                break
+            if any(round(float(r[1]), 3) in made for r in rows):
+                break
+            timed.append((str(word["text"]), min(float(r[1]) for r in rows),
+                          max(float(r[2]) for r in rows)))
+        else:
+            out.append((" ".join(w[0] for w in timed), timed))
     return out
 
 
@@ -187,6 +237,13 @@ class Area:
     #: anchor DOES claim. A candidate word on one of them is left out: it
     #: would stand beside a word that is coupled well already.
     claimed_spans: list[tuple[float, float]] = field(default_factory=list)
+    #: The lyric line of each expected word (v1.0.13), so a candidate can
+    #: be judged per line and not only as a whole.
+    expected_lines: list[int] = field(default_factory=list)
+    #: The anchor words on either side (v1.0.13), for the hint that
+    #: tells Whisper where the stretch begins and ends.
+    before: str = ""
+    after: str = ""
 
 
 def _good(word: dict) -> bool:
@@ -247,8 +304,9 @@ def problem_areas(view: dict, lyric_lines: dict[int, str],
     areas = []
     run: list[dict] = []
     last_good_end = 0.0
+    last_good_text = ""
 
-    def close(next_start: float) -> None:
+    def close(next_start: float, next_text: str = "") -> None:
         if not run:
             return
         low, high = last_good_end, next_start
@@ -262,7 +320,10 @@ def problem_areas(view: dict, lyric_lines: dict[int, str],
                       if s >= low - 1e-6 and e <= high + 1e-6]
             areas.append(Area(low=round(low, 3), high=round(high, 3),
                               expected=[str(w["text"]) for w in run],
+                              expected_lines=[int(w.get("line", -1))
+                                              for w in run],
                               prompt=" ".join(lines),
+                              before=last_good_text, after=next_text,
                               replaceable=[i for i in within
                                            if i not in claimed],
                               claimed_spans=[
@@ -274,12 +335,37 @@ def problem_areas(view: dict, lyric_lines: dict[int, str],
     for word in words:
         if _good(word):
             start, end = span(word)
-            close(start)
+            close(start, str(word.get("text", "")))
             last_good_end = max(last_good_end, end)
+            last_good_text = str(word.get("text", ""))
         elif _problem(word):
             run.append(word)
     close(float(song_end))
     return areas
+
+
+#: What Whisper gets as its hint when it listens again (v1.0.13, B583):
+#: ``"lines"`` - the whole lines the missing words stand in (the way it
+#: shipped in v1.0.12); ``"expected"`` - only the missing words, sharper
+#: but easier to recite; ``"anchored"`` - the lines with the anchor word
+#: before and after, so Whisper knows where the stretch begins and ends.
+#: A setting for 1.5.13 to measure, not for the user.
+HINTS = ("lines", "expected", "anchored")
+HINT = "lines"
+
+
+def hint_for(area: Area, how: str | None = None) -> str:
+    """The hint for one area, in the way ``how`` (default :data:`HINT`);
+    an unknown way is the shipped one."""
+    how = how or HINT
+    if how not in HINTS:
+        how = "lines"
+    if how == "expected":
+        return " ".join(area.expected)
+    if how == "anchored":
+        return " ".join(part for part in (area.before, area.prompt,
+                                          area.after) if part)
+    return area.prompt
 
 
 # --------------------------------------------------------------------------
@@ -309,7 +395,8 @@ def _on_singing(start: float, end: float, windows) -> bool:
 
 
 def score(candidate: Candidate, expected: Sequence[str],
-          onsets: Sequence[float] | None, windows) -> Candidate:
+          onsets: Sequence[float] | None, windows,
+          area: "Area | None" = None) -> Candidate:
     """Judge a candidate against what the voice itself shows.
 
     Three parts:
@@ -335,7 +422,9 @@ def score(candidate: Candidate, expected: Sequence[str],
         return candidate
     texts = [w[0] for w in words]
     confidence = sum(float(w[3]) for w in words) / len(words)
-    if candidate.kind == "aligned":
+    if candidate.kind in ("aligned", "singing"):
+        # For the candidate on the singing (B580) the "confidence" is the
+        # way it was made, see ON_SINGING_CONFIDENCE.
         evidence = confidence
     else:
         match = difflib.SequenceMatcher(
@@ -343,12 +432,28 @@ def score(candidate: Candidate, expected: Sequence[str],
         evidence = match * (0.5 + 0.5 * confidence)
     singing = (sum(1 for w in words if _on_singing(w[1], w[2], windows))
                / len(words)) if windows else 0.5
+    if candidate.kind == "singing":
+        # B580: laid on the singing by construction, so "on singing" and
+        # "covers the singing" say nothing about it - they count as
+        # neutral, or it would outscore a real hearing for free.
+        singing = 0.5
     if onsets:
         heard = syllables(texts)
         rhythm = 1.0 - abs(heard - len(onsets)) / max(heard, len(onsets))
     else:
         rhythm = 0.5
-    total = 0.45 * evidence + 0.30 * singing + 0.25 * rhythm
+    covered = (coverage(words, area.low, area.high, windows)
+               if area is not None else None)
+    if covered is not None and candidate.kind == "singing":
+        covered = 0.5
+    if covered is None:
+        total = 0.45 * evidence + 0.30 * singing + 0.25 * rhythm
+    else:
+        # v1.0.13 (B578): how much of the singing of the place the words
+        # take up. Laid on seventeen seconds of singing in three, they
+        # leave most of the voice unexplained.
+        total = (0.40 * evidence + 0.25 * singing + 0.20 * rhythm
+                 + 0.15 * covered)
     echo = (candidate.kind == "whisper"
             and _keys(texts) == _keys(expected)
             and confidence < ECHO_CONFIDENCE)
@@ -359,6 +464,8 @@ def score(candidate: Candidate, expected: Sequence[str],
                           "singing": round(singing, 3),
                           "rhythm": round(rhythm, 3),
                           "echo": echo}
+    if covered is not None:
+        candidate.evidence["coverage"] = round(covered, 3)
     return candidate
 
 
@@ -372,3 +479,322 @@ def inside(words, low: float, high: float, claimed_spans=()):
                 float(a) <= middle <= float(b) for a, b in claimed_spans):
             out.append(w)
     return out
+
+
+# --------------------------------------------------------------------------
+# v1.0.13: squeezed lines, the same line elsewhere, and a third candidate
+# --------------------------------------------------------------------------
+
+#: B579: a line may last at most this factor longer or shorter than the
+#: same line where Whisper heard it - the same margin the timing's own
+#: templates allow (``timing_template.MAX_FACTOR``).
+TEMPLATE_FACTOR = 2.0
+
+#: B579, the last resort: with no heard copy of a line, it may not be
+#: sung this many times faster than the song's own pace per syllable.
+#: A bound, never a measure: an average says nothing about how ONE line
+#: is sung, only that a line cannot be three times too fast.
+PACE_FACTOR = 3.0
+
+#: B578/B579: a line is only judged when it has this much in it. One
+#: short word of a line - the aligner often gives a word a tenth of a
+#: second - is no measure of how fast that line is sung.
+JUDGED_MIN_WORDS = 2
+JUDGED_MIN_SYLLABLES = 3
+
+#: B580: a sung window shorter than this carries no line of its own.
+WINDOW_MIN_S = 0.3
+
+#: B580: how sure the candidate on the singing is, per way it was made -
+#: as its evidence in the referee. A line laid on the profile of the same
+#: line elsewhere beats one laid on the onsets, and spreading by
+#: syllables is the last resort and scores as such.
+ON_SINGING_CONFIDENCE = {"profile": 0.6, "onsets": 0.45, "even": 0.3}
+
+
+@dataclass(frozen=True)
+class LineTemplate:
+    """How long a lyric line lasts where it was heard, and where its
+    words begin within it (fractions of the line, first one 0.0)."""
+
+    duration: float
+    starts: tuple[float, ...]
+    ends: tuple[float, ...]
+
+
+def _line_key(text: str) -> str:
+    from .timing_template import line_key
+
+    return line_key(text)
+
+
+def line_templates(lines) -> tuple[dict[str, LineTemplate], float]:
+    """Templates per line text, and the song's pace per syllable.
+
+    ``lines`` holds per lyric line ``(text, words)`` where ``words`` are
+    the ``(text, start, end)`` of a line that was HEARD - every word
+    coupled to a word Whisper heard in the normal run. What was laid on
+    by the aligner or taken over in "Listen again" is left out by the
+    caller: a squeezed line may not become the measure for its copies.
+    The pace is the median seconds per syllable over those lines.
+    """
+    import statistics
+
+    per_key: dict[str, list] = {}
+    paces = []
+    for text, words in lines:
+        if not words:
+            continue
+        start = float(words[0][1])
+        end = float(words[-1][2])
+        span = end - start
+        count = syllables([w[0] for w in words])
+        if span <= 0 or not count:
+            continue
+        paces.append(span / count)
+        per_key.setdefault(_line_key(text), []).append(
+            (span, tuple((float(w[1]) - start) / span for w in words),
+             tuple((float(w[2]) - start) / span for w in words)))
+    templates = {}
+    for key, found in per_key.items():
+        size = max({len(f[1]) for f in found},
+                   key=[len(f[1]) for f in found].count)
+        same = [f for f in found if len(f[1]) == size]
+        templates[key] = LineTemplate(
+            duration=statistics.median(f[0] for f in same),
+            starts=tuple(statistics.median(f[1][n] for f in same)
+                         for n in range(size)),
+            ends=tuple(statistics.median(f[2][n] for f in same)
+                       for n in range(size)))
+    pace = statistics.median(paces) if paces else 0.0
+    return templates, pace
+
+
+def lines_of(words, expected: Sequence[str],
+             expected_lines: Sequence[int]) -> list[int]:
+    """The lyric line of every candidate word.
+
+    Matched to the expected words on their sound; a word that matches
+    nothing belongs to the line of the word before it (or, at the very
+    start, the first line).
+    """
+    if not expected_lines:
+        return [-1 for _w in words]
+    if len(words) == len(expected) and [w[0] for w in words] == \
+            list(expected):
+        return list(expected_lines)
+    keys = _keys([w[0] for w in words])
+    matcher = difflib.SequenceMatcher(a=keys, b=_keys(expected),
+                                      autojunk=False)
+    out: list[int | None] = [None] * len(words)
+    for block in matcher.get_matching_blocks():
+        for n in range(block.size):
+            out[block.a + n] = expected_lines[block.b + n]
+    last = expected_lines[0]
+    for n, line in enumerate(out):
+        if line is None:
+            out[n] = last
+        else:
+            last = line
+    return [int(x) for x in out]
+
+
+def squeezed(words, lines: Sequence[int]) -> list[int]:
+    """B578: the lines a candidate sings faster than anyone can.
+
+    Per lyric line: its syllables over the time its own words take. The
+    ceiling is the one the area itself already had to meet
+    (:data:`SYLLABLES_PER_S`); the first version only held the AREA to
+    it, and twelve syllables in six tenths of a second inside a
+    seventeen-second area went straight through.
+    """
+    bad = []
+    for line in sorted(set(lines)):
+        own = [w for w, ln in zip(words, lines) if ln == line]
+        span = float(own[-1][2]) - float(own[0][1])
+        count = syllables([w[0] for w in own])
+        if not _judged(own, count):
+            continue
+        if span <= 0 or count / span > SYLLABLES_PER_S[1]:
+            bad.append(line)
+    return bad
+
+
+def _judged(own, count: int) -> bool:
+    return len(own) >= JUDGED_MIN_WORDS or count >= JUDGED_MIN_SYLLABLES
+
+
+def unlike_elsewhere(words, lines: Sequence[int], line_texts: dict,
+                     templates: dict, pace: float) -> list[int]:
+    """B579: the lines a candidate times unlike the same line elsewhere.
+
+    Only a WHOLE line is held against its template - a stretch that has
+    the second half of a line cannot be as long as all of it. Without a
+    heard copy, the song's pace is the last resort, and only as a floor:
+    a line three times faster than the song sings is squeezed.
+    """
+    bad = []
+    for line in sorted(set(lines)):
+        own = [w for w, ln in zip(words, lines) if ln == line]
+        span = float(own[-1][2]) - float(own[0][1])
+        count = syllables([w[0] for w in own])
+        text = str(line_texts.get(line, ""))
+        template = templates.get(_line_key(text)) if text else None
+        whole = template is not None and len(own) == len(text.split())
+        if not whole and not _judged(own, count):
+            continue
+        if whole:
+            if not (template.duration / TEMPLATE_FACTOR <= span
+                    <= template.duration * TEMPLATE_FACTOR):
+                bad.append(line)
+        elif pace > 0 and span < count * pace / PACE_FACTOR:
+            bad.append(line)
+    return bad
+
+
+def coverage(words, low: float, high: float, windows) -> float | None:
+    """B578: the share of the measured singing in ``low``-``high`` that
+    the words take up (each reaching :data:`WORD_REACH_S` around it).
+    ``None`` without measured singing there - then it says nothing."""
+    sung = [(max(low, float(a)), min(high, float(b))) for a, b in windows
+            if float(b) > low and float(a) < high]
+    total = sum(b - a for a, b in sung)
+    if total <= 0:
+        return None
+    reach = sorted((float(w[1]) - WORD_REACH_S, float(w[2]) + WORD_REACH_S)
+                   for w in words)
+    covered = 0.0
+    for a, b in sung:
+        cursor = a
+        for start, end in reach:
+            start, end = max(start, cursor), min(end, b)
+            if end > start:
+                covered += end - start
+                cursor = end
+    return min(1.0, covered / total)
+
+
+def _sung_in(low: float, high: float, windows) -> list[tuple[float, float]]:
+    """The sung windows inside ``low``-``high``; a blip too short to
+    carry a line is left out, unless there is nothing else."""
+    inside = [(max(low, float(a)), min(high, float(b))) for a, b in windows
+              if float(b) > low and float(a) < high
+              and min(high, float(b)) - max(low, float(a)) > 0.05]
+    real = [w for w in inside if w[1] - w[0] >= WINDOW_MIN_S]
+    return real or inside
+
+
+def _slots_for(count: int, sung, weights) -> list[tuple[float, float]]:
+    """``count`` time slots on the sung windows, one per line.
+
+    The pauses are the line boundaries. With more windows than lines the
+    smallest pauses are closed first. With fewer, every window gets lines
+    in proportion to its length (at least one each), and a window with
+    several lines is split in the ratio of their weights (syllables).
+    """
+    slots = [list(w) for w in sung]
+    while len(slots) > count:
+        gaps = [slots[n + 1][0] - slots[n][1] for n in range(len(slots) - 1)]
+        n = gaps.index(min(gaps))
+        slots[n:n + 2] = [[slots[n][0], slots[n + 1][1]]]
+    if len(slots) == count:
+        return [(a, b) for a, b in slots]
+    lengths = [b - a for a, b in slots]
+    total = sum(lengths) or 1.0
+    shares = [count * length / total for length in lengths]
+    counts = [max(1, int(share)) for share in shares]
+    while sum(counts) < count:
+        n = max(range(len(slots)), key=lambda k: shares[k] - counts[k])
+        counts[n] += 1
+    while sum(counts) > count:
+        n = max((k for k in range(len(slots)) if counts[k] > 1),
+                key=lambda k: counts[k] - shares[k])
+        counts[n] -= 1
+    out = []
+    cursor = 0
+    for (a, b), many in zip(slots, counts):
+        own = weights[cursor:cursor + many]
+        cursor += many
+        whole = sum(own) or 1.0
+        edge = a
+        for weight in own:
+            step = (b - a) * weight / whole
+            out.append((edge, edge + step))
+            edge += step
+    return out
+
+
+def on_singing(area: Area, windows, onsets, line_texts: dict,
+               templates: dict) -> Candidate | None:
+    """B580: the expected words laid out on the singing of the place.
+
+    For sounds the aligner cannot follow - a long "jalala" has nothing
+    for wav2vec2 to hold on to, and it squeezed four of them into the
+    first second. The lines go on the sung windows, one per window with
+    the pauses as line boundaries. Within a line, in this order:
+
+    1. the profile of the same line where it was heard (its length and
+       where each word begins);
+    2. the onsets the vocal stem shows - each word begins on the onset
+       nearest to where an even spread would put it;
+    3. only when there is nothing else: spread by syllables.
+    """
+    sung = _sung_in(area.low, area.high, windows)
+    if not sung or not area.expected:
+        return None
+    lines = list(dict.fromkeys(area.expected_lines)) or [-1]
+    groups = [[w for w, ln in zip(area.expected, area.expected_lines or
+                                  [-1] * len(area.expected)) if ln == line]
+              for line in lines]
+    weights = [max(1, syllables(g)) for g in groups]
+    slots = _slots_for(len(groups), sung, weights)
+    words = []
+    ways = []
+    for line, group, (low, high) in zip(lines, groups, slots):
+        text = str(line_texts.get(line, ""))
+        template = templates.get(_line_key(text)) if text else None
+        if template is not None and len(template.starts) == len(group) \
+                and len(group) == len(text.split()):
+            span = min(template.duration, high - low)
+            starts = [low + f * span for f in template.starts]
+            ends = [low + f * span for f in template.ends]
+            ways.append("profile")
+        else:
+            counts = [max(1, syllables([w])) for w in group]
+            total = sum(counts)
+            even = []
+            cursor = 0
+            for c in counts:
+                even.append(low + (high - low) * cursor / total)
+                cursor += c
+            near = [o for o in (onsets or ()) if low <= o < high]
+            if len(near) >= len(group):
+                starts = []
+                for target in even:
+                    pick = min((o for o in near
+                                if not starts or o > starts[-1]),
+                               key=lambda o: abs(o - target),
+                               default=target)
+                    starts.append(pick)
+                ways.append("onsets")
+            else:
+                starts = even
+                ways.append("even")
+            ends = [starts[n + 1] - 0.02 for n in range(len(starts) - 1)]
+            ends.append(high)
+        # In order, apart, and inside the slot - whichever way the starts
+        # were found - and every word ends before the next one begins.
+        count = len(group)
+        placed = []
+        for n, start in enumerate(starts):
+            floor = placed[-1] + 0.05 if placed else low
+            ceiling = high - 0.05 * (count - n)
+            placed.append(round(max(floor, min(float(start), ceiling)), 3))
+        for n, text_value in enumerate(group):
+            start = placed[n]
+            limit = placed[n + 1] - 0.02 if n + 1 < count else high
+            end = max(start + 0.02, min(float(ends[n]), limit))
+            words.append((str(text_value), start, round(end, 3)))
+    worst = min(ways, key=lambda way: ON_SINGING_CONFIDENCE[way])
+    confidence = ON_SINGING_CONFIDENCE[worst]
+    return Candidate("singing", [(t, s, e, confidence) for t, s, e in words])

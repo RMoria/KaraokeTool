@@ -405,7 +405,8 @@ def run_over_lanes(audio_path, settings, jobs, prompt: str, language: str,
     """Run every job over the Whisper lanes (B442).
 
     ``jobs`` are ``(start, end)`` pairs as :func:`jobs_heaviest_first`
-    gives them. Returns ``{(start, end): segments}``; a PIECE that fails
+    gives them. ``prompt`` is the hint for every job, or (v1.0.13) a
+    function that gives the hint per job. Returns ``{(start, end): segments}``; a PIECE that fails
     is simply absent. The whole song is different in two ways, and both
     of them have to be loud:
 
@@ -473,7 +474,8 @@ def run_over_lanes(audio_path, settings, jobs, prompt: str, language: str,
             try:
                 segments = whisper.transcribe_slice(
                     audio_path, settings, start=start, end=end,
-                    initial_prompt=prompt,
+                    initial_prompt=(prompt(job) if callable(prompt)
+                                    else prompt),
                     language_override=(rest[0] if rest else language),
                     cancelled=cancelled)
             except whisper.CancelledError:

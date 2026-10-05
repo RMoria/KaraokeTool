@@ -362,7 +362,9 @@ def test_every_composed_translation_key_exists() -> None:
     for name in ("original", "karaoke", "vocals"):
         if f"lane_{name}" not in TRANSLATIONS["nl"]:
             missing.append(f"lane_{name}")
-    for mode in ("blocks", "sentences", "words"):
+    from modules.timing import VIEW_MODES
+
+    for mode in VIEW_MODES:
         if f"view_{mode}" not in TRANSLATIONS["nl"]:
             missing.append(f"view_{mode}")
     assert not missing, missing
@@ -412,7 +414,8 @@ def test_the_manual_names_no_old_buttons() -> None:
 
 @pytest.mark.parametrize("topic", [
     "dependencies.md",          # the derivation chain (B311)
-    "Zangstem-analyse",             # the setting behind B313/B319
+    "Werkwijze",                    # v1.0.15: the profile, which took
+                                    # over the setting behind B313/B319
     "Terug uit origineel",          # the green blocks in the damping editor
     "Regel uit/aan",                # not rendering
     "Blokken",                      # the view choice in the waveform editor

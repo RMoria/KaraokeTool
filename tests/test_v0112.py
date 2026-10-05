@@ -200,5 +200,5 @@ def test_the_progress_travels_by_signal() -> None:
     from modules import gui
 
     assert hasattr(gui.MainWindow, "_test_progress")
-    source = __import__("inspect").getsource(gui.MainWindow._do_fill_cache)
+    source = __import__("inspect").getsource(gui.MainWindow._start_tests)
     assert "_test_progress.emit" in source

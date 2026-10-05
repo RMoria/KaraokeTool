@@ -31,7 +31,7 @@ Licence, a free licence derived from the Bitstream Vera Fonts Licence:
 https://dejavu-fonts.github.io/License.html
 
 The other font families this program can use are not part of this
-repository. install.bat fetches them from the Google Fonts repository
+repository. KaraokeToolGUI.bat fetches them from the Google Fonts repository
 (https://github.com/google/fonts), where every family carries its own
 licence - most of them the SIL Open Font License 1.1, some the Apache
 License 2.0. Those licences travel with the files themselves.

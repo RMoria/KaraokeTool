@@ -22,8 +22,8 @@ import numpy as np
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 from . import waveform
@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 _EDGE_PX = 7
 _MIN_LINE_S = 0.2
+
+#: v1.0.13: the shortest a word or syllable may be dragged. Far below a
+#: line: a stored piece is often a single letter of a few hundredths.
+_MIN_PIECE_S = 0.03
 _WAVE_HEIGHT = 105
 _ORIG_LANE_TOP = _WAVE_HEIGHT + 2      # lane with original sentences (2 rows)
 _ORIG_ROW_H = 30
@@ -101,7 +105,11 @@ class TimingCanvas(QWidget):
                  original_duration: float = 0.0,
                  project: Callable[[float], float] | None = None,
                  vocal_peaks: np.ndarray | None = None,
-                 moved_restores: Sequence[int] = ()) -> None:
+                 moved_restores: Sequence[int] = (),
+                 moved_word_restores: Sequence[tuple[int, int]] = (),
+                 block_links: Sequence[Sequence[int]] = (),
+                 on_notice: Callable[[str], None] | None = None
+                 ) -> None:
         """``originals``: original sentences as ``{"text", "start",
         "end", "rows": [line indices]}``; shifting/stretching these moves
         the coupled karaoke lines along. ``vocal_peaks``: waveform of the
@@ -114,6 +122,19 @@ class TimingCanvas(QWidget):
         self._moved_restores = {int(number) for number in moved_restores}
         #: B499: what the user asked to put back, handed on when saving.
         self._reset_moves: set[int] = set()
+        #: B587: the same two for single words, as (line number, word).
+        self._moved_words = {(int(n), int(w)) for n, w in moved_word_restores}
+        self._reset_word_moves: set[tuple[int, int]] = set()
+        #: B601: linked blocks follow an edit inside one of them.
+        self._block_links = [list(group) for group in block_links]
+        self.follow_links = True
+        self._on_notice = on_notice or (lambda text: None)
+        #: The linked rows that could not follow during this drag.
+        self._not_followed: set[int] = set()
+        #: The pieces of every linked row as they were when this drag
+        #: began, so a row that cannot follow goes back to exactly that -
+        #: not to where it had followed to so far.
+        self._before_follow: dict[int, list[dict]] = {}
         self._original_duration = max(original_duration, 0.001)
         self._project = project or (lambda t: t)
         self._duration = max(duration, 1.0)
@@ -129,6 +150,9 @@ class TimingCanvas(QWidget):
         self._playhead: float | None = None
         self._marker: float | None = None
         self._drag: tuple[str, int, str, float] | None = None
+        #: v1.0.13: the line and its stored pieces of a word or syllable
+        #: being dragged in the words/syllables view.
+        self._drag_pieces: tuple[int, tuple[int, ...]] | None = None
         self._col_cache = None            # cached karaoke columns
         self._col_cache_key = None        # (id(peaks), width) of the cache
         # coupling karaoke line -> original index (for both directions)
@@ -207,10 +231,12 @@ class TimingCanvas(QWidget):
                               if number in by_index}
 
     def set_view_mode(self, mode: str) -> None:
-        """Switch the lane view: blocks, sentences or words (B127).
+        """Switch the lane view: blocks, sentences, words or syllables
+        (B127).
 
-        Dragging/stretching stays at sentence level; the other views are
-        only there for orientation (reading).
+        Every view drags and stretches what it shows (v1.0.13): a block,
+        a sentence, one word or one syllable - under the same rules
+        towards the neighbours.
         """
         from . import timing as timing_module
         if mode in timing_module.VIEW_MODES:
@@ -226,7 +252,15 @@ class TimingCanvas(QWidget):
         the two are the same sentence, so it does not matter which one is
         selected. What is marked here is handed to step 1.4, which does
         the actual fetching back.
+
+        B587: in the word and syllable view it marks one WORD - the word
+        the selected cell is, or in the original lane the word of the
+        coupled sentence that lies under the middle of the cell.
         """
+        if self._view_mode in ("words", "syllables"):
+            found = self._selected_word()
+            if found is not None:
+                return self._toggle_word(*found)
         if self._sel_cell is not None and self._sel_cell < len(self._cells):
             rows = self._cells[self._sel_cell].get("rows", [])
         elif self._sel_orig is not None \
@@ -234,6 +268,11 @@ class TimingCanvas(QWidget):
             rows = self._orig_cells[self._sel_orig].get("rows", [])
         else:
             return False
+        return self._toggle_rows(rows)
+
+    def _toggle_rows(self, rows: Sequence[int]) -> bool:
+        """Mark or unmark these sentences (B496), a moved piece first put
+        back (B499)."""
         own = [r for r in rows if 0 <= r < len(self._lines)]
         if not own:
             return False
@@ -255,6 +294,91 @@ class TimingCanvas(QWidget):
             self._lines[r]["restore"] = new
         self.update()
         return True
+
+    def _selected_word(self) -> tuple[int, int] | None:
+        """(row, word) of the selection in the word/syllable view."""
+        if self._sel_cell is not None and self._sel_cell < len(self._cells):
+            cell = self._cells[self._sel_cell]
+            rows = cell.get("rows") or []
+            if rows and cell.get("word", -1) >= 0:
+                return int(rows[0]), int(cell["word"])
+            return None
+        if self._sel_orig is not None \
+                and self._sel_orig < len(self._orig_cells):
+            cell = self._orig_cells[self._sel_orig]
+            return self._word_under(cell.get("rows") or [],
+                                    (cell["start"] + cell["end"]) / 2)
+        return None
+
+    def _word_under(self, rows: Sequence[int], moment: float
+                    ) -> tuple[int, int] | None:
+        """The karaoke word of ``rows`` at ``moment``, or the nearest."""
+        from .timing import piece_groups
+
+        best: tuple[float, int, int] | None = None
+        for row in rows:
+            if not (0 <= row < len(self._lines)):
+                continue
+            pieces = self._lines[row]["syllables"]
+            for word, group in enumerate(piece_groups(pieces)):
+                if all(pieces[i].get("bg") for i in group):
+                    continue
+                start = float(pieces[group[0]]["start"])
+                end = float(pieces[group[-1]]["end"])
+                distance = 0.0 if start <= moment <= end else min(
+                    abs(moment - start), abs(moment - end))
+                if best is None or distance < best[0]:
+                    best = (distance, int(row), word)
+        return None if best is None else (best[1], best[2])
+
+    def _toggle_word(self, row: int, word: int) -> bool:
+        """Mark or unmark one word as "back from the original" (B587).
+
+        A moved word is put back first, the way a moved sentence is
+        (B499); the next click unmarks it.
+        """
+        if not (0 <= row < len(self._lines)):
+            return False
+        line = self._lines[row]
+        if line.get("restore"):
+            # The sentence is marked whole and wins over its words: the
+            # click goes to the sentence (put back first when moved,
+            # B499), instead of a word mark nobody can see (found in
+            # review).
+            return self._toggle_rows([row])
+        key = (int(line["index"]), int(word))
+        if key in self._moved_words:
+            self._moved_words.discard(key)
+            self._reset_word_moves.add(key)
+            self.update()
+            return True
+        marked = set(line.get("restore_words") or ())
+        marked ^= {int(word)}
+        line["restore_words"] = sorted(marked)
+        self.update()
+        return True
+
+    def _word_marked(self, row: int, word: int) -> bool:
+        """Is this word fetched back - on its own or with its sentence?"""
+        if not (0 <= row < len(self._lines)):
+            return False
+        line = self._lines[row]
+        return bool(line.get("restore")) or int(word) in set(
+            line.get("restore_words") or ())
+
+    def _word_moved(self, row: int, word: int) -> bool:
+        if not (0 <= row < len(self._lines)):
+            return False
+        return (int(self._lines[row]["index"]), int(word)) in self._moved_words
+
+    def restore_words(self) -> list[tuple[int, int]]:
+        """(line number, word) marked as "back from the original" (B587)."""
+        return [(int(line["index"]), int(word)) for line in self._lines
+                for word in (line.get("restore_words") or ())]
+
+    def reset_word_moves(self) -> list[tuple[int, int]]:
+        """Words whose piece has to go back onto the word (B587)."""
+        return sorted(self._reset_word_moves)
 
     def reset_moves(self) -> list[int]:
         """Sentences whose piece has to go back onto the sentence (B499)."""
@@ -400,6 +524,13 @@ class TimingCanvas(QWidget):
                 self._lines[r].get("restore") for r in own)
             moved = fetched and any(int(self._lines[r]["index"])
                                     in self._moved_restores for r in own)
+            if not fetched and self._view_mode in ("words", "syllables"):
+                # B587: a word of the sentence fetched back on its own.
+                under = self._word_under(own,
+                                         (cell["start"] + cell["end"]) / 2)
+                if under is not None and self._word_marked(*under):
+                    fetched = True
+                    moved = self._word_moved(*under)
             if disabled:
                 fill_color = QColor(200, 200, 200, 120)
             elif fetched:
@@ -438,6 +569,9 @@ class TimingCanvas(QWidget):
                 f"  [{background}]" if background else "")
             painter.drawText(int(ox1) + 4, y + 18,
                              text_value[:int((ox2 - ox1) / 7) or 1])
+        # B585: which words make one sentence (which syllables one word).
+        self._draw_underlines(painter, orig_cells,
+                              _ORIG_LANE_TOP + _ORIG_LANE_H - 3)
         self._draw_wave(painter, self._karaoke_peaks, _KARAOKE_WAVE_TOP,
                         QColor(90, 110, 150), "karaoke", vis_x0, vis_x1)
         # Vocal stem of the original on the karaoke timeline (B196).
@@ -484,6 +618,12 @@ class TimingCanvas(QWidget):
             restores = bool(rows) and all(
                 self._lines[r].get("restore")
                 for r in rows if 0 <= r < len(self._lines))
+            # B587: in the word and syllable view a word fetched back on
+            # its own; dotted when its piece was moved in 1.4.
+            moved_word = False
+            if rows and cell.get("word", -1) >= 0:
+                restores = self._word_marked(rows[0], cell["word"])
+                moved_word = self._word_moved(rows[0], cell["word"])
             # B508: a sentence with a problem between the lines gets an
             # orange border, so it is visible here and not only in the
             # report three steps later.
@@ -496,7 +636,8 @@ class TimingCanvas(QWidget):
                                 2 if (row == self._sel_cell
                                       or restores or error)
                                 else 1,
-                                Qt.DotLine if background else Qt.SolidLine))
+                                Qt.DotLine if (background or moved_word)
+                                else Qt.SolidLine))
             painter.drawRect(int(x1), y, max(3, int(x2 - x1)), 28)
             painter.setPen(QPen(QColor(120, 120, 120) if disabled
                                 else QColor(70, 110, 75) if background
@@ -505,6 +646,7 @@ class TimingCanvas(QWidget):
                 else cell["text"]
             painter.drawText(int(x1) + 4, y + 19,
                              label[:int((x2 - x1) / 7) or 1])
+        self._draw_underlines(painter, self._cells, _LANES_TOP + 3 * 34)
 
         if self._marker is not None:
             xm = int(self._marker * self._pps)
@@ -514,6 +656,24 @@ class TimingCanvas(QWidget):
             x = int(self._playhead * self._pps)
             painter.setPen(QPen(_PLAYHEAD, 2))
             painter.drawLine(x, 0, x, height)  # continuous across all lanes
+
+    def _draw_underlines(self, painter, cells: Sequence[dict],
+                         top: int) -> None:
+        """B585: a line under each sentence in the word view, under each
+        word in the syllable view - the cells of one sentence stand on
+        three rows, and without it nothing says where one ends. Every
+        other line a little lower, with ticks at the ends, so two
+        neighbours stay two."""
+        from .timing import underline_spans
+
+        painter.setPen(QPen(QColor(70, 70, 90), 2))
+        for k, (start, end) in enumerate(underline_spans(cells)):
+            x1 = int(start * self._pps) + 1
+            x2 = max(x1 + 2, int(end * self._pps) - 1)
+            y = top + (k % 2) * 3
+            painter.drawLine(x1, y, x2, y)
+            painter.drawLine(x1, y - 3, x1, y)
+            painter.drawLine(x2, y - 3, x2, y)
 
     def _draw_wave(self, painter, peaks, top, color, label,
                    x0: int, x1: int, wave_h: int = _WAVE_HEIGHT) -> None:
@@ -600,7 +760,23 @@ class TimingCanvas(QWidget):
                 self.update()
                 break
         # Dragging/stretching on cells: in ``sentences`` per line, in
-        # ``blocks`` per block (B162). In the 'words' view only for orientation.
+        # ``blocks`` per block (B162), and since v1.0.13 one word or one
+        # syllable in those two views.
+        if self._view_mode in ("words", "syllables"):
+            for ci, cell in enumerate(getattr(self, "_cells", [])):
+                y = _LANES_TOP + (ci % 3) * 34
+                if not (y <= position.y() <= y + 28):
+                    continue
+                rows = cell.get("rows") or []
+                if not rows or not cell.get("pieces"):
+                    continue
+                mode = self._hit_mode(position.x(),
+                                      (cell["start"], cell["end"]))
+                if mode is not None:
+                    self._drag = ("piece", ci, mode, moment)
+                    self._drag_pieces = (int(rows[0]),
+                                         tuple(cell["pieces"]))
+                    return
         if self._view_mode in ("sentences", "blocks"):
             for ci, cell in enumerate(getattr(self, "_cells", [])):
                 y = _LANES_TOP + (ci % 3) * 34
@@ -671,6 +847,18 @@ class TimingCanvas(QWidget):
             self._drag = (kind, row, mode, moment)
             self.update()
             return
+        if kind == "piece":
+            if self._drag_pieces is not None:
+                line_row, pieces = self._drag_pieces
+                before = _piece_times(self._lines, line_row, pieces)
+                self._move_pieces(line_row, pieces, mode, delta)
+                after = _piece_times(self._lines, line_row, pieces)
+                if after != before:
+                    self._follow_pieces(line_row, pieces, mode,
+                                        before, after)
+            self._drag = (kind, row, mode, moment)
+            self.update()
+            return
         # kind == "cell": one sentence (``sentences``) or a whole block
         # (``blocks``).
         cell = self._cells[row] if row < len(self._cells) else None
@@ -697,12 +885,91 @@ class TimingCanvas(QWidget):
         span = self._keep_in_order(rows, *span, anchor=mode)      # B346
         span = self._without_overlap(rows, *span, anchor=mode)
         self._remap_rows(rows, (start, end), span)
+        if self._view_mode == "sentences" and len(rows) == 1:
+            # B601: a sentence moved inside its block; the same sentence
+            # of the linked blocks moves the same way. Moving a whole
+            # block (the block view) stays per block.
+            self._follow_sentence(rows[0], mode, (start, end), span)
         # B508: always, and for every original involved. It used to run
         # only for a single line, so in the block view the original lane
         # simply stayed behind.
         self._mirror_to_original(rows)
         self._drag = (kind, row, mode, moment)
         self.update()
+
+    def _move_pieces(self, row: int, pieces: Sequence[int], mode: str,
+                     delta: float, snap: bool = True) -> None:
+        """Move or stretch one word or syllable of a line (v1.0.13).
+
+        Its own pieces scale along; the rest of the line stays where it
+        is, so a pause between two words is simply made by hand. Inside
+        the line it stops against the word before and after it. Where it
+        is the first or last word, its outer edge is the edge of the
+        sentence, and that goes by exactly the rules of the sentence
+        view - the same bounds, from the same two functions.
+        """
+        if not (0 <= row < len(self._lines)):
+            return
+        syllables = self._lines[row]["syllables"]
+        group = sorted(i for i in pieces if 0 <= i < len(syllables))
+        if not group:
+            return
+        start = float(syllables[group[0]]["start"])
+        end = float(syllables[group[-1]]["end"])
+        own = set(group)
+        sung = [i for i, item in enumerate(syllables)
+                if not item.get("bg") and i not in own]
+        before = [i for i in sung if i < group[0]]
+        after = [i for i in sung if i > group[-1]]
+        order_low, order_high = self._order_bounds([row])
+        overlap = self._overlap_bounds([row])
+        line_low = order_low if overlap is None else max(order_low,
+                                                         overlap[0])
+        line_high = order_high if overlap is None else min(order_high,
+                                                           overlap[1])
+        low = float(syllables[before[-1]]["end"]) if before else line_low
+        high = float(syllables[after[0]]["start"]) if after else line_high
+        playhead = self._playhead if snap else None
+        if mode == "verplaats":
+            new_start = snap_time(start + delta, playhead, self._pps)
+            span = (new_start, new_start + (end - start))
+        elif mode == "links":
+            span = (snap_time(start + delta, playhead, self._pps), end)
+        else:
+            span = (start, end + delta)
+        span = _inside(span, low, high, mode, minimum=_MIN_PIECE_S)
+        # With no room at all ``_inside`` hands the wish back unchanged -
+        # for a line that was rare, for a piece of a few hundredths it is
+        # common, and it would lie over its neighbour. Refused instead.
+        if span == (start, end) or span[0] < low - 1e-9 \
+                or span[1] > high + 1e-9:
+            return
+        old = [(float(syllables[i]["start"]), float(syllables[i]["end"]))
+               for i in group]
+        width = end - start
+        for n, index in enumerate(group):
+            item = syllables[index]
+            if width > 1e-6:
+                factor = (span[1] - span[0]) / width
+                item["start"] = round(
+                    span[0] + (old[n][0] - start) * factor, 3)
+                item["end"] = round(
+                    span[0] + (old[n][1] - start) * factor, 3)
+            else:
+                # A word of no length has no proportions to keep: its
+                # pieces are spread evenly over the new span.
+                step = (span[1] - span[0]) / len(group)
+                item["start"] = round(span[0] + n * step, 3)
+                item["end"] = round(span[0] + (n + 1) * step, 3)
+        # The sentence may not become shorter than a sentence may be in
+        # the sentence view.
+        sentence = _line_span(self._lines[row])
+        if sentence[1] - sentence[0] < _MIN_LINE_S - 1e-9:
+            for index, (was_start, was_end) in zip(group, old):
+                syllables[index]["start"] = was_start
+                syllables[index]["end"] = was_end
+            return
+        self._mirror_to_original([row])
 
     def _remap_rows(self, rows: list[int], old_span: tuple[float, float],
                     new_span: tuple[float, float]) -> None:
@@ -753,16 +1020,16 @@ class TimingCanvas(QWidget):
     def _update_cursor(self, x: float, y: float) -> None:
         """Show a <-> cursor when the mouse is on a stretchable edge."""
         on_edge = False
-        if self._view_mode in ("sentences", "blocks"):
-            for ci, cell in enumerate(self._cells):
-                top = _LANES_TOP + (ci % 3) * 34
-                if not cell.get("rows"):        # B507: background block
-                    continue
-                if top <= y <= top + 28 and self._hit_mode(
-                        x, (cell["start"], cell["end"])) in (
-                        "links", "rechts"):
-                    on_edge = True
-                    break
+        # Every view drags what it shows (v1.0.13).
+        for ci, cell in enumerate(self._cells):
+            top = _LANES_TOP + (ci % 3) * 34
+            if not cell.get("rows"):        # B507: background block
+                continue
+            if top <= y <= top + 28 and self._hit_mode(
+                    x, (cell["start"], cell["end"])) in (
+                    "links", "rechts"):
+                on_edge = True
+                break
         if not on_edge:
             for index, original in enumerate(self._originals):
                 top = _ORIG_LANE_TOP + (index % 2) * _ORIG_ROW_H
@@ -869,18 +1136,22 @@ class TimingCanvas(QWidget):
         """
         if not rows:
             return start, end
+        return _inside((start, end), *self._order_bounds(rows), anchor)
+
+    def _order_bounds(self, rows: Sequence[int]) -> tuple[float, float]:
+        """The bounds of :meth:`_keep_in_order`, for every view."""
         low, high = 0.0, self._duration
         for index in range(min(rows) - 1, -1, -1):
             if index in rows or self._skippable(index):
                 continue
-            low = _line_span(self._lines[index])[0]
+            low = self._bound_span(index)[0]
             break
         for index in range(max(rows) + 1, len(self._lines)):
             if index in rows or self._skippable(index):
                 continue
-            high = _line_span(self._lines[index])[1]
+            high = self._bound_span(index)[1]
             break
-        return _inside((start, end), low, high, anchor)
+        return low, high
 
     def _skippable(self, index: int) -> bool:
         """A neighbour that does not bound anything (B510).
@@ -904,9 +1175,18 @@ class TimingCanvas(QWidget):
         single line, so in the block view a block could be dragged
         straight over its neighbour.
         """
+        bounds = self._overlap_bounds(rows)
+        if bounds is None:
+            return start, end
+        return _inside((start, end), *bounds, anchor)
+
+    def _overlap_bounds(self, rows: Sequence[int]
+                        ) -> tuple[float, float] | None:
+        """The bounds of :meth:`_without_overlap`, for every view;
+        ``None`` where overlapping is allowed (only crowd lines)."""
         own = set(rows)
         if not own or all(self._lines[row]["crowd"] for row in own):
-            return start, end
+            return None
         # Bounded by the END of the nearest line before it and the START
         # of the nearest line after it: that forbids overlapping AND
         # passing in one go, and squeezing in against a neighbour keeps
@@ -917,25 +1197,155 @@ class TimingCanvas(QWidget):
             other = self._lines[index]
             if index in own or other["crowd"] or self._skippable(index):
                 continue
-            low = _line_span(other)[1]
+            low = self._bound_span(index)[1]
             break
         for index in range(max(own) + 1, len(self._lines)):
             other = self._lines[index]
             if index in own or other["crowd"] or self._skippable(index):
                 continue
-            high = _line_span(other)[0]
+            high = self._bound_span(index)[0]
             break
-        return _inside((start, end), low, high, anchor)
+        return low, high
+
+    def _bound_span(self, index: int) -> tuple[float, float]:
+        """The span of a neighbour as a bound. A linked line that follows
+        this drag bounds by where it is AND where it was when the drag
+        began (B601): if it gets stuck later on it goes back there, and
+        the edited line may not be lying in that room by then."""
+        span = _line_span(self._lines[index])
+        saved = self._before_follow.get(index)
+        if saved:
+            before = _line_span({"syllables": saved})
+            span = (min(span[0], before[0]), max(span[1], before[1]))
+        return span
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._drag is not None:
             self._recheck()                                    # B508
             self.update()
         self._drag = None
+        self._drag_pieces = None
+        self._report_not_followed()
+
+    # -- Linked blocks (B601) ---------------------------------------------
+
+    def _linked_rows(self, row: int) -> list[int]:
+        """The same line in every block linked to the block of ``row``:
+        the n-th sung line of one block is the n-th of the other."""
+        if not self.follow_links or not self._block_links \
+                or not (0 <= row < len(self._lines)):
+            return []
+        from .song_structure import partners
+
+        def rows_of(number: int) -> list[int]:
+            return [r for r, line in enumerate(self._lines)
+                    if int(line.get("block", 0) or 0) == number
+                    and not line.get("bg")]
+
+        number = int(self._lines[row].get("block", 0) or 0)
+        own = rows_of(number)
+        if row not in own:
+            return []
+        place = own.index(row)
+        out = []
+        for other in partners(self._block_links, number):
+            theirs = rows_of(other)
+            if place < len(theirs) and theirs[place] not in \
+                    self._not_followed:
+                out.append(theirs[place])
+        return out
+
+    def _follow_pieces(self, row: int, pieces: Sequence[int], mode: str,
+                       before: tuple, after: tuple) -> None:
+        """The word or syllable edited in ``row``, the same in its linked
+        rows: the same pieces, moved by the same amount - each against
+        its own neighbours, and not at all where that does not fit."""
+        d_start = after[0] - before[0]
+        d_end = after[1] - before[1]
+        for other in self._linked_rows(row):
+            count = len(self._lines[other]["syllables"])
+            if count != len(self._lines[row]["syllables"]):
+                self._not_followed.add(other)
+                continue
+            self._keep_before_follow(other)
+            was = _piece_times(self._lines, other, pieces)
+            if mode == "verplaats":
+                wish = (was[0] + d_start, was[1] + d_start)
+            elif mode == "links":
+                wish = (was[0] + d_start, was[1])
+            else:
+                wish = (was[0], was[1] + d_end)
+            self._move_pieces(other, pieces, mode,
+                              d_start if mode != "rechts" else d_end,
+                              snap=False)
+            now = _piece_times(self._lines, other, pieces)
+            if abs(now[0] - wish[0]) > 1e-3 or abs(now[1] - wish[1]) > 1e-3:
+                # It could not go all the way: that block stays as it
+                # was before this drag, and the owner is told.
+                self._undo_follow(other)
+
+    def _follow_sentence(self, row: int, mode: str,
+                         old: tuple[float, float],
+                         new: tuple[float, float]) -> None:
+        """A sentence moved or stretched: the same sentence of the linked
+        blocks by the same amount, within its own neighbours."""
+        d_start, d_end = new[0] - old[0], new[1] - old[1]
+        for other in self._linked_rows(row):
+            self._keep_before_follow(other)
+            start, end = _line_span(self._lines[other])
+            wish = (start + d_start, end + d_end)
+            span = self._keep_in_order([other], *wish, anchor=mode)
+            span = self._without_overlap([other], *span, anchor=mode)
+            if abs(span[0] - wish[0]) > 1e-3 or \
+                    abs(span[1] - wish[1]) > 1e-3:
+                self._undo_follow(other)
+                continue
+            self._remap_rows([other], (start, end), span)
+            self._mirror_to_original([other])
+
+    def _keep_before_follow(self, row: int) -> None:
+        if row not in self._before_follow:
+            self._before_follow[row] = [
+                dict(item) for item in self._lines[row]["syllables"]]
+
+    def _undo_follow(self, row: int) -> None:
+        """A linked row that cannot follow: back to how it was when the
+        drag began, and no longer followed during this drag."""
+        saved = self._before_follow.get(row)
+        if saved is not None:
+            for item, was in zip(self._lines[row]["syllables"], saved):
+                item["start"], item["end"] = was["start"], was["end"]
+            self._mirror_to_original([row])
+        self._not_followed.add(row)
+
+    def _report_not_followed(self) -> None:
+        """Which linked blocks stayed as they were, once the drag is
+        done - so the owner can make the edit there himself."""
+        self._before_follow = {}
+        if not self._not_followed:
+            return
+        numbers = sorted({int(self._lines[r].get("block", 0) or 0) + 1
+                          for r in self._not_followed
+                          if 0 <= r < len(self._lines)})
+        self._not_followed = set()
+        self._on_notice(t("linked_not_followed").format(
+            blocks=", ".join(str(n) for n in numbers)))
+
+
+def _piece_times(lines: list[dict], row: int,
+                 pieces: Sequence[int]) -> tuple[float, float]:
+    """Start and end of some pieces of one line."""
+    syllables = lines[row]["syllables"]
+    group = sorted(i for i in pieces if 0 <= i < len(syllables))
+    if not group:
+        return (0.0, 0.0)
+    return (float(syllables[group[0]]["start"]),
+            float(syllables[group[-1]]["end"]))
 
 
 def _inside(span: tuple[float, float], low: float,
-            high: float, anchor: str = "verplaats") -> tuple[float, float]:
+            high: float, anchor: str = "verplaats",
+            minimum: float = _MIN_LINE_S) -> tuple[float, float]:
     """Push a time slot inside ``low``..``high`` (B345/B346/B405).
 
     ``anchor`` says which edge the user has hold of, and that decides
@@ -957,21 +1367,24 @@ def _inside(span: tuple[float, float], low: float,
 
     When there really is no room, a stretch returns the slot unchanged:
     refusing to move is the honest answer there, jumping is not.
+
+    ``minimum`` is the shortest the slot may become: a line by default,
+    a word or syllable (v1.0.13) far less.
     """
     start, end = span
     if anchor == "rechts":
-        if high < start + _MIN_LINE_S:
+        if high < start + minimum:
             return span
-        return start, min(max(end, start + _MIN_LINE_S), high)
+        return start, min(max(end, start + minimum), high)
     if anchor == "links":
-        if low > end - _MIN_LINE_S:
+        if low > end - minimum:
             return span
-        return max(min(start, end - _MIN_LINE_S), low), end
-    if high - low < _MIN_LINE_S:
-        return low, low + _MIN_LINE_S
+        return max(min(start, end - minimum), low), end
+    if high - low < minimum:
+        return low, low + minimum
     width = min(end - start, high - low)
     start = min(max(start, low), high - width)
-    return start, max(start + width, start + _MIN_LINE_S)
+    return start, max(start + width, start + minimum)
 
 
 def _line_span(line: dict) -> tuple[float, float]:
@@ -1022,6 +1435,9 @@ class TimingEditorDialog(QDialog):
                  vocal_peaks: np.ndarray | None = None,
                  restore_rows: Sequence[int] = (),
                  moved_restores: Sequence[int] = (),
+                 restore_words: Sequence[tuple[int, int]] = (),
+                 moved_word_restores: Sequence[tuple[int, int]] = (),
+                 block_links: Sequence[Sequence[int]] = (),
                  parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("editor_timing_title"))
@@ -1038,8 +1454,13 @@ class TimingEditorDialog(QDialog):
         # stored by line number, not in timing.json - the marking is a
         # choice about the AUDIO and does not belong in the timing.
         marked = {int(number) for number in restore_rows}
+        words: dict[int, set[int]] = {}
+        for number, word in restore_words:                    # B587
+            words.setdefault(int(number), set()).add(int(word))
         for line in self._lines:
             line["restore"] = int(line["index"]) in marked
+            line["restore_words"] = sorted(words.get(int(line["index"]),
+                                                     ()))
         # B406: a line that was saved flat cannot be repaired by hand -
         # stretching scales linearly and zero stays zero. So it is put
         # right on the way in; it only lands on disk when the user saves.
@@ -1068,7 +1489,8 @@ class TimingEditorDialog(QDialog):
             toolbar.addWidget(self._play_button)
         # View choice blocks/sentences/words (B127).
         self._view_combo = QComboBox()
-        for mode in ("blocks", "sentences", "words"):    # B160: order
+        for mode in ("blocks", "sentences", "words",
+                     "syllables"):                        # B160: order
             self._view_combo.addItem(t(f"view_{mode}"), mode)
         idx = self._view_combo.findData("sentences")         # default: sentences
         self._view_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -1084,6 +1506,12 @@ class TimingEditorDialog(QDialog):
         restore_button.clicked.connect(
             lambda: self._canvas.toggle_selected_restore())
         toolbar.addWidget(restore_button)
+        # B601: linked blocks follow an edit inside one of them.
+        self._follow_box = QCheckBox(t("linked_follow"))
+        self._follow_box.setToolTip(t("linked_follow_tip"))
+        self._follow_box.setChecked(True)
+        self._follow_box.setEnabled(bool(block_links))
+        toolbar.addWidget(self._follow_box)
         # B481: the hint about clicking in the waveform is out - after a
         # hundred sessions in this editor it only took up room.
         toolbar.addStretch(1)
@@ -1110,11 +1538,20 @@ class TimingEditorDialog(QDialog):
                                     originals=self._originals,
                                     original_duration=original_duration,
                                     project=project, vocal_peaks=vocal_peaks,
-                                    moved_restores=moved_restores)
+                                    moved_restores=moved_restores,
+                                    moved_word_restores=moved_word_restores,
+                                    block_links=block_links,
+                                    on_notice=self._notice)
+        self._follow_box.toggled.connect(
+            lambda on: setattr(self._canvas, "follow_links", bool(on)))
         self._scroll = QScrollArea()
         self._scroll.setWidget(self._canvas)
         self._scroll.setWidgetResizable(False)
         layout.addWidget(self._scroll, stretch=1)
+        self._notice_label = QLabel("")
+        self._notice_label.setWordWrap(True)
+        self._notice_label.setStyleSheet("color: #a33;")
+        layout.addWidget(self._notice_label)
         self._build_lane_labels()   # fixed (non-scrolling) labels (B196)
 
         self._view_combo.currentIndexChanged.connect(
@@ -1138,6 +1575,10 @@ class TimingEditorDialog(QDialog):
             self._timer.setInterval(50)
             self._timer.timeout.connect(self._tick)
             self._timer.start()
+
+    def _notice(self, text: str) -> None:
+        """A message under the lanes: a linked block did not follow."""
+        self._notice_label.setText(text)
 
     # -- Fixed lane labels (B196) ----------------------------------------
 
@@ -1287,7 +1728,9 @@ class TimingEditorDialog(QDialog):
         self._on_save(mark_held(tuple(_from_dict(line)
                                 for line in self._lines)), overrides,
                       self._canvas.restore_rows(),          # B496
-                      self._canvas.reset_moves())           # B499
+                      self._canvas.reset_moves(),           # B499
+                      self._canvas.restore_words(),         # B587
+                      self._canvas.reset_word_moves())
 
     def _reset(self) -> None:
         """Restore original: set both the original lane and the karaoke
@@ -1315,9 +1758,13 @@ class TimingEditorDialog(QDialog):
             # screen and the next save wiped it for good.
             marked = {int(line["index"]) for line in self._lines
                       if line.get("restore")}
+            words = {int(line["index"]): list(line.get("restore_words")
+                                              or ())
+                     for line in self._lines}
             self._lines[:] = [_to_dict(line) for line in fresh_lines]
             for line in self._lines:
                 line["restore"] = int(line["index"]) in marked
+                line["restore_words"] = words.get(int(line["index"]), [])
             self._canvas.set_lines(self._lines)
         self._canvas.set_originals(originals)
 

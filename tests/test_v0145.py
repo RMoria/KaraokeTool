@@ -84,7 +84,10 @@ def test_the_detection_compares_against_the_bare_derivation() -> None:
 def test_clicking_again_puts_the_piece_back() -> None:
     from modules import timing_editor
 
-    source = inspect.getsource(timing_editor.TimingCanvas.toggle_selected_restore)
+    # v1.0.14: the sentence part moved into ``_toggle_rows`` (B587).
+    source = inspect.getsource(timing_editor.TimingCanvas._toggle_rows)
+    assert "self._toggle_rows(" in inspect.getsource(
+        timing_editor.TimingCanvas.toggle_selected_restore)
     assert "self._reset_moves.add(number)" in source
     assert "if moved:" in source
 

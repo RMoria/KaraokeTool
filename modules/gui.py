@@ -317,6 +317,12 @@ class MainWindow(QMainWindow):
         self._refresh_inputs()
         self._apply_theme()
         self._install_busy_indicator()   # buttons 'yellow' while busy (B229)
+        # v1.0.28 (B673): tests a closed or fallen program was running go
+        # on, once the window stands.
+        QTimer.singleShot(self.RESUME_AFTER_MS, self._resume_tests)
+
+    #: v1.0.28 (B673): how long after the start interrupted tests go on.
+    RESUME_AFTER_MS = 4000
 
     # -- Construction ----------------------------------------------------
 
@@ -1000,7 +1006,9 @@ class MainWindow(QMainWindow):
 
             def save(lines: tuple, original_overrides: dict,
                      restore_rows: list | None = None,
-                     reset_moves: list | None = None) -> None:
+                     reset_moves: list | None = None,
+                     restore_words: list | None = None,
+                     reset_word_moves: list | None = None) -> None:
                 # Safeguard integrity: start < end, no 0 lines, no
                 # reordering (B108).
                 lines = timing_module.enforce_monotonic(lines)
@@ -1015,13 +1023,18 @@ class MainWindow(QMainWindow):
                     pipeline.set_restore_lines(context, restore_rows)
                 for number in (reset_moves or ()):      # B499
                     pipeline.reset_moved_restore(context, number)
+                if restore_words is not None:           # B587
+                    pipeline.set_restore_words(context, restore_words)
+                for key in (reset_word_moves or ()):
+                    pipeline.reset_moved_word_restore(context, *key)
                 self._log(t("timing_saved_log").format(path=timing_path)
                           + (t("timing_saved_corrections").format(
                               count=len(original_overrides))
                              if original_overrides else "")
                           + (t("timing_saved_restore").format(
-                              count=len(restore_rows))
-                             if restore_rows else ""))
+                              count=len(restore_rows or ())
+                              + len(restore_words or ()))
+                             if (restore_rows or restore_words) else ""))
                 self._show_timing_lines()
 
             def reset_original() -> dict:
@@ -1097,6 +1110,13 @@ class MainWindow(QMainWindow):
                                         moved_restores=sorted(
                                             pipeline.moved_restores(
                                                 context)),      # B499
+                                        restore_words=pipeline.restore_words(
+                                            context),           # B587
+                                        moved_word_restores=sorted(
+                                            pipeline.moved_word_restores(
+                                                context)),
+                                        block_links=pipeline.block_links(
+                                            context),           # B601
                                         parent=self)
             dialog.exec()
 
@@ -1330,6 +1350,13 @@ class MainWindow(QMainWindow):
                 make_button.clicked.connect(
                     self._make_karaoke_from_original)
                 row.addWidget(make_button)
+            if stem == pipeline.TRACK_ORIGINAL:
+                # v1.0.19: the ordinary karaoke path, from the original
+                # alone - music, words, a text to check, timing, video.
+                full_button = QPushButton(t("full_karaoke_button"))
+                full_button.setToolTip(t("full_karaoke_tip"))
+                full_button.clicked.connect(self._make_full_karaoke)
+                row.addWidget(full_button)
             button = QPushButton(t("choose_file"))
             button.clicked.connect(
                 lambda _=False, s=stem: self._choose_file(s))
@@ -1354,9 +1381,34 @@ class MainWindow(QMainWindow):
             button.clicked.connect(handler)
             row.addWidget(QLabel(f"{t(tkey)}:"))
             row.addWidget(label, stretch=1)
+            if tkey == "karaoke_text":
+                # B600: which blocks of the text are linked.
+                links_button = QPushButton(t("block_links_button"))
+                links_button.setToolTip(t("block_links_tip"))
+                links_button.clicked.connect(self._edit_block_links)
+                row.addWidget(links_button)
             row.addWidget(button)
             layout.addLayout(row)
         return group
+
+    def _edit_block_links(self) -> None:
+        """Link and unlink the blocks of the karaoke text (B600)."""
+        from PySide6.QtWidgets import QDialog
+
+        from .block_dialog import BlockLinksDialog
+
+        context = self._context
+        blocks = pipeline.text_blocks(context)
+        if not blocks:
+            QMessageBox.information(self, t("block_links_title"),
+                                    t("block_links_none"))
+            return
+        dialog = BlockLinksDialog(blocks, pipeline.block_links(context),
+                                  parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            pipeline.set_block_links(context, dialog.groups())
+            self._log(t("block_links_saved").format(
+                count=len(dialog.groups())))
 
     def _copy_into_input(self, chosen: str, target_name: str, key: str,
                          note: str = "") -> None:
@@ -1396,6 +1448,7 @@ class MainWindow(QMainWindow):
                      if old_path.exists() else ())
         self._copy_into_input(chosen, karaoke_text.FILENAME, "karaoke_text",
                               t("karaoke_text_note"))
+        pipeline.forget_own_text(self._context)
         if old_lines:
             try:
                 new_lines = karaoke_text.parse_lines(old_path)
@@ -1421,7 +1474,9 @@ class MainWindow(QMainWindow):
         """Check section structure and whether lines fit on screen."""
         # Quick sanity check: are the lyrics and karaoke text not by
         # accident both set to the same (wrong) text? (B115)
-        if pipeline.texts_identical(self._context):
+        # A text made from what was heard is both texts on purpose.
+        if pipeline.texts_identical(self._context) and \
+                not pipeline.own_text(self._context):
             self._log(t("lyrics_duplicate_warn"))
             QMessageBox.warning(self, t("text_structure_title"),
                                 t("lyrics_duplicate_warn"))
@@ -1481,6 +1536,7 @@ class MainWindow(QMainWindow):
         if chosen:
             self._copy_into_input(chosen, song_text.LYRICS_FILENAME,
                                   "lyrics", t("lyrics_note"))
+            pipeline.forget_own_text(self._context)
             # New lyrics -> everything derived from them lapses (B113/B311).
             pipeline.invalidate(self._context, ["input:lyrics"])
             pipeline.remember_sources(self._context)
@@ -1524,24 +1580,22 @@ class MainWindow(QMainWindow):
         self._log(t("diagnostics_log").format(
             state=t("on") if checked else t("off")))
 
-    def _toggle_vocal_analyse(self, checked: bool) -> None:
-        """Turn the vocal stem energy analysis on or off (B194/B209)."""
+    def _change_profile(self) -> None:
+        """B606: the stand for new projects."""
+        name = str(self._profile_combo.currentData())
         config = self._context.config
-        self._update_config(replace(
-            config, advanced=replace(
-                config.advanced, vocal_analysis=checked)))
-        self._log(t("vocal_analyse_log").format(
-            state=t("on") if checked else t("off")))
-
-    def _change_model(self) -> None:
-        """Choose the Whisper model (accurate/medium/fast)."""
-        code = self._model_combo.currentData()
-        config = self._context.config
-        if code == config.whisper.model:
+        if name == config.advanced.profile:
             return
-        self._update_config(replace(
-            config, whisper=replace(config.whisper, model=code)))
-        self._log(t("whisper_model_log").format(code=code))
+        self._update_config(replace(config, advanced=replace(
+            config.advanced, profile=name)))
+        self._show_profile_note()
+        self._log(t("profile_log").format(
+            name=self._profile_combo.currentText()))
+
+    def _show_profile_note(self) -> None:
+        """What the chosen stand does, in one line under the choice."""
+        name = str(self._profile_combo.currentData())
+        self._profile_note.setText(t(f"profile_{name}_note"))
 
     def _update_config(self, new_config: Any) -> None:
         """Store a changed configuration and update the context."""
@@ -1838,50 +1892,46 @@ class MainWindow(QMainWindow):
         language_layout.addStretch()
         outer.addWidget(language_group)
 
-        model_group = QGroupBox(t("model_label"))
-        model_layout = QHBoxLayout(model_group)
-        self._model_combo = QComboBox()
-        for label, code in ((t("model_accurate"), "large-v3"),
-                            (t("model_medium"), "distil-large-v3"),
-                            (t("model_fast"), "small")):
-            self._model_combo.addItem(label, code)
-        midx = self._model_combo.findData(config.whisper.model)
-        self._model_combo.setCurrentIndex(midx if midx >= 0 else 0)
-        self._model_combo.currentIndexChanged.connect(self._change_model)
-        model_layout.addWidget(self._model_combo)
-        model_layout.addStretch()
-        outer.addWidget(model_group)
-
-        adv = QGroupBox(t("advanced_group"))
-        adv_layout = QVBoxLayout(adv)
-        self._advanced_boxes: dict[str, QCheckBox] = {}
-        for key in ("demucs", "forced_alignment"):
-            row = QHBoxLayout()
-            box = QCheckBox(t(f"model_{key}_desc"))
-            box.setChecked(getattr(config.advanced, key))
-            box.toggled.connect(
-                lambda checked, k=key: self._toggle_advanced(k, checked))
-            self._advanced_boxes[key] = box
-            row.addWidget(box)
-            info = QLabel(t(f"model_{key}_info")
-                          + ("" if models.is_available(key)
-                             else t("model_not_installed_suffix")))
-            info.setStyleSheet("color: #666;")
-            row.addWidget(info, stretch=1)
-            adv_layout.addLayout(row)
-        outer.addWidget(adv)
+        # B606: one choice - how much time a new project may cost -
+        # instead of a Whisper model, a way of separating and a row of
+        # switches for the listening paths.
+        from . import profiles, separation as separation_module
+        profile_group = QGroupBox(t("profile_group"))
+        profile_layout = QVBoxLayout(profile_group)
+        profile_row = QHBoxLayout()
+        self._profile_combo = QComboBox()
+        for name in profiles.NAMES:
+            self._profile_combo.addItem(t(f"profile_{name}"), name)
+        pidx = self._profile_combo.findData(config.advanced.profile)
+        self._profile_combo.setCurrentIndex(pidx if pidx >= 0 else 0)
+        self._profile_combo.currentIndexChanged.connect(self._change_profile)
+        profile_row.addWidget(self._profile_combo)
+        profile_row.addStretch()
+        profile_layout.addLayout(profile_row)
+        self._profile_note = QLabel()
+        self._profile_note.setWordWrap(True)
+        self._profile_note.setStyleSheet("color: #666;")
+        profile_layout.addWidget(self._profile_note)
+        missing = [t(f"model_{key}_desc") for key in ("demucs",
+                                                      "forced_alignment")
+                   if not models.is_available(key)]
+        roformer = separation_module.roformer_python() is not None
+        installed = QLabel(
+            t("profile_installed").format(
+                roformer=t("on") if roformer else t("off"))
+            + ("" if not missing else "  " + t("profile_missing").format(
+                names=", ".join(missing))))
+        installed.setWordWrap(True)
+        installed.setStyleSheet("color: #666;")
+        profile_layout.addWidget(installed)
+        outer.addWidget(profile_group)
+        self._show_profile_note()
 
         self._parallel_box = QCheckBox(t("parallel_detect"))
         self._parallel_box.setToolTip(t("parallel_detect_tip"))
         self._parallel_box.setChecked(config.advanced.parallel_detection)
         self._parallel_box.toggled.connect(self._toggle_parallel)
         outer.addWidget(self._parallel_box)
-
-        self._vocal_box = QCheckBox(t("vocal_analyse_option"))
-        self._vocal_box.setToolTip(t("vocal_analyse_tip"))
-        self._vocal_box.setChecked(config.advanced.vocal_analysis)
-        self._vocal_box.toggled.connect(self._toggle_vocal_analyse)
-        outer.addWidget(self._vocal_box)
 
         self._diagnostics_box = QCheckBox(t("diagnostics_option"))
         self._diagnostics_box.setToolTip(t("diagnostics_tip"))
@@ -2149,42 +2199,6 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.setStyleSheet("\n".join(parts))
 
-    def _toggle_advanced(self, key: str, checked: bool) -> None:
-        from dataclasses import replace as _replace
-        config = self._context.config
-        new_adv = _replace(config.advanced, **{key: checked})
-        self._update_config(_replace(config, advanced=new_adv))
-        self._log(t("model_toggle_log").format(
-            model=t(f"model_{key}_desc"),
-            state=t("on") if checked else t("off")))
-        if checked:
-            self._warmup_model(key)
-
-    def _warmup_model(self, key: str) -> None:
-        """Download/load the model directly after ticking (seconds counter)."""
-        if not models.is_available(key):
-            QMessageBox.information(
-                self, t("package_missing_title"),
-                t("package_missing_body").format(
-                    model=t(f"model_{key}_desc")))
-            return
-        context = self._context
-
-        def task(progress: Any, message: Any) -> str:
-            message(t("model_downloading").format(
-                model=t(f"model_{key}_desc")))
-            from . import separation, word_alignment
-            if key == "demucs":
-                separation.warmup()
-            elif key == "forced_alignment":
-                held = pipeline._language_for(context,
-                                              pipeline.TRACK_ORIGINAL)
-                word_alignment.warmup(held)
-            return key
-
-        self._run(task, lambda k: self._log(
-            t("model_ready_log").format(model=t(f"model_{k}_desc"))))
-
     def _build_steps_group(self) -> QGroupBox:
         group = QGroupBox(t("steps_group"))
         layout = QHBoxLayout(group)
@@ -2217,40 +2231,93 @@ class MainWindow(QMainWindow):
         context = self._context
         from PySide6.QtWidgets import QDialog
 
-        from . import test_panel
         from .test_panel import TestPanel
 
-        panel = TestPanel(self)
+        panel = TestPanel(self, context)
         if panel.exec() != QDialog.DialogCode.Accepted:
             return
         actions = panel.chosen()
         if not actions:
             return
+        self._start_tests(actions, panel.scope(), panel.remeasure(),
+                          panel.heavy_choice(), panel.stop_helpers())
+
+    def _resume_tests(self) -> None:
+        """v1.0.28 (B673): the tests a closed or fallen program was
+        running go on at once - the queue keeps every answer that came
+        in, so only what is missing is done."""
+        from . import test_panel
+
+        if self._worker is not None and self._worker.isRunning():
+            return
+        found = test_panel.interrupted(self._context.paths.logs_dir)
+        if found is None:
+            return
+        actions = [a for a in test_panel.visible_actions()
+                   if a.code in found["codes"]]
+        self._log(t("tests_resumed").format(
+            codes=", ".join(a.code for a in actions), at=found.get("at", "")))
+        self._start_tests(actions, str(found.get("scope") or "all"),
+                          bool(found.get("remeasure")),
+                          list(found.get("heavy") or ()),
+                          bool(found.get("stop_helpers")))
+
+    def _finish_tests(self) -> None:
+        """v1.0.28 (B665): stop after the rounds being worked on - here
+        and on the helpers - and end the tests with what they have."""
+        from . import work_queue
+
+        work_queue.request_finish()
+        self._finish_button.setEnabled(False)
+        self._status.setText(t("finish_asked"))
+        self._log(t("finish_asked"))
+
+    def _start_tests(self, actions, scope: str, remeasure: bool,
+                     heavy, stop_helpers: bool = False) -> None:
+        context = self._context
+        from . import test_panel, work_queue
+
+        work_queue.clear_finish()
         # B359: the radio buttons at the bottom of the panel did
         # nothing. The choice applies to this run and is set afresh every
         # time, so a previous choice never lingers.
-        test_panel.limit_to_current(panel.only_this_project())
+        # v1.0.22 (B630): the test set, all projects, or this one.
+        test_panel.limit_to(scope)
         # B362: "measure again" ignores the kept results of this
         # version. This too is set afresh every run.
-        test_panel.REMEASURE = panel.remeasure()
+        test_panel.REMEASURE = remeasure
         # B453: which letters of 1.5.11 to run. Set afresh per run, like
         # the two above, so a previous choice never lingers.
-        test_panel.limit_heavy_to(panel.heavy_choice())
+        test_panel.limit_heavy_to(list(heavy))
+        # v1.0.28 (B673): written down, so a next start goes on with it.
+        logs_dir = context.paths.logs_dir
+        test_panel.remember_running(logs_dir,
+                                    [action.code for action in actions],
+                                    scope, remeasure, list(heavy),
+                                    stop_helpers)
         # B524: every action also writes its lines to a file (the log
         # window keeps them, but that text cannot leave the machine).
         test_panel.start_trial_report(
             [action.code for action in actions],
-            t("report_scope_current") if panel.only_this_project()
-            else t("report_scope_all"),
+            t(f"report_scope_{scope}"),
             __version__)
+        if scope == "set":
+            from . import test_set
+
+            test_panel.note_in_report(test_set.describe(context))
         cancel = threading.Event()
         self._show_test_bars([actions[0].code, actions[0].code])
+        self._finish_button.setEnabled(True)
 
         def task(progress: Any, message: Any) -> list[tuple[str, str]]:
             results: list[tuple[str, str]] = []
             for action in actions:
-                if cancel.is_set():
+                if cancel.is_set() or work_queue.finishing():
                     break
+                # v1.0.22: a job (filling the cache, the videos) is for
+                # every project; only the measurements take the test set.
+                test_panel.limit_to("all" if scope == "set"
+                                    and not action.on_the_set else scope)
                 message(t("test_running").format(code=action.code,
                                                  name=t(action.name_key)))
 
@@ -2318,9 +2385,22 @@ class MainWindow(QMainWindow):
                 test_panel.remember_duration(action.code, seconds)
                 self._test_result.emit(action.code, text)
                 results.append((action.code, text))
+            # B673: the run ended - all done, stopped, or stopped after
+            # the current rounds: nothing to go on with at the next start.
+            test_panel.forget_running(logs_dir)
+            if stop_helpers and not cancel.is_set():
+                # B666: everything is in; the helpers may stop.
+                try:
+                    work_queue.queue_for(context).ensure() \
+                        .ask_helpers_to_stop()
+                    logger.info(t("log_helpers_asked_to_stop"))
+                except OSError:
+                    pass
+            work_queue.clear_finish()
             return results
 
         def on_done(results: list[tuple[str, str]]) -> None:
+            self._finish_button.setEnabled(False)
             # B369: the results are already there; only the closer here.
             self._status.setText(t("test_done").format(
                 code=", ".join(code for code, _ in results)))
@@ -2488,8 +2568,15 @@ class MainWindow(QMainWindow):
         self._stop_button = QPushButton(t("stop"))
         self._stop_button.setEnabled(False)
         self._stop_button.clicked.connect(self._stop_current)
+        # v1.0.28 (B665): the tests stop after the rounds being worked on,
+        # here and on the helpers.
+        self._finish_button = QPushButton(t("stop_after_current"))
+        self._finish_button.setToolTip(t("stop_after_current_hint"))
+        self._finish_button.setEnabled(False)
+        self._finish_button.clicked.connect(self._finish_tests)
         self._status = QLabel(t("ready"))
         bottom.addWidget(self._stop_button)
+        bottom.addWidget(self._finish_button)
         bottom.addWidget(self._status, stretch=2)
         outer.addLayout(bottom)
         return container
@@ -2685,8 +2772,21 @@ class MainWindow(QMainWindow):
             duration = data.shape[0] / sample_rate
             peaks = waveform.compute_peaks(data,
                                            max(1000, int(duration * 100)))
+            # B590: playback makes the blocks audible itself, so it
+            # plays the bare karaoke, and the original for the restore
+            # blocks on its own clock through the alignment.
+            original_wav = None
+            regions = ()
+            try:
+                original_wav = pipeline.stored_wav(
+                    context, pipeline.TRACK_ORIGINAL)
+                regions = pipeline.alignment_regions(context)
+            except Exception:  # noqa: BLE001 - the preview does less
+                logger.debug(t("log_restore_preview_limited"))
             return {"peaks": peaks, "duration": duration,
-                    "audio": audio_path,
+                    "audio": pipeline.stored_wav(context,
+                                                 pipeline.TRACK_KARAOKE),
+                    "original": original_wav, "regions": regions,
                     "intervals": pipeline.current_damping_intervals(context),
                     "restore_intervals": [
                         (iv.start, iv.end, iv.label)
@@ -2713,10 +2813,18 @@ class MainWindow(QMainWindow):
                 return {"peaks": peaks, "duration": duration,
                         "audio": result.output_wav}
 
+            from . import align as align_module
+
+            regions = payload["regions"]
             dialog = DampingEditorDialog(
                 payload["peaks"], payload["duration"], payload["intervals"],
                 payload["audio"], apply_and_reload,
-                restore_intervals=payload["restore_intervals"], parent=self)
+                restore_intervals=payload["restore_intervals"],
+                original_path=payload["original"],
+                to_original=lambda moment: align_module.project_time_reverse(
+                    moment, regions),
+                damped_volume=10 ** (context.config.karaoke.gain_db / 20.0),
+                parent=self)
             dialog.exec()
 
         self._run(task, on_done)
@@ -2908,8 +3016,18 @@ class MainWindow(QMainWindow):
         self._refresh_inputs()
 
     def _make_karaoke_from_original(self) -> None:
-        """Make (on request) an instrumental from the original (Demucs)."""
-        if not models.is_available("demucs"):
+        """Make (on request) an instrumental from the original (Demucs,
+        or the project's own way of separating, B591)."""
+        # Only whether the backend is there: the full check of the
+        # Roformer environment imports torch and may take a minute, so it
+        # runs inside the task, not on the window.
+        from . import separation as separation_module
+
+        way = pipeline.separation_way(self._context)
+        present = (separation_module.roformer_python() is not None
+                   if way.backend == "roformer"
+                   else separation_module.is_available())
+        if not present:
             QMessageBox.information(self, t("app_title"), t("demucs_missing"))
             return
         context = self._context
@@ -2923,6 +3041,92 @@ class MainWindow(QMainWindow):
             self._refresh_inputs()
 
         self._run(task, on_done)
+
+    def _make_full_karaoke(self) -> None:
+        """"Make full karaoke" (v1.0.19): the first half (music, words,
+        a text of them), the one pause to check the text, the second
+        half (listen once more with it, timing, video). Closing the
+        check leaves the text in place; the next click opens it again."""
+        from . import separation as separation_module
+
+        self._commit_pending_field()
+        context = self._context
+        folder = context.paths.input_dir
+        if filesystem.find_audio_file(
+                folder, pipeline.TRACK_ORIGINAL) is None:
+            QMessageBox.information(self, t("app_title"),
+                                    t("full_karaoke_needs_original"))
+            return
+        if pipeline.own_text(context) and pipeline.full_karaoke_heard(
+                context):
+            self._review_full_karaoke()
+            return
+        if filesystem.find_audio_file(
+                folder, pipeline.TRACK_KARAOKE) is None:
+            way = pipeline.separation_way(context)
+            present = (separation_module.roformer_python() is not None
+                       if way.backend == "roformer"
+                       else separation_module.is_available())
+            if not present:
+                QMessageBox.information(self, t("app_title"),
+                                        t("demucs_missing"))
+                return
+        if pipeline.has_texts(context) and not pipeline.own_text(context):
+            answer = QMessageBox.question(
+                self, t("app_title"), t("full_karaoke_overwrite"),
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        cancel = threading.Event()
+
+        def task(progress: Any, message: Any) -> Path:
+            message(t("full_karaoke_start"))
+            return pipeline.normal_karaoke_start(
+                context, progress=progress, cancelled=cancel.is_set)
+
+        def on_done(_path: Path) -> None:
+            self._refresh_inputs()
+            self._review_full_karaoke()
+
+        self._run(task, on_done, cancel_event=cancel)
+
+    def _review_full_karaoke(self) -> None:
+        """The pause: the text to check; saved, the second half runs."""
+        from PySide6.QtWidgets import QDialog
+
+        from . import karaoke_text
+        from .text_review import TextReviewDialog
+
+        context = self._context
+        path = context.paths.input_dir / karaoke_text.FILENAME
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        dialog = TextReviewDialog(
+            text, context.store.get_meta("own_text_times") or [],
+            filesystem.find_audio_file(context.paths.input_dir,
+                                                pipeline.TRACK_ORIGINAL),
+            parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self._log(t("full_karaoke_paused"))
+            return
+        pipeline.save_own_text(context, dialog.text())
+        self._refresh_inputs()
+        cancel = threading.Event()
+
+        def task(progress: Any, message: Any) -> Path:
+            return pipeline.normal_karaoke_finish(
+                context, progress=progress, cancelled=cancel.is_set,
+                message=message)
+
+        def on_done(target: Path) -> None:
+            self._refresh_video_button()
+            self._show_timing_lines()
+            self._log(t("full_karaoke_done").format(target=target))
+
+        self._run(task, on_done, cancel_event=cancel)
 
     # -- Steps -------------------------------------------------------------
 
@@ -3055,7 +3259,7 @@ class MainWindow(QMainWindow):
             message(t("detect_preparing"))
             pipeline.prepare_track(context, pipeline.TRACK_ORIGINAL)
             pipeline.prepare_track(context, pipeline.TRACK_KARAOKE)
-            if not whisper.model_cached(context.config.whisper):
+            if not whisper.model_cached(pipeline.effective_config(context).whisper):
                 message(t("detect_downloading"))
             message(t("detect_transcribing_parallel") if parallel
                     else t("detect_transcribing"))
@@ -3238,25 +3442,25 @@ class MainWindow(QMainWindow):
     def _choose_heard_again(self, areas: list) -> None:
         """Show what was heard again and keep what the user takes."""
         context = self._context
-        has_earlier = bool(pipeline.heard_again(context))
+        earlier = pipeline.heard_again(context)
         # Places where nothing at all was found offer nothing to take
         # over: then it is the same as finding no places. Otherwise they
         # stay in the window, greyed out, so the user sees them.
         if not any(area.get("candidates") for area in areas):
             areas = []
-        if not areas and not has_earlier:
+        if not areas and not earlier:
             QMessageBox.information(self, t("listen_again_title"),
                                     t("listen_again_nothing"))
             return
         from .coupling_editor import ListenAgainDialog
 
-        dialog = ListenAgainDialog(areas, has_earlier=has_earlier,
-                                   parent=self)
+        dialog = ListenAgainDialog(areas, earlier=earlier, parent=self)
         if not dialog.exec():
             return
         if dialog.clear_requested:
-            pipeline.clear_heard_again(context)
-            self._log(t("listen_again_cleared"))
+            count = pipeline.clear_heard_again(context,
+                                               dialog.clear_requested)
+            self._log(t("listen_again_cleared").format(count=count))
             return
         count = pipeline.accept_heard_again(context, dialog.chosen())
         if count:
@@ -3574,11 +3778,21 @@ class MainWindow(QMainWindow):
         if total_s > 0:
             # There is a real percentage; then the seconds counter can go.
             self._show_elapsed = False
+            import time as _time
+
+            from . import step_times
+            from .test_panel import duration_text
             percent = int(min(100.0, done_s / total_s * 100))
             self._progress.setRange(0, 100)
             self._progress.setValue(percent)
             text_value = t("progress_pct").format(
                 pct=percent, done=done_s, total=total_s)
+            # v1.0.20: how long it will still take, from the bar itself.
+            left = step_times.left_from_progress(
+                done_s, total_s, _time.monotonic() - self._phase_start)
+            if left is not None:
+                text_value = t("progress_left").format(
+                    progress=text_value, left=duration_text(left))
             self._status.setText(text_value)
             # B278: Video tab mirrors the same progress.
             self._video_progress.setRange(0, 100)
@@ -3621,9 +3835,18 @@ class MainWindow(QMainWindow):
         # B368: own state, not the maximum of a bar that the test panel
         # now writes to as well.
         if self._show_elapsed:
+            from . import step_times
+            from .test_panel import duration_text
             elapsed = int(_time.monotonic() - self._phase_start)
-            self._status.setText(t("phase_elapsed").format(
-                phase=self._phase_text, elapsed=elapsed))
+            text_value = t("phase_elapsed").format(
+                phase=self._phase_text, elapsed=elapsed)
+            # v1.0.20: a step without a bar (a separation): how long it
+            # took the times before.
+            left = step_times.current_left()
+            if left is not None:
+                text_value = t("progress_left").format(
+                    progress=text_value, left=duration_text(left))
+            self._status.setText(text_value)
 
     def _on_failed(self, text: str) -> None:
         self._set_busy(False)

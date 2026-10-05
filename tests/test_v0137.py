@@ -107,7 +107,7 @@ def test_the_same_alarm_is_reported_once() -> None:
 def test_every_action_starts_with_a_clean_slate() -> None:
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
     assert "reset_alarms()" in source
 
 
@@ -120,7 +120,7 @@ def test_the_run_time_is_weighed_against_the_compute_time() -> None:
     comparable; the trial should say so itself."""
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
     assert "process_time()" in source
     assert "log_test_busy_machine" in source
 
@@ -132,7 +132,8 @@ def test_the_run_time_is_weighed_against_the_compute_time() -> None:
 def test_the_countings_hang_under_the_syllable_checks() -> None:
     """The panel has a ceiling of ten actions on purpose."""
     assert len([a for a in test_panel.ACTIONS
-                if not a.heavy]) <= test_panel.MAX_ACTIONS == 10
+                if not a.heavy and not a.on_request]) \
+        <= test_panel.MAX_ACTIONS == 10
     source = inspect.getsource(test_panel.syllable_checks)
     assert "inventory_lines(context, cancelled)" in source
 

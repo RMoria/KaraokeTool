@@ -31,6 +31,17 @@ if sys.stdout is None or sys.stderr is None:
         sys.stderr = _devnull
 
 from modules import __version__
+
+# v1.0.28: numba (librosa's onset search) keeps compiled code. Next to
+# librosa in the venv that cache went bad on the laptop: every process
+# that searched onsets died with an access violation (logs/crash.log,
+# 5 October). A folder of the program's own in TEMP (the cache folder
+# is emptied at every start), fresh per version - the processes of a
+# pool inherit it.
+import tempfile  # noqa: E402
+
+os.environ.setdefault("NUMBA_CACHE_DIR", str(
+    Path(tempfile.gettempdir()) / "KaraokeTool_numba" / __version__))
 from modules import config as config_module
 from modules import ffmpeg
 from modules.filesystem import (ProjectPaths, ProjectStore, clean_cache,
@@ -39,6 +50,33 @@ from modules import translations
 from modules.logger import setup_logging
 from modules.pipeline import AppContext
 from modules.translations import t
+
+
+#: v1.0.26 (B674): kept open for the whole run - faulthandler writes into it
+#: when the process dies natively, where logging can no longer.
+_CRASH_FILE = None
+
+
+def _install_crash_log(logs_dir: Path) -> None:
+    """A native crash (a DLL, memory running out) ended the program twice
+    without a line in the log: the Python stacks then go to
+    ``logs/crash.log``."""
+    global _CRASH_FILE
+    import faulthandler
+    import time
+
+    try:
+        Path(logs_dir).mkdir(parents=True, exist_ok=True)
+        _CRASH_FILE = open(Path(logs_dir) / "crash.log", "a",
+                           encoding="utf-8")
+        _CRASH_FILE.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                          f"v{__version__} pid {os.getpid()}\n")
+        _CRASH_FILE.flush()
+        faulthandler.enable(file=_CRASH_FILE, all_threads=True)
+        # v1.0.27: the processes of a pool write there too.
+        os.environ["KT_CRASH_LOG"] = str(Path(logs_dir) / "crash.log")
+    except (OSError, RuntimeError, ValueError):
+        pass
 
 
 def _install_excepthook() -> None:
@@ -72,6 +110,14 @@ def main() -> int:
     root = _fs.resolve_data_root(app_root)
     paths = ProjectPaths(root=root)
     ensure_directories(paths)
+    # v1.0.20: what the launcher's card test found - the card only for
+    # what really worked on it (see modules/cuda.py).
+    from modules import cuda as _cuda
+    _cuda.use_card_file(paths.config_dir / "cuda.json")
+    # v1.0.20: how long the long steps took before, to say how long
+    # they still take.
+    from modules import step_times as _step_times
+    _step_times.use_file(paths.config_dir / "step_times.json")
     # v1.0.11: the language BEFORE the first log line. The settings are
     # loaded properly further down, but by then the start of the log has
     # been written, and it would always have been Dutch. Only the one
@@ -80,6 +126,7 @@ def main() -> int:
     translations.set_language(
         config_module.read_interface_language(paths.config_file) or "nl")
     setup_logging(paths.logs_dir)
+    _install_crash_log(paths.logs_dir)
     logger = logging.getLogger(__name__)
     _install_excepthook()
     logger.info(t("log_app_started"), __version__)
@@ -155,6 +202,12 @@ def main() -> int:
     filesystem.warn_about_stray_store(paths)
     store = ProjectStore(paths.project_file, writable=False)
     context = AppContext(config=app_config, paths=paths, store=store)
+    # v1.0.20: helpers may take a separation when they are sooner done.
+    from modules import shared_work, work_queue
+    shared_work.use_queue(work_queue.queue_for(context).root)
+    shared_work.tidy_at_start()
+    # And the helpers of v1.0.18 in the old work folder hear of it.
+    work_queue.announce(work_queue.queue_for(context), __version__)
 
     try:
         from modules.gui import run_gui

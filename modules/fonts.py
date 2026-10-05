@@ -1,7 +1,7 @@
 """Reading the available fonts from ``assets/fonts`` (B102).
 
 The .ttf/.otf files are shipped along (or fetched once by
-``install.bat``). The settings tab reads this folder when it is opened,
+``KaraokeToolGUI.bat``). The settings tab reads this folder when it is opened,
 so that new fonts appear in the choice menu by themselves without a
 code change.
 """

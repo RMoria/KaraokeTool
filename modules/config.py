@@ -209,6 +209,16 @@ class AdvancedSettings:
     """
 
     demucs: bool = True            # split vocals for residual vocals/karaoke
+    #: B606: how much time a NEW project may cost - "high" (high
+    #: performance, the default), "normal" or "quick" (see
+    #: ``modules/profiles.py``). It sets the Whisper model, the way of
+    #: separating (B591) and the listening paths; a project keeps the
+    #: stand it was first made with.
+    profile: str = "high"
+    #: B606: the known lyrics laid on singing Whisper did not hear
+    #: (v1.0.12). Part of the stand; kept here for the projects made
+    #: before it.
+    gap_text: bool = True
     forced_alignment: bool = True  # more precise word times (wav2vec2)
     parallel_detection: bool = True  # original+karaoke at once (B90)
     #: Loudness of the karaoke track in the video, in LUFS (B456). Every
@@ -460,6 +470,8 @@ def save_config(config: AppConfig, path: Path) -> None:
         _OUTLINE_RESET: True,
         "advanced": {
             "demucs": config.advanced.demucs,
+            "profile": config.advanced.profile,
+            "gap_text": config.advanced.gap_text,
             "forced_alignment": config.advanced.forced_alignment,
             "parallel_detection": config.advanced.parallel_detection,
             "diagnostics": config.advanced.diagnostics,

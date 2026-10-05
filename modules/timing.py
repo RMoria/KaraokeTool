@@ -93,6 +93,13 @@ class TimedLine:
     #: a line on in the editor - which is the only way to see where it
     #: really lies - put it straight into the render.
     bg: bool = False
+    #: True = its time comes from lyrics laid on the voice (step 1.1) or
+    #: taken over in "Listen again", not from words Whisper heard
+    #: (B581). Such a line is still placed like any other, but it is no
+    #: measure for the usual length of lines: a squeezed one would pull
+    #: its copies along. Not stored in the timing file - it is known
+    #: again every time the coupling is made.
+    made: bool = False
 
     @property
     def start(self) -> float:
@@ -428,8 +435,8 @@ def timedline_from_text(index: int, text: str, start: float, end: float,
 
 
 #: View modes for the timing editor (B127): whole blocks, individual
-#: sentences or separate words.
-VIEW_MODES = ("blocks", "sentences", "words")
+#: sentences, separate words or, since v1.0.13, separate syllables.
+VIEW_MODES = ("blocks", "sentences", "words", "syllables")
 
 
 def apply_inline_crowd(lines: Sequence[TimedLine],
@@ -943,6 +950,83 @@ def piece_groups(syllables: Sequence[Any]) -> list[list[int]]:
     return groups
 
 
+def syllable_groups(syllables: Sequence[Any]) -> list[list[int]]:
+    """Indexes of the stored pieces per SYLLABLE (v1.0.13).
+
+    The stored pieces are finer than syllables (see
+    :func:`piece_groups`): "Jalalajalala" is twelve pieces, one letter
+    each, and six syllables. Per word the text is split with
+    :func:`split_syllables`, and every piece goes to the syllable its
+    first letter falls in - by counting letters, so a word the splitter
+    and the pieces cut differently still ends up whole and in order.
+    """
+    def field(syl: Any, item_name: str) -> Any:
+        return syl[item_name] if isinstance(syl, dict) else getattr(syl, item_name)
+
+    groups: list[list[int]] = []
+    for word in piece_groups(syllables):
+        texts = [str(field(syllables[i], "text")).lstrip() for i in word]
+        parts = split_syllables("".join(texts)) or ["".join(texts)]
+        ends = []
+        total = 0
+        for part in parts:
+            total += len(part)
+            ends.append(total)
+        own: list[list[int]] = [[] for _part in parts]
+        offset = 0
+        for index, text_value in zip(word, texts):
+            slot = next((k for k, end in enumerate(ends) if offset < end),
+                        len(parts) - 1)
+            own[slot].append(index)
+            offset += len(text_value)
+        groups += [group for group in own if group]
+    return groups
+
+
+def word_of_piece(syllables: Sequence[Any], piece: int) -> int:
+    """Which word (position in :func:`piece_groups`) a stored piece is
+    in (B587)."""
+    for word, group in enumerate(piece_groups(syllables)):
+        if piece in group:
+            return word
+    return -1
+
+
+def word_span_of(syllables: Sequence[Any], word: int
+                 ) -> tuple[float, float] | None:
+    """Start and end of one word of a line, by its position (B587);
+    ``None`` when the line has no such word (any more)."""
+    def field(syl: Any, item_name: str) -> Any:
+        return syl[item_name] if isinstance(syl, dict) else getattr(syl, item_name)
+
+    groups = piece_groups(syllables)
+    if not (0 <= word < len(groups)):
+        return None
+    group = groups[word]
+    return (float(field(syllables[group[0]], "start")),
+            float(field(syllables[group[-1]], "end")))
+
+
+def underline_spans(cells: Sequence[dict]) -> list[tuple[float, float]]:
+    """B585: one line under every group of neighbouring cells that share
+    a ``group`` - under a sentence in the word view, under a word in the
+    syllable view, in both lanes. Cells without a group get none."""
+    spans: dict[tuple, list[float]] = {}
+    order: list[tuple] = []
+    for cell in cells:
+        key = cell.get("group")
+        if key is None:
+            continue
+        key = tuple(key)
+        if key not in spans:
+            spans[key] = [float(cell["start"]), float(cell["end"])]
+            order.append(key)
+        else:
+            spans[key][0] = min(spans[key][0], float(cell["start"]))
+            spans[key][1] = max(spans[key][1], float(cell["end"]))
+    return [(spans[key][0], spans[key][1]) for key in order]
+
+
 def _sung_of(line) -> list:
     """The syllables that make up the sentence itself (B507).
 
@@ -1001,19 +1085,36 @@ def editor_view_cells(lines: Sequence[dict],
     ``text``, ``start``, ``end`` and ``crowd`` (B127). An inline ``[bg]``
     piece gets a cell of its own in every view (B507).
     """
-    if mode == "words":
+    if mode in ("words", "syllables"):
+        # v1.0.13: ``pieces`` says which stored pieces of the line the
+        # cell is, so the editor can move and stretch a word or a
+        # syllable on its own.
         cells: list[dict] = []
         for pos, line in enumerate(lines):
-            groups = piece_groups(line["syllables"])
-            spans = word_spans(line["syllables"])
-            for (text_value, start, end), group in zip(spans, groups):
-                background = all(
-                    line["syllables"][i].get("bg") for i in group)
-                cells.append({"text": text_value, "start": start, "end": end,
-                               "crowd": bool(line["crowd"]),
-                               "rows": [] if background else [pos],
-                               "off": bool(line.get("disabled")),
-                               "bg": background})
+            pieces = line["syllables"]
+            groups = (piece_groups(pieces) if mode == "words"
+                      else syllable_groups(pieces))
+            for group in groups:
+                background = all(pieces[i].get("bg") for i in group)
+                word = word_of_piece(pieces, group[0])
+                cells.append({
+                    "text": "".join(str(pieces[i]["text"])
+                                    for i in group).strip(),
+                    "start": float(pieces[group[0]]["start"]),
+                    "end": float(pieces[group[-1]]["end"]),
+                    # B586: a word of an inline crowd piece is crowd too,
+                    # red like the whole line would be.
+                    "crowd": bool(line["crowd"]) or all(
+                        pieces[i].get("crowd") for i in group),
+                    "rows": [] if background else [pos],
+                    "pieces": list(group),
+                    # B587: the word this cell is (in both views).
+                    "word": word,
+                    # B585: the cells under one line - the sentence in
+                    # the word view, the word in the syllable view.
+                    "group": (pos,) if mode == "words" else (pos, word),
+                    "off": bool(line.get("disabled")),
+                    "bg": background})
         return cells
     if mode == "blocks":
         cells = []
@@ -1062,7 +1163,8 @@ def original_view_cells(originals: Sequence[dict], mode: str,
     """Cells for the original-text lane in the chosen view (B161).
 
     ``originals`` = ``[{"text","start","end","rows","crowd"}]``. In word
-    mode every sentence is split evenly into words; in block mode
+    mode (and in syllable mode, which this lane does not split further)
+    every sentence is split evenly into words; in block mode
     consecutive sentences with the same block (via ``line_blok`` on the
     first coupled karaoke line) are merged. Purely for display. ``crowd``
     marks a cell that is really karaoke-only text (a stand-alone crowd
@@ -1071,19 +1173,32 @@ def original_view_cells(originals: Sequence[dict], mode: str,
     original text (B257).
     """
     line_block = line_block or {}
-    if mode == "words":
+    if mode in ("words", "syllables"):
         cells: list[dict] = []
-        for o in originals:
+        for oi, o in enumerate(originals):
             words = str(o["text"]).split()
             n = max(1, len(words))
             width = (o["end"] - o["start"]) / n
             rows = list(o.get("rows") or [])
             crowd = bool(o.get("crowd"))
             for k, w in enumerate(words):
-                cells.append({"text": w,
-                               "start": o["start"] + k * width,
-                               "end": o["start"] + (k + 1) * width,
-                               "rows": rows, "crowd": crowd})
+                begin = o["start"] + k * width
+                if mode == "words":
+                    cells.append({"text": w, "start": begin,
+                                  "end": begin + width, "rows": rows,
+                                  "crowd": crowd, "group": (oi,)})
+                    continue
+                # B585: the syllable view splits the original words too,
+                # evenly, so the line under a word says something here
+                # as well.
+                parts = split_syllables(w) or [w]
+                step = width / len(parts)
+                for p, part in enumerate(parts):
+                    cells.append({"text": part,
+                                  "start": begin + p * step,
+                                  "end": begin + (p + 1) * step,
+                                  "rows": rows, "crowd": crowd,
+                                  "group": (oi, k)})
         return cells
     if mode == "blocks":
         cells = []
@@ -2246,6 +2361,93 @@ _PAUSE_GAP_S = 0.4
 #: In terms of tempo (s per syllable) a sentence may deviate from the
 #: baseline by at most this factor (B106).
 _RATE_FACTOR = 3.0
+#: B595: two anchors are crammed when the lines between them get less
+#: than this share of the room their minimum durations ask for. Half,
+#: so a fast song that really sings under the floor is left alone.
+_CRAM_SHARE = 0.5
+
+
+def _floor_of(line: TimedLine, baseline: float) -> float:
+    """How short ``sanitize_timing`` lets this line become."""
+    n_syl = max(1, len(line.syllables))
+    low = max(_MIN_ANY_S, baseline * n_syl / _RATE_FACTOR)
+    if n_syl >= 3:
+        low = max(low, _MIN_PHRASE_S)
+    # Do not squash short crowd shouts ('Oeh!', 'Ah!') to a sliver:
+    # give them a visible, singable-along minimum duration (B139).
+    if line.crowd:
+        low = max(low, _MIN_CROWD_S)
+    return low
+
+
+def unstack_anchors(kept: dict[int, float], floors: Sequence[float],
+                    weights: dict[int, float],
+                    fixed: frozenset[int] | set[int] = frozenset()
+                    ) -> dict[int, float]:
+    """Anchors that cram the lines between them lose their anchor (B595).
+
+    The 1.5.13 night found the largest error of all its songs here: an
+    anchor on the wrong spot, a handful of lines between it and its
+    neighbour, and no room for them. The placement then pushed them at
+    their minimum duration one after the other - steps of exactly 1.00
+    and 0.35 s - up to thirteen seconds away from where they are sung,
+    and more than half of all the error of the night sat in such runs.
+    A squeezed run is the least reliable thing there is; no anchor
+    that causes one can be right together with its neighbour.
+
+    So, as a last resort: while two neighbouring anchors give the lines
+    between them less than :data:`_CRAM_SHARE` of their ``floors``, one
+    of the two stops being an anchor. Which one: the one whose leaving
+    clears the most clashes; then the one whose leaving gives the lines
+    around it the most room (a right anchor next to a stacked run leaves
+    them squeezed when it goes, the stacked one frees them); then the
+    lighter one. ``fixed`` anchors (the vocal onset) always
+    stay, and so does the first anchor: without one before them the lines
+    would fall back to the start of the song (found in review). The
+    lines of a dropped anchor are spread between the anchors that
+    remain, like every other line without one.
+    """
+    kept = dict(kept)
+    if kept:
+        fixed = set(fixed) | {min(kept)}
+    count = len(floors)
+    prefix = [0.0]
+    for value in floors:
+        prefix.append(prefix[-1] + float(value))
+
+    def crammed(a: int, b: int) -> bool:
+        need = prefix[min(b, count)] - prefix[min(a, count)]
+        return kept[b] - kept[a] < _CRAM_SHARE * need - 1e-9
+
+    def clashes(order: Sequence[int]) -> list[tuple[int, int]]:
+        return [(a, b) for a, b in zip(order, order[1:]) if crammed(a, b)]
+
+    for _round in range(len(kept)):
+        order = sorted(kept)
+        found = clashes(order)
+        if not found:
+            break
+        involved = sorted({i for pair in found for i in pair} - set(fixed))
+        if not involved:
+            break
+
+        def room_after(index: int) -> float:
+            """Room per floor second between the anchors either side,
+            once ``index`` is gone: the one that leaves the lines the
+            most room is the one that stood in their way."""
+            place = order.index(index)
+            if place == 0 or place == len(order) - 1:
+                return 0.0
+            a, b = order[place - 1], order[place + 1]
+            need = prefix[min(b, count)] - prefix[min(a, count)]
+            return (kept[b] - kept[a]) / need if need > 0 else 0.0
+
+        def cost(index: int) -> tuple:
+            left = len(clashes([j for j in order if j != index]))
+            return (left, -room_after(index), weights.get(index, 0.0))
+
+        del kept[min(involved, key=cost)]
+    return kept
 
 
 def _median(values: list[float]) -> float:
@@ -2351,6 +2553,15 @@ def _reliable(line: TimedLine) -> bool:
     return line.quality in ("high", "syllable") and line.end > line.start
 
 
+def _measure_of_length(line: TimedLine) -> bool:
+    """May this line's length count for how long lines usually are?
+
+    A reliable line, and not one whose time was laid on rather than
+    heard (B581).
+    """
+    return _reliable(line) and not getattr(line, "made", False)
+
+
 def phrase_period(lines: Sequence[TimedLine]) -> float | None:
     """The phrase period of the song in seconds, or ``None`` (B332).
 
@@ -2370,7 +2581,7 @@ def phrase_period(lines: Sequence[TimedLine]) -> float | None:
     """
     intervals = [b.start - a.start
                  for a, b in zip(lines, lines[1:])
-                 if _reliable(a) and _reliable(b)]
+                 if _measure_of_length(a) and _measure_of_length(b)]
     usable = [d for d in intervals if _PERIOD_MIN_S < d < _PERIOD_MAX_S]
     if len(usable) < _PERIOD_MIN_INTERVALS:
         return None
@@ -2399,7 +2610,7 @@ def reference_durations(lines: Sequence[TimedLine]
     """
     per_text: dict[str, list[float]] = {}
     for line in lines:
-        if _reliable(line):
+        if _measure_of_length(line):                            # B581
             per_text.setdefault(_norm_text(line.text), []).append(
                 line.end - line.start)
     result: dict[str, tuple[float, float]] = {}
@@ -2730,6 +2941,11 @@ def sanitize_timing(lines: Sequence[TimedLine],
             block=(lines[i].block if block_barrier else 0))
         for i, (t, w) in candidates.items()]
     kept = timing_rules.arbitrate_anchors(cands)
+    # B595: anchors that leave their lines no room, as a last resort.
+    kept = unstack_anchors(
+        kept, [_floor_of(line, baseline) for line in lines],
+        {i: w for i, (_t, w) in candidates.items()},
+        frozenset({0}) if first_start is not None else frozenset())
     anchor_idx = sorted(kept)
 
     # --- Start points: between two anchors one phrase each (B332). -----
@@ -2830,13 +3046,7 @@ def sanitize_timing(lines: Sequence[TimedLine],
                 start = starts[k]
         next_start = starts[k + 1] if k + 1 < n else None
         n_syl = nsyl(line)
-        lo = max(_MIN_ANY_S, baseline * n_syl / _RATE_FACTOR)
-        if n_syl >= 3:
-            lo = max(lo, _MIN_PHRASE_S)
-        # Do not squash short crowd shouts ('Oeh!', 'Ah!') to a sliver:
-        # give them a visible, singable-along minimum duration (B139).
-        if line.crowd:
-            lo = max(lo, _MIN_CROWD_S)
+        lo = _floor_of(line, baseline)
         hi_dur = max(_MIN_PHRASE_S + 0.2, baseline * n_syl * _RATE_FACTOR)
         if period is not None:
             # A sentence never lasts much longer than its phrase (B332).

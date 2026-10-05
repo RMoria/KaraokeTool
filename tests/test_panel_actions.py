@@ -19,10 +19,14 @@ from modules import test_panel
 
 
 def test_the_panel_shows_what_is_still_worth_clicking() -> None:
-    """Three lines: fill the cache, check the projects, make the videos
-    again. Everything else is switched off, not deleted."""
+    """Five lines: fill the cache, check the projects, make the videos
+    again, (v1.0.14) which separation and (v1.0.15) the block models.
+    Every song from the start (1.5.13) did its work in two nights and
+    is off since v1.0.15. Everything else is switched off, not
+    deleted."""
     assert [a.code for a in test_panel.visible_actions()] == [
-        "1.5.1", "1.5.2", "1.5.12"]
+        "1.5.1", "1.5.2", "1.5.12", "1.5.14", "1.5.16", "1.5.17",
+        "1.5.18"]
 
 
 def test_a_retired_action_keeps_its_code_and_its_function() -> None:
@@ -32,7 +36,8 @@ def test_a_retired_action_keeps_its_code_and_its_function() -> None:
     """
     retired = {a.code: a for a in test_panel.ACTIONS if a.done}
     assert set(retired) == {"1.5.3", "1.5.4", "1.5.5", "1.5.6", "1.5.7",
-                            "1.5.9", "1.5.10", "1.5.11"}
+                            "1.5.9", "1.5.10", "1.5.11", "1.5.13",
+                            "1.5.15", "1.5.19", "1.5.20"}
     for action in retired.values():
         assert callable(action.function), action.code
         assert action.name_key and action.explanation_key, action.code

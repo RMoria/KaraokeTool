@@ -156,5 +156,5 @@ def test_the_runner_lets_the_workers_go_when_an_action_is_done() -> None:
 
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
     assert "close_pool()" in source

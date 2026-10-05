@@ -117,8 +117,136 @@ class KaraokeResult:
 
 
 def _demucs_enabled(context: AppContext) -> bool:
-    """Demucs wanted (option on) and available?"""
-    return context.config.advanced.demucs and separation.is_available()
+    """Separation wanted (option on) and available?"""
+    if not context.config.advanced.demucs:
+        return False
+    way = separation_way(context)
+    if _way_available(way):
+        return True
+    if not way.is_standard:
+        # A project remembered on a way whose environment is gone: say
+        # so, instead of transcribing the full mix without a word.
+        logger.warning(t("log_separation_backend_missing"),
+                       separation_method(context))
+    return False
+
+
+def _way_available(way: separation.Way) -> bool:
+    """Is the backend of ``way`` installed? Demucs through
+    ``separation.is_available()`` as ever, Roformer through its own
+    environment (B591)."""
+    if way.backend == "roformer":
+        return separation.roformer_problem() is None
+    if way.backend == "blend":
+        # v1.0.22: a blend needs every part (B631).
+        return separation.is_available(way)
+    return separation.is_available()
+
+
+def separation_method(context: AppContext) -> str:
+    """How this project separates voice from music (B591).
+
+    Chosen once per project, from the setting, and remembered in the
+    project: a project that was already worked on before v1.0.14 stays
+    on the standard way whatever the setting says - the owner's own
+    words, "not touching existing projects now" - and so does a project
+    whose stems are already there. A setting whose backend is not
+    installed falls back to the standard way without being remembered;
+    the standard stems that then get made pin the project to it, so
+    installing the backend later only counts for projects not yet
+    separated.
+    """
+    stored = context.store.get_meta("separation")
+    if stored in separation.METHODS:
+        return str(stored)
+    # B606: the way comes from the project's stand.
+    method = "standard" if _worked_on(context) else str(
+        project_settings(context).get("separation", "standard"))
+    if method not in separation.METHODS:
+        method = "standard"
+    # v1.0.28: down the fallbacks (clean music -> Demucs blend ->
+    # standard) to the first that is installed here. The standard way is
+    # not remembered, as before (its stems pin the project); another
+    # fallback is, so the project keeps the way its stems were made with.
+    while method != "standard" and not _way_available(
+            separation.way_for(method)):
+        method = separation.FALLBACK.get(method, "standard")
+        if method == "standard":
+            return "standard"
+    context.store.set_meta("separation", method)
+    return method
+
+
+def _worked_on(context: AppContext) -> bool:
+    """Was this project worked on already? Steps a project only has once
+    it went through step 1 - not the source step, which a new project
+    already has when it is first separated - or stems in its cache."""
+    return any(context.store.get_step(name) is not None
+               for name in ("whisper_original", "whisper_karaoke",
+                            "align", "karaoke", "word_coupling")) or any(
+        context.paths.cache_dir.glob("demucs_stems_*"))
+
+
+def project_settings(context: AppContext) -> dict:
+    """The stand this project is made with (B606), remembered in it.
+
+    Until a project is worked on it follows the stand of the settings
+    tab - choosing another stand after making a project but before its
+    first step still counts. From its first step on it keeps what it was
+    made with: the stand is written down before any step uses it, so a
+    later change of the settings changes nothing for it. A project worked
+    on before v1.0.15 keeps the settings of the moment it is first opened
+    in this version - the owner's rule: a new stand only counts for new
+    projects.
+    """
+    from . import profiles
+
+    stored = context.store.get_meta(profiles.META)
+    if not _worked_on(context):
+        chosen = profiles.settings_for(str(context.config.advanced.profile))
+        if stored != chosen:
+            context.store.set_meta(profiles.META, chosen)
+        return chosen
+    if profiles.valid(stored):
+        return dict(stored)
+    chosen = profiles.legacy_from(context.config)
+    context.store.set_meta(profiles.META, chosen)
+    return chosen
+
+
+def effective_config(context: AppContext) -> AppConfig:
+    """The settings as they hold for THIS project (B606): the settings
+    of the program with the project's stand laid over them."""
+    if not hasattr(getattr(context, "store", None), "get_meta"):
+        return context.config            # a bare stand-in, as it is
+    chosen = project_settings(context)
+    config = context.config
+    return replace(
+        config,
+        whisper=replace(config.whisper, model=str(chosen["whisper_model"])),
+        advanced=replace(
+            config.advanced,
+            chunked_transcription=bool(chosen["chunked_transcription"]),
+            gap_text=bool(chosen["gap_text"]),
+            forced_alignment=bool(chosen["forced_alignment"]),
+            vocal_analysis=bool(chosen["vocal_analysis"])))
+
+
+def separation_way(context: AppContext) -> separation.Way:
+    """The :class:`separation.Way` of this project (B591)."""
+    return separation.way_for(separation_method(context))
+
+
+def _separate(context: AppContext, wav_path: Path, key: str
+              ) -> dict[str, Path]:
+    """Separate a source of this project the project's way (B591)."""
+    way = separation_way(context)
+    if way.is_standard:
+        # The call it always was.
+        return separation.separate_cached(wav_path, context.paths.cache_dir,
+                                          key)
+    return separation.separate_cached(wav_path, context.paths.cache_dir,
+                                      key, way=way)
 
 
 def delete_project(context: AppContext) -> None:
@@ -278,15 +406,14 @@ def ensure_original_vocals(context: AppContext) -> Path | None:
     if context.store.quiet:
         logger.debug(t("log_vocals_not_made_for_a_report"))
         return None
-    if not separation.is_available():
+    if not _way_available(separation_way(context)):
         return None
     if filesystem.find_audio_file(context.paths.input_dir,
                                   TRACK_ORIGINAL) is None:
         return None
     try:
         original_wav = prepare_track(context, TRACK_ORIGINAL)
-        stems = separation.separate_cached(
-            original_wav, context.paths.cache_dir, "original")
+        stems = _separate(context, original_wav, "original")
     except (separation.SeparationError, PipelineError):
         logger.exception(t("log_vocals_failed"))
         return None
@@ -314,15 +441,14 @@ def make_karaoke_from_original(context: AppContext) -> Path:
         PipelineError: If Demucs is missing/fails or the original is
             absent.
     """
-    if not separation.is_available():
+    if not _way_available(separation_way(context)):
         raise PipelineError(t("err_demucs_unavailable"))
     if filesystem.find_audio_file(context.paths.input_dir,
                                   TRACK_ORIGINAL) is None:
         raise PipelineError(t("err_no_original_instrumental"))
     original_wav = prepare_track(context, TRACK_ORIGINAL)
     try:
-        stems = separation.separate_cached(
-            original_wav, context.paths.cache_dir, "original")
+        stems = _separate(context, original_wav, "original")
     except separation.SeparationError as exc:
         raise PipelineError(
             t("err_instrumental_failed").format(error=exc)) from exc
@@ -332,6 +458,14 @@ def make_karaoke_from_original(context: AppContext) -> Path:
             missing_ok=True)
     target = context.paths.input_dir / f"{TRACK_KARAOKE}.wav"
     shutil.copyfile(stems["instrumental"], target)
+    # v1.0.28 (B668): where the music falls away while the original plays
+    # on - the dips the owner heard in a song - said in the log, kept in
+    # the project.
+    dips = music_dips(stems["instrumental"], original_wav)
+    context.store.set_meta("music_dips", dips)
+    if dips:
+        logger.warning(t("log_music_dips"), ", ".join(
+            f"{_clock(low)}-{_clock(high)}" for low, high in dips))
     # Both stems as a shareable mp3 in the output folder (B94/B212):
     # instrumental as karaoke_demucs.mp3, vocals as vocal_demucs.mp3.
     export_demucs_stems(context, stems)
@@ -350,6 +484,29 @@ def make_karaoke_from_original(context: AppContext) -> Path:
     context.store.clear_step(f"source_{TRACK_KARAOKE}")
     logger.info(t("log_instrumental_made"), target)
     return target
+
+
+def _clock(seconds: float) -> str:
+    seconds = max(0, int(round(float(seconds))))
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def music_dips(music: Path, original: Path) -> list[tuple[float, float]]:
+    """v1.0.28 (B668): the dips of a music track against its original
+    (see :func:`separation_trial.dip_spans`); empty when either cannot be
+    read."""
+    try:
+        import soundfile
+
+        from . import separation_trial
+
+        left, left_rate = soundfile.read(str(music), dtype="float32",
+                                         always_2d=True)
+        right, right_rate = soundfile.read(str(original), dtype="float32",
+                                           always_2d=True)
+    except Exception:  # noqa: BLE001 - a measure, never a stop
+        return []
+    return separation_trial.dip_spans(left, left_rate, right, right_rate)
 
 
 def export_demucs_karaoke(context: AppContext, instrumental_wav: Path) -> Path:
@@ -546,8 +703,7 @@ def _generate_karaoke_from_original(context: AppContext) -> Path | None:
         return None
     original_wav = prepare_track(context, TRACK_ORIGINAL)
     try:
-        stems = separation.separate_cached(
-            original_wav, context.paths.cache_dir, "original")
+        stems = _separate(context, original_wav, "original")
     except separation.SeparationError:
         logger.exception(t("log_karaoke_from_original_failed"))
         return None
@@ -1946,15 +2102,14 @@ def detect_track(context: AppContext, track: str,
         whisper.save_segments((), cache_file)
         context.store.set_step(f"whisper_{track}", {
             "wav_sha1": filesystem.file_sha1(wav_path),
-            "model": context.config.whisper.model,
+            "model": effective_config(context).whisper.model,
             "language": "n.v.t.", "cache": str(cache_file),
             "segments": 0, "words": 0, "empty": True})
         return DetectResult(track, (), False)
     if track == TRACK_KARAOKE and _demucs_enabled(context):
         try:
             logger.info(t("log_demucs_started_residual"))
-            stems = separation.separate_cached(
-                wav_path, context.paths.cache_dir, "karaoke")
+            stems = _separate(context, wav_path, "karaoke")
             wav_path = stems["vocals"]  # transcribe only the (residual) vocals
             logger.info(t("log_residual_on_stem"))
             rms = _audio_rms(wav_path)
@@ -1965,7 +2120,7 @@ def detect_track(context: AppContext, track: str,
                 whisper.save_segments((), cache_file)
                 context.store.set_step(f"whisper_{track}", {
                     "wav_sha1": filesystem.file_sha1(wav_path),
-                    "model": context.config.whisper.model,
+                    "model": effective_config(context).whisper.model,
                     "language": "n.v.t.", "cache": str(cache_file),
                     "segments": 0, "words": 0, "empty": True})
                 return DetectResult(track, (), False)
@@ -1987,8 +2142,7 @@ def detect_track(context: AppContext, track: str,
     if track == TRACK_ORIGINAL and _demucs_enabled(context):
         try:
             logger.info(t("log_demucs_started_original"))
-            stems = separation.separate_cached(
-                wav_path, context.paths.cache_dir, "original")
+            stems = _separate(context, wav_path, "original")
             # This split is the useful one: instrumental = karaoke,
             # vocals = the original vocals. Both as mp3 in output (B212),
             # also without "Karaoke uit origineel" having been used.
@@ -2002,7 +2156,7 @@ def detect_track(context: AppContext, track: str,
                                 onset)
         except separation.SeparationError:
             logger.exception(t("log_separation_failed_original"))
-    settings = context.config.whisper
+    settings = effective_config(context).whisper
     # Determine the actually used language (lyrics detection -> Whisper)
     # already here, so that the cache key and the administration contain
     # the real language (not the config default 'auto'); this way another
@@ -2030,13 +2184,13 @@ def detect_track(context: AppContext, track: str,
     # transcription made WITH it is a different result from one without.
     # Turning the option off used to change nothing at all, because the
     # cache kept hitting on the four keys that were checked.
-    refine_times = bool(context.config.advanced.forced_alignment)
+    refine_times = bool(effective_config(context).advanced.forced_alignment)
     # B442: chunking belongs in the cache key for exactly the reason
     # forced alignment does (B311) - a transcription made WITH it is a
     # different result, and without this the cache would keep handing
     # back the one-run answer after the option was switched on.
     in_pieces = (track == TRACK_ORIGINAL
-                 and bool(context.config.advanced.chunked_transcription))
+                 and bool(effective_config(context).advanced.chunked_transcription))
     # B538: and so does the second language, for the same reason. Add a
     # Korean verse to the text and the cached transcription is the
     # answer to a different question - without this key the app would
@@ -2092,7 +2246,7 @@ def detect_track(context: AppContext, track: str,
                                       cancelled=cancelled,
                                       initial_prompt=prompt)
     aligning = (track == TRACK_ORIGINAL
-                and context.config.advanced.forced_alignment
+                and effective_config(context).advanced.forced_alignment
                 and word_alignment.is_available())
     known_language = bool(language_code) and language_code != "auto"
     if aligning:
@@ -2108,7 +2262,8 @@ def detect_track(context: AppContext, track: str,
     # fingerprint over it would call an unchanged transcription new and
     # cost the coupling that B549 exists to keep.
     fingerprint = transcript_fingerprint(segments)
-    if aligning and known_language and anew:
+    if aligning and known_language and anew \
+            and effective_config(context).advanced.gap_text:      # B606
         # v1.0.12: the lyrics for the singing that is still unheard, in
         # a separate call AFTER the normal one - so what Whisper heard is
         # aligned exactly as it always was.
@@ -2337,9 +2492,30 @@ def _transcribe_in_pieces(context: AppContext, wav_path: Path, settings,
         if progress is not None and total > 0 and count:
             progress(min(total, total * ready / count), total)
 
-    found = wc.run_over_lanes(wav_path, settings, jobs, prompt,
-                              language_code, cancelled=cancelled,
-                              on_done=per_job)
+    # B583: a hint per piece - the lines the whole run placed there -
+    # instead of the whole text for every piece. Off by default: B424
+    # measured the whole text as the better hint, on long pieces.
+    placed = (_placed_for_prompts(context, wav_path, settings, prompt,
+                                  language_code, cancelled)
+              if cut else None)
+    if placed is not None:
+        whole, lines = placed
+
+        def hint(job) -> str:
+            if job[1] is None:
+                return prompt
+            return wc.chunk_prompt(lines, wc.Chunk(job[0], job[1])) or prompt
+
+        found = wc.run_over_lanes(wav_path, settings,
+                                  [job for job in jobs
+                                   if tuple(job) != wc.WHOLE_SONG],
+                                  hint, language_code, cancelled=cancelled,
+                                  on_done=per_job)
+        found[wc.WHOLE_SONG] = whole
+    else:
+        found = wc.run_over_lanes(wav_path, settings, jobs, prompt,
+                                  language_code, cancelled=cancelled,
+                                  on_done=per_job)
     base = found.get((0.0, None), ())
     base_words = wc.words_of(base)
     added = wc.words_to_add(base_words, wc.extra_words_from(found),
@@ -2370,6 +2546,37 @@ def _transcribe_in_pieces(context: AppContext, wav_path: Path, settings,
         "second_language": second,          # B538
     }, output_dir)
     return merged, len(added), second
+
+
+def _placed_for_prompts(context: AppContext, wav_path, settings,
+                        prompt: str, language_code: str, cancelled=None):
+    """B583: the whole run first, and where it placed each lyric line.
+
+    Returns ``(segments, [(start, line text)])``; the list is empty when
+    nothing could be placed, and then every piece gets the whole text.
+    The model register switches this off by default (it is replaced by a
+    function that returns ``None``), so production keeps its single
+    queue.
+    """
+    whole = whisper.transcribe_slice(wav_path, settings, start=0.0,
+                                     end=None, initial_prompt=prompt,
+                                     language_override=language_code,
+                                     cancelled=cancelled)
+    lyrics_path = context.paths.input_dir / song_text.LYRICS_FILENAME
+    if not lyrics_path.exists():
+        # Heard already: handed back, so it is not heard twice. Without
+        # placed lines every piece simply gets the whole text.
+        return tuple(whole), []
+    lyrics = _effective_lyrics(context, lyrics_path)
+    aligned = song_text.align_lyrics(lyrics, tuple(whole))
+    first: dict[int, float] = {}
+    for word in aligned:
+        if word.start is not None and not word.lyric.bg:
+            first.setdefault(int(word.lyric.line), float(word.start))
+    texts = _lyric_line_texts(lyrics)
+    lines = sorted((start, texts.get(line, ""))
+                   for line, start in first.items())
+    return tuple(whole), lines
 
 
 # B293: here stood ``detect_words`` and the type alias
@@ -2499,8 +2706,7 @@ def fill_transcription_cache(context: AppContext, progress=None,
     wav_path = prepare_track(context, TRACK_ORIGINAL)
     if _demucs_enabled(context):
         try:
-            stems = separation.separate_cached(
-                wav_path, context.paths.cache_dir, "original")
+            stems = _separate(context, wav_path, "original")
             wav_path = stems["vocals"]
         except separation.SeparationError:
             logger.exception(t("log_separation_failed_original"))
@@ -2512,10 +2718,10 @@ def fill_transcription_cache(context: AppContext, progress=None,
     prompt = step.get("initial_prompt", "")
     with tempfile.TemporaryDirectory() as scratch:
         segments = whisper.transcribe(
-            wav_path, context.config.whisper, Path(scratch),
+            wav_path, effective_config(context).whisper, Path(scratch),
             progress=progress, language_override=language_code,
             cancelled=cancelled, initial_prompt=prompt)
-    if (context.config.advanced.forced_alignment
+    if (effective_config(context).advanced.forced_alignment
             and word_alignment.is_available()):
         segments = word_alignment.refine(wav_path, segments, language_code)
     whisper.save_segments(segments, cache_file)
@@ -2975,7 +3181,7 @@ def sync_input_changes(context: AppContext) -> tuple[str, ...]:
         if known and known != current:
             changed.append(source)
 
-    signature = _config_signature(context.config)
+    signature = _config_signature(effective_config(context))
     kept = (context.store.get_step("config_signature") or {}).get("groups")
     if isinstance(kept, dict):
         changed.extend(group for group, value in signature.items()
@@ -3224,7 +3430,7 @@ def remember_sources(context: AppContext) -> None:
         context.store.set_step(step_name, {
             "path": str(path), "sha1": filesystem.file_sha1(path)})
     context.store.set_step("config_signature",
-                           {"groups": _config_signature(context.config)})
+                           {"groups": _config_signature(effective_config(context))})
 
 
 def cleanup_after_cancel(context: AppContext) -> None:
@@ -3633,18 +3839,38 @@ def _with_gap_text(context: AppContext, segments, wav_path,
         clean, aligned = _clean_segments_and_alignment(
             context, lyrics, tuple(segments))
         heard = [(w.start, w.end) for seg in clean for w in seg.words]
-        gaps = again.gap_segments(again.unheard_stretches(windows, heard),
-                                  aligned)
+        found = again.gap_texts(again.unheard_stretches(windows, heard),
+                                aligned)
+        gaps = [gap for gap, _lines in found]
         timed = _align_known_text(
             wav_path, [(gap.start, gap.end, gap.text.split())
                        for gap in gaps], language)
+        # v1.0.13 (B578/B579): what the aligner squeezed together, or
+        # timed unlike the same line where Whisper heard it, is not laid
+        # on. A line of the lyrics is its own measure here.
+        templates, pace = again.line_templates(
+            again.heard_lines_of_alignment(aligned))
+        line_texts = _lyric_line_texts(lyrics)
     except Exception:  # noqa: BLE001 - an addition may never cost the run
         logger.exception(t("log_gap_text_failed"))
         return tuple(segments)
     extra = []
     filled = []
-    for gap, words in zip(gaps, timed):
+    for (gap, lines), words in zip(found, timed):
         if words:
+            owners = again.lines_of(words, gap.text.split(), lines)
+            bad = sorted(set(again.squeezed(words, owners))
+                         | set(again.unlike_elsewhere(
+                             words, owners, line_texts, templates, pace)))
+            if bad:
+                # Only the lines that fail go; the rest of the stretch
+                # is still laid on.
+                logger.info(t("log_gap_text_dropped"), gap.start, gap.end,
+                            ", ".join(str(line + 1) for line in bad))
+                words = [w for w, owner in zip(words, owners)
+                         if owner not in bad]
+                if not words:
+                    continue
             filled.append((float(gap.start), float(gap.end)))
             items = tuple(Word(text=str(a), start=float(b), end=float(c),
                                confidence=float(d)) for a, b, c, d in words)
@@ -3676,15 +3902,47 @@ def _with_gap_text(context: AppContext, segments, wav_path,
     return _interleaved(kept + extra)
 
 
-def heard_again(context: AppContext) -> list[dict]:
-    """What the user accepted in "Listen again", per area."""
+def _lyric_line_texts(lyrics) -> dict[int, str]:
+    """The sung text of every lyric line, backing vocals left out."""
+    lines: dict[int, list[str]] = {}
+    for word in lyrics:
+        if not word.bg:
+            lines.setdefault(int(word.line), []).append(word.text)
+    return {line: " ".join(words) for line, words in lines.items()}
+
+
+def _stored_heard_again(context: AppContext) -> list[dict]:
+    """Every area accepted in "Listen again", in the order it came in."""
     step = context.store.get_step("heard_again") or {}
     return [dict(area) for area in step.get("areas", ())
             if isinstance(area, dict)]
 
 
+def heard_again(context: AppContext) -> list[dict]:
+    """What the user accepted in "Listen again", per area - as it counts.
+
+    v1.0.13: the areas are kept as a history and never changed. A later
+    area covers the words of earlier ones inside its own stretch; here
+    each area comes back with only the words no later one covers. Same
+    length and order as what is stored, so a position in this list is a
+    position to clear. Clearing an area is taking it out of the history,
+    and whatever it covered is simply there again - nothing to put back.
+    """
+    areas = _stored_heard_again(context)
+    out = []
+    for n, area in enumerate(areas):
+        later = areas[n + 1:]
+        words = [w for w in area.get("words", ())
+                 if not any(float(other["low"])
+                            <= (float(w[1]) + float(w[2])) / 2.0
+                            <= float(other["high"]) for other in later)]
+        out.append(dict(area, words=words))
+    return out
+
+
 def _origin_of(kind: str) -> str:
-    return (whisper.ORIGIN_ALIGNED if kind == "aligned"
+    """Laid on (the aligner, or the candidate on the singing) or heard."""
+    return (whisper.ORIGIN_ALIGNED if kind in ("aligned", "singing")
             else whisper.ORIGIN_HEARD_AGAIN)
 
 
@@ -3817,23 +4075,22 @@ def listen_again(context: AppContext, progress=None,
         raise PipelineError(t("err_listen_again_no_vocals"))
     lyrics = _effective_lyrics(
         context, context.paths.input_dir / song_text.LYRICS_FILENAME)
-    lines: dict[int, list[str]] = {}
-    for word in lyrics:
-        if not word.bg:
-            lines.setdefault(int(word.line), []).append(word.text)
+    line_texts = _lyric_line_texts(lyrics)
     windows = _original_vocal_windows(context)
     transcript = view["transcript"]
     song_end = max([high for _low, high in windows]
                    + [float(row[2]) for row in transcript] + [0.0])
-    areas = again.problem_areas(
-        view, {line: " ".join(words) for line, words in lines.items()},
-        song_end)
+    areas = again.problem_areas(view, line_texts, song_end)
+    # v1.0.13 (B579): how long each line lasts where it was really heard.
+    templates, pace = again.line_templates(again.heard_lines_of_view(
+        view, [start for start, _origin in view.get("origins", ())]))
     logger.info(t("log_listen_again_areas"), len(areas))
     language = _language_for(context, TRACK_ORIGINAL)
-    settings = replace(context.config.whisper, no_speech_threshold=None)
+    settings = replace(effective_config(context).whisper,
+                       no_speech_threshold=None)
     # The aligner only when the user has it on (the same setting as in
     # step 1.1), it is installed, and the language is known.
-    can_align = (context.config.advanced.forced_alignment
+    can_align = (effective_config(context).advanced.forced_alignment
                  and word_alignment.is_available()
                  and language not in ("", "auto"))
     # The words of the first listen, before anything was accepted: an
@@ -3859,7 +4116,8 @@ def listen_again(context: AppContext, progress=None,
         try:
             heard = whisper.transcribe_slice(
                 vocals, settings, max(0.0, area.low - again.MARGIN_S),
-                area.high + again.MARGIN_S, initial_prompt=area.prompt,
+                area.high + again.MARGIN_S,
+                initial_prompt=again.hint_for(area),
                 language_override=language, cancelled=cancelled)
             candidates.append(again.Candidate("whisper", again.inside(
                 [(w.text, w.start, w.end, w.confidence)
@@ -3876,8 +4134,31 @@ def listen_again(context: AppContext, progress=None,
                 area.low, area.high, area.claimed_spans)))
         onsets = (rhythm.energy_onsets(vocals, area.low, area.high)
                   if rhythm.is_available() else None)
-        judged = sorted((again.score(c, area.expected, onsets, windows)
-                         for c in candidates if c.words),
+        singing = again.on_singing(area, windows, onsets, line_texts,
+                                   templates)                   # B580
+        if singing is not None:
+            candidates.append(singing)
+        kept = []
+        for candidate in candidates:
+            if not candidate.words:
+                continue
+            # B578/B579: a candidate that squeezes a line, or times it
+            # unlike the same line elsewhere, is not offered at all.
+            owners = again.lines_of(candidate.words, area.expected,
+                                    area.expected_lines)
+            bad = sorted(set(again.squeezed(candidate.words, owners))
+                         | set(again.unlike_elsewhere(
+                             candidate.words, owners, line_texts,
+                             templates, pace)))
+            if bad:
+                logger.info(t("log_listen_again_dropped"), area.low,
+                            area.high,
+                            t(f"listen_again_kind_{candidate.kind}"),
+                            ", ".join(str(line + 1) for line in bad))
+                continue
+            kept.append(candidate)
+        judged = sorted((again.score(c, area.expected, onsets, windows,
+                                     area=area) for c in kept),
                         key=lambda c: -c.score)
         # The list the area was chosen on first, then the first listen:
         # both are named, so the word stays out whichever list stands.
@@ -3913,46 +4194,51 @@ def accept_heard_again(context: AppContext, chosen: list[dict]) -> int:
     """Keep what the user took over, and let the coupling follow.
 
     ``chosen`` holds per area its span, the found words it replaces and
-    the words of the chosen candidate. A new area takes over the words
-    of earlier ones that fall inside it - that is what doing it again
-    later means - and leaves the rest of them standing. Everything
-    built on the coupling lapses (the line coupling, the timing); the
-    word couplings themselves do not, because the pins are the user's
-    work and find their words back by what they point at (B506).
+    the words of the chosen candidate. It goes on top of the history: a
+    new area takes over the words of earlier ones that fall inside it -
+    that is what doing it again later means - and leaves the rest of
+    them standing (see :func:`heard_again`). Everything built on the
+    coupling lapses (the line coupling, the timing); the word couplings
+    themselves do not, because the pins are the user's work and find
+    their words back by what they point at (B506).
     """
     if not chosen:
         return 0
-    kept = []
-    for area in heard_again(context):
-        # A later answer takes over only what lies inside it: listening
-        # again at one weak word may not cost the rest of an earlier
-        # answer around it.
-        words = [w for w in area.get("words", ())
-                 if not any(float(new["low"]) <= (float(w[1]) + float(w[2]))
-                            / 2.0 <= float(new["high"]) for new in chosen)]
-        # Kept while it still replaces something, even with no words of
-        # its own left: what it took out has to stay out.
-        if words or area.get("replaced"):
-            kept.append(dict(area, words=words))
+    areas = _stored_heard_again(context)
     for new in chosen:
-        kept.append({"low": float(new["low"]), "high": float(new["high"]),
-                     "kind": str(new["kind"]),
-                     "words": [list(w) for w in new["words"]],
-                     "replaced": [list(r) for r in new.get("replaced", ())]})
-    kept.sort(key=lambda area: area["low"])
-    context.store.set_step("heard_again", {"areas": kept})
+        areas.append({"low": float(new["low"]), "high": float(new["high"]),
+                      "kind": str(new["kind"]),
+                      "words": [list(w) for w in new["words"]],
+                      "replaced": [list(r)
+                                   for r in new.get("replaced", ())]})
+    context.store.set_step("heard_again", {"areas": areas})
     invalidate(context, ["heard_again"])
     logger.info(t("log_heard_again_saved"), len(chosen))
     return len(chosen)
 
 
-def clear_heard_again(context: AppContext) -> None:
-    """Take every accepted area out again."""
-    if context.store.get_step("heard_again") is None:
-        return
-    context.store.clear_step("heard_again")
+def clear_heard_again(context: AppContext, which=None) -> int:
+    """Take accepted areas out again: those at the positions in ``which``
+    (as :func:`heard_again` lists them), or all of them. Returns how many
+    went. What an area replaced, and what it covered of earlier areas,
+    comes back with it."""
+    areas = _stored_heard_again(context)
+    if not areas:
+        return 0
+    chosen = (set(range(len(areas))) if which is None
+              else {int(n) for n in which if 0 <= int(n) < len(areas)})
+    if not chosen:
+        return 0
+    kept = [area for n, area in enumerate(areas) if n not in chosen]
+    if kept:
+        step = dict(context.store.get_step("heard_again") or {})
+        step["areas"] = kept
+        context.store.set_step("heard_again", step)
+    else:
+        context.store.clear_step("heard_again")
     invalidate(context, ["heard_again"])
-    logger.info(t("log_heard_again_cleared"))
+    logger.info(t("log_heard_again_cleared"), len(chosen))
+    return len(chosen)
 
 
 def _lyrics_for_boundaries(context: AppContext):
@@ -5212,7 +5498,7 @@ def _place_skipped_on_energy(context: AppContext, aligned: tuple) -> tuple:
     Without a vocal stem (analysis off, Demucs missing) the alignment
     comes back unchanged.
     """
-    if not context.config.advanced.vocal_analysis or not aligned:
+    if not effective_config(context).advanced.vocal_analysis or not aligned:
         return aligned
     from . import rhythm
     from . import timing as timing_module
@@ -5364,6 +5650,7 @@ def reset_damping(context: AppContext) -> None:
     edited = context.paths.cache_dir / "karaoke_edited.wav"
     resampled = context.paths.cache_dir / "original_for_restore.wav"
     for path in (edited, resampled,
+                 edited.with_name(edited.stem + "_export.wav"),
                  context.paths.output_dir / "karaoke_edit.mp3",
                  context.paths.output_dir / "karaoke_edit.wav"):
         try:
@@ -5418,9 +5705,25 @@ def apply_manual_damping(
         if readable:
             set_restore_lines(context, [number for number in marked
                                         if number in kept_lines])
+        # B587: the same for single words. A word hidden behind its
+        # marked sentence has no block to delete, so it is kept - as
+        # long as that sentence stays marked (it is checked after the
+        # sentences above, so a sentence deleted here lets its hidden
+        # words be judged on their own blocks, and they had none).
+        kept_words = {word_of_restore_label(label)
+                      for _s, _e, label in restore_spans}
+        kept_words.discard(None)
+        marked_words = restore_words(context)
+        derived_words = {
+            word_of_restore_label(item.label): (item.start, item.end)
+            for item in _restore_from_words(context, apply_moves=False)}
+        if derived_words or not marked_words:
+            set_restore_words(context, [
+                key for key in marked_words
+                if key in kept_words or key not in derived_words])
         set_restore_fragments(context, [
             (max(0.0, s), e, label) for s, e, label in restore_spans
-            if e > s and line_of_restore_label(label) is None])
+            if e > s and not _derived_restore(label)])
         # B499: a derived block that has been MOVED or stretched here was
         # thrown away and derived again at the next pass, so the move
         # simply did not survive. It is kept per line number now, so the
@@ -5440,6 +5743,17 @@ def apply_manual_damping(
                 moved[number] = [round(max(0.0, start), 3), round(end, 3)]
         if readable:
             set_moved_restores(context, moved)
+        moved_words: dict[tuple[int, int], list[float]] = {}
+        for start, end, label in restore_spans:
+            key = word_of_restore_label(label)
+            if key is None or end <= start:
+                continue
+            own = derived_words.get(key)
+            if own is None or abs(own[0] - start) > 0.02 \
+                    or abs(own[1] - end) > 0.02:
+                moved_words[key] = [round(max(0.0, start), 3), round(end, 3)]
+        if derived_words or not marked_words:
+            set_moved_word_restores(context, moved_words)
     restore = restore_fragments(context)
     karaoke_props = ffmpeg.probe(karaoke_wav)
     restore_prepared = _prepared_restore_intervals(
@@ -5618,6 +5932,165 @@ def line_of_restore_label(label: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+#: B587: the label prefix of a restore fragment that came from one word
+#: marked in the timing editor, ``woord <line>.<word>: <text>``.
+WORD_RESTORE_PREFIX = "woord "
+
+
+def word_of_restore_label(label: str) -> tuple[int, int] | None:
+    """(line number, word position) in a derived word label, or ``None``
+    (B587)."""
+    import re
+
+    match = re.match(re.escape(WORD_RESTORE_PREFIX) + r"(\d+)\.(\d+):",
+                     str(label))
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def _derived_restore(label: str) -> bool:
+    """Does this fragment come from a marking in the timing editor?"""
+    return line_of_restore_label(label) is not None \
+        or word_of_restore_label(label) is not None
+
+
+def restore_words(context: AppContext) -> tuple[tuple[int, int], ...]:
+    """Single words marked as "back from the original" (B587): line
+    number and the position of the word in its line, so the piece
+    follows the word when the timing changes."""
+    step = context.store.get_step("restore_words")
+    if step is None:
+        return ()
+    out = set()
+    for item in step.get("list", ()):
+        try:
+            out.add((int(item[0]), int(item[1])))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return tuple(sorted(out))
+
+
+def set_restore_words(context: AppContext,
+                      words: Sequence[Sequence[int]]) -> None:
+    """Keep which single words are fetched back (B587)."""
+    context.store.set_step("restore_words", {
+        "list": sorted({(int(item[0]), int(item[1])) for item in words})})
+
+
+def moved_word_restores(context: AppContext
+                        ) -> dict[tuple[int, int], tuple[float, float]]:
+    """Marked words whose piece was moved in 1.4 (B587, as B499)."""
+    step = context.store.get_step("restore_moved_words")
+    if step is None:
+        return {}
+    out: dict[tuple[int, int], tuple[float, float]] = {}
+    for key, span in (step.get("list") or {}).items():
+        try:
+            number, word = (int(part) for part in str(key).split("."))
+            start, end = float(span[0]), float(span[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if end > start:
+            out[(number, word)] = (start, end)
+    return out
+
+
+def set_moved_word_restores(
+        context: AppContext,
+        spans: dict[tuple[int, int], Sequence[float]]) -> None:
+    """Keep which word pieces were moved in 1.4 (B587)."""
+    context.store.set_step("restore_moved_words", {
+        "list": {f"{number}.{word}": [float(span[0]), float(span[1])]
+                 for (number, word), span in spans.items()}})
+
+
+def reset_moved_word_restore(context: AppContext, number: int,
+                             word: int) -> None:
+    """Put the piece of this word back on the word (B587)."""
+    spans = moved_word_restores(context)
+    if spans.pop((int(number), int(word)), None) is not None:
+        set_moved_word_restores(context, spans)
+
+
+def _restore_from_words(context: AppContext, apply_moves: bool = True
+                        ) -> tuple[karaoke.RestoreInterval, ...]:
+    """The marked single words as restore fragments, on today's timing
+    (B587) - the way :func:`_restore_from_lines` does it for sentences.
+    A word of a sentence that is marked whole gives nothing: the
+    sentence wins."""
+    from dataclasses import replace
+
+    from .timing import piece_groups, word_span_of
+
+    words = restore_words(context)
+    if not words:
+        return ()
+    try:
+        lines = {line.index: line for line in load_timing_reanchored(context)}
+    except (OSError, ValueError, KeyError, PipelineError):
+        return ()
+    whole = set(restore_lines(context))
+    moved = moved_word_restores(context) if apply_moves else {}
+    out: list[karaoke.RestoreInterval] = []
+    for number, word in words:
+        line = lines.get(number)
+        if line is None or number in whole:
+            continue
+        span = word_span_of(line.syllables, word)
+        if span is None or span[1] <= span[0]:
+            continue
+        group = piece_groups(line.syllables)[word]
+        text = "".join(line.syllables[i].text for i in group).strip()
+        item = karaoke.RestoreInterval(
+            label=f"{WORD_RESTORE_PREFIX}{number}.{word}: {text}"[:60],
+            start=float(span[0]), end=float(span[1]))
+        if (number, word) in moved:
+            item = replace(item, start=moved[(number, word)][0],
+                           end=moved[(number, word)][1])
+        out.append(item)
+    return tuple(out)
+
+
+def text_blocks(context: AppContext) -> list:
+    """The blocks of the karaoke text (B600); empty without one."""
+    from . import karaoke_text, song_structure
+
+    path = context.paths.input_dir / karaoke_text.FILENAME
+    if not path.exists():
+        return []
+    try:
+        return song_structure.blocks_of(karaoke_text.parse_lines(path))
+    except (OSError, ValueError):
+        return []
+
+
+def block_links(context: AppContext,
+                blocks: Sequence | None = None) -> list[list[int]]:
+    """Which blocks are linked (B600): the owner's choice from tab 1 while
+    the text is the text it was made on, otherwise the blocks with the
+    same text. ``blocks`` are the blocks of the text actually used, when
+    the caller has them (the coupling may run on the lyrics instead)."""
+    from . import song_structure
+
+    if blocks is None:
+        blocks = text_blocks(context)
+    stored = song_structure.stored_links(
+        context.store.get_step(song_structure.STEP), blocks)
+    return stored if stored is not None \
+        else song_structure.auto_links(blocks)
+
+
+def set_block_links(context: AppContext,
+                    groups: Sequence[Sequence[int]]) -> None:
+    """Keep the owner's links (B600)."""
+    from . import song_structure
+
+    blocks = text_blocks(context)
+    context.store.set_step(song_structure.STEP,
+                           song_structure.step_for(groups, blocks))
+    logger.info(t("log_block_links_saved"),
+                len(song_structure.clean_links(groups, blocks)))
+
+
 def restore_fragments(
         context: AppContext) -> tuple[karaoke.RestoreInterval, ...]:
     """The kept "back from original" fragments (empty if there are none).
@@ -5631,8 +6104,9 @@ def restore_fragments(
         karaoke.RestoreInterval(label=str(label), start=float(start),
                                 end=float(end))
         for start, end, label in step.get("list", ())
-        if line_of_restore_label(label) is None)
-    return tuple(sorted(drawn + _restore_from_lines(context),
+        if not _derived_restore(label))
+    return tuple(sorted(drawn + _restore_from_lines(context)
+                        + _restore_from_words(context),      # B587
                         key=lambda item: item.start))
 
 
@@ -5690,6 +6164,13 @@ def _prepared_restore_intervals(
     except PipelineError:
         pass  # No alignment (e.g. Demucs karaoke, offset 0) -> ok.
 
+    # B597: a karaoke made from the original by a separation that scaled
+    # its stems down (Demucs did by default, up to 1.5 dB on the owner's
+    # songs) is quieter than the pieces laid back from the original. The
+    # piece is brought to the level of the music around it, here in
+    # memory; no file of the project changes.
+    level = (stem_level(context)
+             if context.store.get_meta("karaoke_from_original") else 1.0)
     prepared: list[tuple[karaoke.RestoreInterval, np.ndarray, int]] = []
     for interval in intervals:
         orig_start = align.project_time_reverse(interval.start, regions)
@@ -5701,8 +6182,116 @@ def _prepared_restore_intervals(
         if i1 <= i0:
             logger.warning(t("log_restore_empty"), interval.label)
             continue
-        prepared.append((interval, data[i0:i1], sample_rate))
+        piece = data[i0:i1]
+        if abs(level - 1.0) > 1e-3:
+            piece = (piece * np.float32(level)).astype(piece.dtype)
+        prepared.append((interval, piece, sample_rate))
     return prepared
+
+
+#: B597: below this difference the stems count as on the original's
+#: level (a tenth of a dB).
+_LEVEL_SAME_DB = 0.1
+
+
+def stem_level(context: AppContext) -> float:
+    """By what the original has to be multiplied to match the level of
+    the karaoke this project uses, when that karaoke was made from the
+    original (B597): 1.0 for music made at the original's level, below
+    1.0 for music a separation scaled down.
+
+    Measured on the karaoke file actually in use - not on whatever stems
+    the cache holds now, which may have been made again since - as a
+    least-squares fit of the original on the vocal stem and that music
+    together: they add up to the original apart from one factor each,
+    because a separation scales every stem on its own. The music's
+    factor is the one that counts. Kept in the cache, never in the
+    project. Anything that cannot be read gives 1.0: better the step in
+    volume the program always had than a guess.
+    """
+    import json as _json
+
+    try:
+        music = filesystem.find_audio_file(context.paths.input_dir,
+                                           TRACK_KARAOKE)
+        folder = context.paths.cache_dir / separation_way(context).folder(
+            "original")
+        vocals = folder / "vocals.wav"
+        original = stored_wav(context, TRACK_ORIGINAL)
+        if music is None:
+            return 1.0
+        if not vocals.exists():
+            # The cache was emptied: the vocal stem is made again at the
+            # next step that needs it; until then no level match.
+            logger.warning(t("log_stem_level_unknown"))
+            return 1.0
+        key = "|".join(str(item.stat().st_size) + ":"
+                       + str(int(item.stat().st_mtime))
+                       for item in (original, vocals, music))
+        memo = context.paths.cache_dir / "karaoke_level.json"
+        try:
+            known = _json.loads(memo.read_text(encoding="utf-8"))
+            if known.get("key") == key:
+                return float(known["factor"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        factor = _measured_level(original, vocals, music)
+        try:
+            memo.write_text(_json.dumps({"key": key, "factor": factor}),
+                            encoding="utf-8")
+        except OSError:
+            pass
+        return factor
+    except Exception:  # noqa: BLE001 - never breaks step 1.4
+        logger.warning(t("log_stem_level_unknown"))
+        return 1.0
+
+
+def _mono_at(path: Path, rate: int):
+    """A file as mono float64 at ``rate`` (B597)."""
+    from math import gcd
+
+    import numpy as np
+    from . import audio as audio_module
+
+    data, own = audio_module.load_audio(path)
+    mono = data.astype(np.float64).mean(axis=1)
+    if own != rate:
+        from scipy.signal import resample_poly
+
+        g = gcd(int(own), int(rate))
+        mono = resample_poly(mono, int(rate) // g, int(own) // g)
+    return mono
+
+
+def _measured_level(original: Path, vocals: Path, music: Path) -> float:
+    """The factor that brings ``original`` onto the level of ``music``:
+    ``original ~ a * vocals + b * music``, and the music was scaled by
+    ``1 / b``."""
+    import math
+
+    import numpy as np
+    from . import audio as audio_module
+
+    _data, rate = audio_module.load_audio(music)
+    band = _mono_at(music, rate)
+    mix = _mono_at(original, rate)
+    voice = _mono_at(vocals, rate)
+    count = min(len(mix), len(voice), len(band))
+    step = max(1, count // 2_000_000)      # a couple of million samples
+    target = mix[:count:step]
+    basis = np.stack([voice[:count:step], band[:count:step]], axis=1)
+    if not np.any(basis[:, 1]):
+        return 1.0
+    (_a, b), *_rest = np.linalg.lstsq(basis, target, rcond=None)
+    if not math.isfinite(b) or b <= 0:
+        return 1.0
+    factor = 1.0 / float(b)
+    if abs(20 * math.log10(factor)) > 6.0 or \
+            abs(20 * math.log10(factor)) < _LEVEL_SAME_DB:
+        return 1.0
+    logger.info(t("log_stem_level"), 20 * math.log10(factor))
+    return round(factor, 4)
 
 
 def _overlaps(a_start: float, a_end: float,
@@ -5723,6 +6312,321 @@ def run_export(context: AppContext) -> Path:
     suffix = Path(source_step["path"]).suffix
     return export_module.export_result(Path(karaoke_step["wav"]), properties,
                                        suffix, context.paths.output_dir)
+
+
+def _heard_certainty(context: AppContext, project):
+    """Whisper's certainty for a word heard starting at a moment of the
+    karaoke timeline, 0 where nothing was heard (B603). Words laid on
+    rather than heard (step 1.1) count for nothing."""
+    import bisect
+
+    try:
+        segments = load_segments(context, TRACK_ORIGINAL)
+    except PipelineError:
+        return lambda moment: 0.0
+    heard = sorted((project(float(w.start)), float(w.confidence))
+                   for segment in segments
+                   if getattr(segment, "origin", "") != whisper.ORIGIN_ALIGNED
+                   for w in segment.words)
+    starts = [start for start, _c in heard]
+
+    def certainty(moment: float) -> float:
+        n = bisect.bisect_left(starts, moment)
+        best = 0.0
+        for k in (n - 1, n):
+            if 0 <= k < len(heard) and \
+                    abs(heard[k][0] - moment) <= _HEARD_NEAR_S:
+                best = max(best, heard[k][1])
+        return best
+
+    return certainty
+
+
+#: A word of the coupling starting this close to a heard word is that
+#: heard word (B603); the coupling rounds and projects.
+_HEARD_NEAR_S = 0.03
+
+
+def _block_model(context: AppContext, key: str, timed: tuple,
+                 work) -> tuple:
+    """Run one block model; a failure costs that model, never the
+    timing. Logs how many lines it changed."""
+    try:
+        changed = work()
+    except Exception:  # noqa: BLE001 - the timing may never fall over
+        logger.exception(t("log_block_model_failed"), t(f"model_name_{key}"))
+        return timed
+    count = sum(1 for old, new in zip(timed, changed) if old != new)
+    if count:
+        logger.info(t("log_block_model_applied"), t(f"model_name_{key}"),
+                    count)
+    return tuple(changed)
+
+
+def _place_blocks(context: AppContext, timed: tuple, project,
+                  blocks) -> tuple:
+    """B604: a block on the wrong spot moves as a whole, to where the
+    chords of its best-heard kin come back."""
+    from . import block_timing, rhythm, song_structure
+
+    groups = song_structure.shape_groups(blocks)
+    audio = (filesystem.find_audio_file(context.paths.input_dir,
+                                        TRACK_KARAOKE)
+             or filesystem.find_audio_file(context.paths.cache_dir,
+                                           BLOCK_AUDIO))
+    if not groups or audio is None:
+        return timed
+    found = rhythm.chroma(audio)
+    if found is None:
+        return timed
+    step, matrix = found
+
+    def search(ref_start, ref_end, guess):
+        return block_timing.harmony_spots(step, matrix, ref_start, ref_end,
+                                          guess)
+
+    return _block_model(context, "b604", timed, lambda: block_timing.place(
+        timed, groups, search, relay=block_links(context, blocks)))
+
+
+def _fuse_linked_blocks(context: AppContext, timed: tuple, project,
+                        blocks) -> tuple:
+    """B603: what is heard in linked blocks, combined."""
+    from . import block_timing
+
+    groups = block_links(context, blocks)
+    if not groups:
+        return timed
+    certainty = _heard_certainty(context, project)
+    return _block_model(context, "b603", timed, lambda: block_timing.fuse(
+        timed, groups, certainty, tolerance=block_timing.FUSE_S))
+
+
+def _fill_linked_blocks(context: AppContext, timed: tuple,
+                        project, blocks) -> tuple:
+    """B602: an unheard line of a linked block, laid out like its kin."""
+    from . import block_timing
+
+    groups = block_links(context, blocks)
+    if not groups:
+        return timed
+    return _block_model(context, "b602", timed,
+                        lambda: block_timing.fill(timed, groups))
+
+
+def _lyrics_first(context: AppContext, timed: tuple, project,
+                  blocks) -> tuple:
+    """B605: the words of the text laid on the voice, line by line, in
+    the room the coupling gave each line - a second road next to what
+    Whisper heard."""
+    from . import block_timing
+
+    if not (word_alignment.is_available() and timed):
+        return timed
+    language = _language_for(context, TRACK_ORIGINAL)
+    vocals = ensure_original_vocals(context)
+    if vocals is None or language in ("", "auto"):
+        return timed
+    step = context.store.get_step("align")
+    regions = (align.regions_from_dicts(step["regions"])
+               if step is not None else ())
+    back = lambda seconds: align.project_time_reverse(  # noqa: E731
+        seconds, regions)
+    rows = [i for i, line in enumerate(timed)
+            if not line.bg and not line.disabled and line.end > line.start]
+    spans = []
+    for n, row in enumerate(rows):
+        line = timed[row]
+        low = line.start - _LYRICS_ROOM_S
+        high = line.end + _LYRICS_ROOM_S
+        if n > 0:
+            low = max(low, (timed[rows[n - 1]].end + line.start) / 2.0)
+        if n + 1 < len(rows):
+            high = min(high, (line.end + timed[rows[n + 1]].start) / 2.0)
+        words = [w for w in "".join(item.text for item in line.syllables
+                                    if not item.bg).split()
+                 if any(c.isalnum() for c in w)]
+        spans.append((back(max(0.0, low)), back(high), words))
+
+    def work():
+        found = _align_known_text(vocals, spans, language)
+        out = list(timed)
+        for row, words in zip(rows, found):
+            out[row] = block_timing.lay_words(
+                out[row], [(text, project(start), project(end), score)
+                           for text, start, end, score in words],
+                block_timing.LYRICS_LEAST)
+        return out
+
+    return _block_model(context, "b605", timed, work)
+
+
+#: B651: a line counts as heard - an anchor the stretches between are
+#: laid on - at these qualities of its coupling.
+#: v1.0.27: ``high`` - the qualities at the coupling are high, medium
+#: and low; ``syllable``/``word`` come later, and with them no line was
+#: ever an anchor (B651 moved nothing in 1.5.20).
+STRETCH_ANCHORS: tuple[str, ...] = ("high",)
+#: B651: a stretch longer than this is left as it is: the aligner holds
+#: the whole piece of voice at once.
+_STRETCH_MAX_S = 90.0
+#: B651: at most this many syllables per second - more cannot be sung in
+#: the room. No least: the room between two heard lines also holds what
+#: the band plays, and the aligner lays nothing on the silence of the
+#: voice.
+_STRETCH_PACE = 8.0
+#: B651: the room before a first and after a last line without an anchor
+#: on that side.
+_STRETCH_EDGE_S = 3.0
+
+
+def _line_words(line) -> list[str]:
+    """The sung words of a line, as the aligner gets them."""
+    return [w for w in "".join(item.text for item in line.syllables
+                               if not item.bg).split()
+            if any(c.isalnum() for c in w)]
+
+
+def _letters(word: str) -> str:
+    return "".join(ch for ch in str(word).lower() if ch.isalnum())
+
+
+def split_found(per_line: Sequence[Sequence[str]],
+                found: Sequence) -> list[list]:
+    """B651: the words the aligner placed in one stretch, back to the lines
+    of that stretch - by their letters, in order, so a word it skipped
+    does not shift the rest onto the next line."""
+    import difflib
+
+    owners = [n for n, words in enumerate(per_line) for _w in words]
+    mine = [_letters(w) for words in per_line for w in words]
+    theirs = [_letters(item[0]) for item in found]
+    out: list[list] = [[] for _ in per_line]
+    matcher = difflib.SequenceMatcher(None, mine, theirs, autojunk=False)
+    for block in matcher.get_matching_blocks():
+        for n in range(block.size):
+            out[owners[block.a + n]].append(list(found[block.b + n]))
+    return out
+
+
+def stretches(timed: Sequence, rows: Sequence[int],
+              anchors: Sequence[str] = ()) -> list[tuple[list[int], float,
+                                                           float]]:
+    """B651: the runs of lines between two heard lines, with the room
+    between those two: ``(positions in rows, low, high)``. A heard line
+    (its quality in ``anchors``, not laid on) is an anchor and stays."""
+    anchors = tuple(anchors or STRETCH_ANCHORS)
+    heard = [timed[row].quality in anchors and not timed[row].made
+             for row in rows]
+    out = []
+    n = 0
+    while n < len(rows):
+        if heard[n]:
+            n += 1
+            continue
+        first = n
+        while n < len(rows) and not heard[n]:
+            n += 1
+        last = n - 1
+        low = (timed[rows[first - 1]].end if first > 0
+               else max(0.0, timed[rows[first]].start - _STRETCH_EDGE_S))
+        high = (timed[rows[last + 1]].start if last + 1 < len(rows)
+                else timed[rows[last]].end + _STRETCH_EDGE_S)
+        out.append((list(range(first, last + 1)), float(low), float(high)))
+    return out
+
+
+def _fits(lines: Sequence, low: float, high: float) -> bool:
+    """B651: a stretch the aligner may have: not too long, and room for
+    its syllables at a pace that can be sung."""
+    length = high - low
+    if not 0.0 < length <= _STRETCH_MAX_S:
+        return False
+    syllables = sum(1 for line in lines for item in line.syllables
+                    if not item.bg and item.text.strip())
+    return syllables / length <= _STRETCH_PACE
+
+
+def _lyrics_between_anchors(context: AppContext, timed: tuple, project,
+                            blocks) -> tuple:
+    """B651: the text laid on the voice between the lines Whisper heard.
+
+    The owner: since the text is known, lay it on rather than guess what
+    is sung. Every run of lines whose coupling is weak (``sentence`` or
+    ``even``, or laid on) goes to the forced aligner as ONE piece, in the
+    whole room between the heard line before it and the heard line after
+    it - so a line the coupling put a few seconds off can come back to
+    where it is sung, which B605 (at most 0.75 s around the line) cannot.
+    The heard lines are the anchors and stay as they are. A word placed
+    with little certainty keeps its time."""
+    from . import block_timing
+
+    if not (word_alignment.is_available() and timed):
+        return timed
+    language = _language_for(context, TRACK_ORIGINAL)
+    vocals = ensure_original_vocals(context)
+    if vocals is None or language in ("", "auto"):
+        return timed
+    step = context.store.get_step("align")
+    regions = (align.regions_from_dicts(step["regions"])
+               if step is not None else ())
+    back = lambda seconds: align.project_time_reverse(  # noqa: E731
+        seconds, regions)
+    rows = [i for i, line in enumerate(timed)
+            if not line.bg and not line.disabled and line.end > line.start]
+    spans, members = [], []
+    for group, low, high in stretches(timed, rows):
+        lines = [timed[rows[n]] for n in group]
+        if not _fits(lines, low, high):
+            continue
+        per_line = [_line_words(line) for line in lines]
+        words = [w for line_words in per_line for w in line_words]
+        if not words:
+            continue
+        spans.append((back(max(0.0, low)), back(high), words))
+        members.append((group, per_line))
+    if not spans:
+        return timed
+
+    def work():
+        found = _align_known_text(vocals, spans, language)
+        out = list(timed)
+        for (group, per_line), words in zip(members, found):
+            for n, mine in zip(group, split_found(per_line, words)):
+                row = rows[n]
+                out[row] = block_timing.lay_words(
+                    out[row], [(text, project(start), project(end), score)
+                               for text, start, end, score in mine],
+                    block_timing.LYRICS_LEAST)
+        return out
+
+    return _block_model(context, "b651", timed, work)
+
+
+#: B604: where the yardstick's copy of a project keeps the karaoke track
+#: (``tools/timing_regression.py``), apart from the input so that no
+#: other step reads it.
+BLOCK_AUDIO = "karaoke_for_blocks"
+
+#: B605: a line is looked for at most this far outside its coupled span.
+_LYRICS_ROOM_S = 0.75
+
+
+def _block_models(context: AppContext, timed: tuple, project,
+                  lines: Sequence) -> tuple:
+    """The block models (v1.0.15), in their order: first a block to its
+    spot, then hearing linked blocks together, then laying out what is
+    still unheard like its kin, then (v1.0.23, B651) the text laid on the
+    voice between the heard lines, and last the words of the text laid on
+    the voice where the lines now stand. Each is a model in the register,
+    off until test 1.5.15 has measured it."""
+    from . import song_structure
+
+    blocks = song_structure.blocks_of(lines)
+    for model in (_place_blocks, _fuse_linked_blocks, _fill_linked_blocks,
+                  _lyrics_between_anchors, _lyrics_first):
+        timed = model(context, timed, project, blocks)
+    return timed
 
 
 def build_coupling(context: AppContext) -> dict | None:
@@ -5812,6 +6716,14 @@ def build_coupling(context: AppContext) -> dict | None:
     timed, quality, mapping = timing_module.couple_timing(
         karaoke_blocks, original_blocks, duration=duration, project=project,
         original_words=original_words, beats=beats)
+    # B581: a line whose time was laid on rather than heard is no measure
+    # for the length of its copies (see ``TimedLine.made``).
+    made_lines = {index for index, line in enumerate(detailed)
+                  if line.get("made")}
+    if made_lines:
+        timed = tuple(replace(line, made=True)
+                      if mapping.get(line.index) in made_lines else line
+                      for line in timed)
 
     overrides = original_overrides(context)
 
@@ -5866,6 +6778,8 @@ def build_coupling(context: AppContext) -> dict | None:
                 (text, max(0.0, project(float(start))),
                  max(0.0, project(float(end))))
                 for text, start, end in spans]
+    # v1.0.15: blocks that come back, timed together (B602-B605).
+    timed = _block_models(context, timed, project, karaoke_lines)
     return {"karaoke_lines": karaoke_lines, "timed": timed,
             "quality": quality, "mapping": mapping,
             "original_items": original_items,
@@ -6307,7 +7221,7 @@ def _refine_with_vocals(context: AppContext, lines_present: list[int],
     :func:`_filler_parts`. Mutates ``filled`` and ``per_line_word_spans``
     in place.
     """
-    if not context.config.advanced.vocal_analysis:
+    if not effective_config(context).advanced.vocal_analysis:
         return
     from . import rhythm
     if not rhythm.is_available():
@@ -6455,7 +7369,7 @@ def _apply_energy_word_timing(context: AppContext, timed):
     on the original timeline and is projected to the karaoke timeline.
     Neat fallback (unchanged) if the vocal stem/analysis is missing.
     """
-    if not context.config.advanced.vocal_analysis:
+    if not effective_config(context).advanced.vocal_analysis:
         return timed
     from . import rhythm
     from . import timing as timing_module
@@ -6527,6 +7441,8 @@ def _original_lines_detailed(context: AppContext) -> list[dict] | None:
     aligned = _lyrics_alignment(context, segments)
     if aligned is None:
         return None
+    made = _made_starts(segments)                                # B581
+    made_lines: set[int] = set()
 
     per_line_words: dict[int, list[str]] = {}
     bg_text: dict[int, list[str]] = {}
@@ -6561,6 +7477,8 @@ def _original_lines_detailed(context: AppContext) -> list[dict] | None:
             if not word.estimated:
                 per_line_times.setdefault(word.lyric.line, []).append(
                     (word.start, word.end))
+                if round(float(word.start), 3) in made:
+                    made_lines.add(word.lyric.line)
             per_line_word_spans.setdefault(word.lyric.line, []).append(
                 (word.lyric.text, float(word.start), float(word.end)))
     # B313: for a line without a single real coupling the LINE timing
@@ -6624,8 +7542,15 @@ def _original_lines_detailed(context: AppContext) -> list[dict] | None:
             "reliable": reliable[index], "block": blocks[index],
             "line_no": ln,
             "words": per_line_word_spans.get(ln, []),
-            "words_estimated": ln in estimated_only})
+            "words_estimated": ln in estimated_only,
+            "made": ln in made_lines})                          # B581
     return detailed
+
+
+def _made_starts(segments) -> frozenset[float]:
+    """The start times of the words that were laid on or heard again,
+    not heard in the normal run (B581)."""
+    return frozenset(start for start, _origin in _origins(segments))
 
 
 def original_overrides(context: AppContext) -> dict[str, list[float]]:
@@ -6677,7 +7602,7 @@ def _original_vocal_windows(context: AppContext) -> list[tuple[float, float]]:
     away. Unnoticeable on a first run, where the projection is still the
     identity, and wrong on every re-transcription after that.
     """
-    if not context.config.advanced.vocal_analysis:
+    if not effective_config(context).advanced.vocal_analysis:
         return []
     from . import rhythm
     if not rhythm.is_available():
@@ -6742,6 +7667,14 @@ def _retime_from_templates(context: AppContext, timed: tuple) -> tuple:
 
 
 def _snap_lines_to_onsets(context: AppContext, timed: tuple) -> tuple:
+    """Pull estimated line starts to the onsets of the vocal stem (B330),
+    and then the models that listen to the other stems (v1.0.22,
+    B633-B635) - the fine-tuning on top of the structure, in the app and
+    in the yardstick alike."""
+    return _stem_models(context, _snap_vocal_onsets(context, timed))
+
+
+def _snap_vocal_onsets(context: AppContext, timed: tuple) -> tuple:
     """Pull estimated line starts to the onsets of the vocal stem (B330).
 
     The vocal stem lies on the timeline of the ORIGINAL, the timing on
@@ -6749,7 +7682,7 @@ def _snap_lines_to_onsets(context: AppContext, timed: tuple) -> tuple:
     first. Without a stem (analysis off, Demucs missing) the timing comes
     back unchanged.
     """
-    if not context.config.advanced.vocal_analysis or not timed:
+    if not effective_config(context).advanced.vocal_analysis or not timed:
         return timed
     from . import rhythm
     from . import timing as timing_module
@@ -6774,6 +7707,182 @@ def _snap_lines_to_onsets(context: AppContext, timed: tuple) -> tuple:
     return result
 
 
+# -- the models on the other stems (v1.0.22, B633-B635) ------------------------
+
+#: Where the stems for these models may be put ready - by the test's copy
+#: of a project, say - as ``drums``, ``lead`` and ``choir`` (wav, flac or
+#: mp3). The program's own run finds them in the stems of its ways.
+MODEL_STEMS = "model_stems"
+#: The key the choir is separated under: the music of the karaoke model
+#: (music and choir) split by Demucs once more - its voice is the choir.
+_CHOIR_KEY = "karaoke_music"
+
+
+def _karaoke_way() -> separation.Way:
+    return separation.way_for("roformer", "karaoke")
+
+
+def model_stem(context: AppContext, name: str) -> Path | None:
+    """The ``drums``, the ``lead`` voice or the ``choir`` of the original,
+    where it is; ``None`` when it is not there. Makes nothing: that is
+    :func:`prepare_model_stems`, in the program's own timing only."""
+    cache = context.paths.cache_dir
+    ready = cache / MODEL_STEMS
+    for suffix in (".wav", ".flac", ".mp3"):
+        if (ready / f"{name}{suffix}").is_file():
+            return ready / f"{name}{suffix}"
+    if name == "drums":
+        standard = cache / separation.Way().folder("original") / "drums.wav"
+        if standard.is_file():
+            return standard
+        return next(iter(sorted(cache.glob("stems_original_*/drums.wav"))),
+                    None)
+    if name == "lead":
+        lead = cache / _karaoke_way().folder("original") / "vocals.wav"
+        return lead if lead.is_file() else None
+    if name == "choir":
+        choir = cache / separation.Way().folder(_CHOIR_KEY) / "vocals.wav"
+        return choir if choir.is_file() else None
+    return None
+
+
+def prepare_model_stems(context: AppContext) -> None:
+    """Make the stems the switched-on models need, once per project
+    (B633-B635): the drums of the standard Demucs way - added beside the
+    stems of a project from before v1.0.22, which are left as they are -
+    and the lead voice and the choir through the karaoke model. A model
+    that is off costs nothing here; one whose stem cannot be made does
+    nothing, and says so."""
+    from . import model_register
+
+    wanted = {name for code, name in (("B633", "drums"), ("B634", "lead"),
+                                      ("B635", "choir"))
+              if model_register.enabled(code)}
+    wanted = {name for name in wanted if model_stem(context, name) is None}
+    if not wanted or context.store.quiet or \
+            not effective_config(context).advanced.demucs or \
+            filesystem.find_audio_file(context.paths.input_dir,
+                                       TRACK_ORIGINAL) is None:
+        return
+    from . import cuda
+
+    if cuda.torch_on_card() and cuda.whisper_device()[0] == "cuda":
+        # A small card holds Whisper or a separation, not both (v1.0.20).
+        whisper.release_models()
+    try:
+        original = prepare_track(context, TRACK_ORIGINAL)
+    except PipelineError:
+        return
+    cache = context.paths.cache_dir
+    if "drums" in wanted:
+        separation.extra_stem(original, cache, "original", "drums")
+    if wanted & {"lead", "choir"}:
+        way = _karaoke_way()
+        if not separation.is_available(way):
+            logger.info(t("log_model_stem_no_karaoke"))
+            return
+        try:
+            stems = separation.separate_cached(original, cache, "original",
+                                               way=way)
+            if "choir" in wanted:
+                separation.separate_cached(stems["instrumental"], cache,
+                                           _CHOIR_KEY)
+        except separation.SeparationError:
+            logger.exception(t("log_extra_stem_failed"), "choir")
+
+
+def _to_karaoke_time(context: AppContext):
+    """Original time -> karaoke time, through the alignment."""
+    step = context.store.get_step("align")
+    regions = (align.regions_from_dicts(step["regions"])
+               if step is not None else ())
+    return lambda moment: align.project_time(moment, regions)
+
+
+def _stem_model(context: AppContext, key: str, timed: tuple, work) -> tuple:
+    """Run one stem model; a failure costs that model, never the timing."""
+    try:
+        changed = work()
+    except Exception:  # noqa: BLE001 - the timing may never fall over
+        logger.exception(t("log_stem_model_failed"), t(f"model_name_{key}"))
+        return timed
+    count = sum(1 for old, new in zip(timed, changed) if old != new)
+    if count:
+        logger.info(t("log_stem_model_applied"), t(f"model_name_{key}"),
+                    count)
+    return tuple(changed)
+
+
+def _drum_grid(context: AppContext, timed: tuple) -> tuple:
+    """B633: line starts onto the beat of the drums."""
+    from . import stem_models
+
+    drums = model_stem(context, "drums") if timed else None
+    if drums is None:
+        return timed
+    project = _to_karaoke_time(context)
+
+    def work():
+        grid = [project(moment) for moment in stem_models.drum_grid(drums)]
+        return stem_models.on_the_drums(timed, grid,
+                                        stem_models.DRUM_REACH_S)
+
+    return _stem_model(context, "b633", timed, work)
+
+
+def _breath_pauses(context: AppContext, timed: tuple) -> tuple:
+    """B634: line starts at the end of the singer's breath."""
+    from . import stem_models
+
+    if not timed:
+        return timed
+    voice = model_stem(context, "lead") or (
+        context.paths.cache_dir / "original_vocals.wav")
+    if not voice.is_file():
+        return timed
+    project = _to_karaoke_time(context)
+
+    def work():
+        silent = [(project(a), project(b))
+                  for a, b in stem_models.pauses(voice)]
+        return stem_models.at_the_breaths(timed, silent,
+                                          stem_models.PAUSE_REACH_S)
+
+    return _stem_model(context, "b634", timed, work)
+
+
+def _bg_on_choir(context: AppContext, timed: tuple) -> tuple:
+    """B635: [bg] lines and pieces where the choir sings."""
+    from . import stem_models
+
+    if not any(line.bg or any(piece.bg for piece in line.syllables)
+               for line in timed):
+        return timed
+    choir = model_stem(context, "choir")
+    if choir is None:
+        return timed
+    project = _to_karaoke_time(context)
+
+    def work():
+        starts = [project(x) for x in stem_models.choir_starts(choir)]
+        windows = [(project(a), project(b))
+                   for a, b in stem_models.choir_windows(choir)]
+        return stem_models.from_the_choir(timed, starts, windows)
+
+    return _stem_model(context, "b635", timed, work)
+
+
+def _stem_models(context: AppContext, timed: tuple) -> tuple:
+    """The models on the other stems, in their order: the drums first
+    (the grid of the band), then the breaths (which may move a start the
+    drums placed, when a pause says so), and the choir last - it touches
+    only what the other two leave alone. Each is off until 1.5.19 has
+    measured it."""
+    for model in (_drum_grid, _breath_pauses, _bg_on_choir):
+        timed = model(context, timed)
+    return timed
+
+
 def generate_timing(context: AppContext) -> tuple[Path, int, str]:
     """Make best-effort timing (``timing.json``) from the karaoke text.
 
@@ -6792,6 +7901,11 @@ def generate_timing(context: AppContext) -> tuple[Path, int, str]:
     if not lines:
         raise PipelineError(t("err_no_sung_lines"))
 
+    # v1.0.22: the stems a switched-on stem model needs (B633-B635).
+    try:
+        prepare_model_stems(context)
+    except Exception:  # noqa: BLE001 - the timing may never fall over
+        logger.exception(t("log_extra_stem_failed"), "-")
     coupling = build_coupling(context)
     if coupling is not None:
         timed = coupling["timed"]
@@ -7192,7 +8306,9 @@ def check_text_alignment(context: AppContext) -> tuple[bool, str]:
 #: offset is optional, because the karaoke step aligns by itself (B326:
 #: previously recognised by its translated name, which meant that in
 #: English the render refused on a missing offset).
-VIDEO_INPUT_OPTIONAL = ("offset",)
+#: v1.0.28 (B664): the logo too - without one the video has no intro and
+#: no outro, only the song with its lines.
+VIDEO_INPUT_OPTIONAL = ("offset", "logo")
 
 
 def video_input_status(
@@ -7720,22 +8836,16 @@ def next_video_target(target: Path) -> Path:
         number += 1
 
 
-def run_video(context: AppContext,
-              progress=None, text_source: str = "karaoke",
-              audio_source: str = "karaoke",
-              target: Path | None = None) -> Path:
-    """Render the karaoke video; only possible when all input is present.
-
-    ``text_source`` (karaoke/origineel) and ``audio_source``
-    (karaoke/origineel/demucs/vocals) choose what goes into the render
-    (B226). Default: karaoke music + timed karaoke text - that
-    combination yields the bare file name (``<titel>.mp4``); every other
-    combination gets a ``_<muziek>_<tekst>`` suffix (B271, see
-    ``render_filename_suffix``) so that e.g. a voice-only render with the
-    original text (``_voc_ori``) does not overwrite the default render.
+def video_render_inputs(context: AppContext, text_source: str = "karaoke",
+                        audio_source: str = "karaoke"):
+    """Everything a render needs, as plain values (v1.0.21, so that a
+    helper can render too): ``(context, lines, audio, logo, title,
+    options)``; ``options`` are the keyword arguments of
+    :func:`modules.video.render_video` besides those. The context that
+    comes back carries the project's titles.
 
     Raises:
-        PipelineError: If input is missing or the rendering fails.
+        PipelineError: If input is missing.
     """
     from . import video
 
@@ -7755,16 +8865,8 @@ def run_video(context: AppContext,
 
     timed = _render_timed_lines(context, text_source)
     audio = _render_audio(context, audio_source)
-    logo = sorted(context.paths.input_dir.glob("logo.*"))[0]
-    # File name = the title (spaces allowed; only invalid file name
-    # characters replaced) (B87). With a non-default combination (not
-    # karaoke music + karaoke text) the file name gets a
-    # ``_<muziek>_<tekst>`` suffix (B271), so that several variants can
-    # exist next to each other without overwriting each other; the
-    # default combination keeps the bare name. ``target`` from the caller
-    # wins (B354: "keep side by side" hands in a numbered name).
-    if target is None:
-        target = video_target(context, text_source, audio_source)
+    logos = sorted(context.paths.input_dir.glob("logo.*"))
+    logo = logos[0] if logos else None
     title = (context.config.video.karaoke_title.strip()
              or context.store.get_meta("display_name")
              or context.config.song.title.replace("_", " ")
@@ -7775,28 +8877,55 @@ def run_video(context: AppContext,
     # put the picture of another song in this video, exactly the leak
     # B470 had to fix for the titles.
     background = project_background(context)
+    options = {"width": settings.width, "height": settings.height,
+               "fps": settings.fps,
+               "font_path": fonts.resolve_font(settings.font),
+               "colors": video.colors_from_settings(settings),
+               "artist": settings.orig_artist,
+               "orig_title": settings.orig_title,
+               "background_path": str(background or ""),
+               # B456: one level for every video, so the amplifier does
+               # not have to be touched per song.
+               "loudness_lufs": context.config.advanced.video_loudness_lufs,
+               "true_peak_db": context.config.advanced.video_true_peak_db}
+    return context, timed, audio, logo, title, options
+
+
+def run_video(context: AppContext,
+              progress=None, text_source: str = "karaoke",
+              audio_source: str = "karaoke",
+              target: Path | None = None) -> Path:
+    """Render the karaoke video; only possible when all input is present.
+
+    ``text_source`` (karaoke/origineel) and ``audio_source``
+    (karaoke/origineel/demucs/vocals) choose what goes into the render
+    (B226). Default: karaoke music + timed karaoke text - that
+    combination yields the bare file name (``<titel>.mp4``); every other
+    combination gets a ``_<muziek>_<tekst>`` suffix (B271, see
+    ``render_filename_suffix``) so that e.g. a voice-only render with the
+    original text (``_voc_ori``) does not overwrite the default render.
+    v1.0.21: on a helper when one is sooner done
+    (:func:`modules.shared_work.render`).
+
+    Raises:
+        PipelineError: If input is missing or the rendering fails.
+    """
+    from . import shared_work, video
+
+    context, timed, audio, logo, title, options = video_render_inputs(
+        context, text_source, audio_source)
+    # File name = the title (spaces allowed; only invalid file name
+    # characters replaced) (B87). With a non-default combination (not
+    # karaoke music + karaoke text) the file name gets a
+    # ``_<muziek>_<tekst>`` suffix (B271), so that several variants can
+    # exist next to each other without overwriting each other; the
+    # default combination keeps the bare name. ``target`` from the caller
+    # wins (B354: "keep side by side" hands in a numbered name).
+    if target is None:
+        target = video_target(context, text_source, audio_source)
     try:
-        video.render_video(timed, audio, logo, title, target,
-                           width=settings.width, height=settings.height,
-                           fps=settings.fps,
-                           font_path=fonts.resolve_font(settings.font),
-                           progress=progress,
-                           colors=video.colors_from_settings(settings),
-                           artist=settings.orig_artist,
-                           orig_title=settings.orig_title,
-                           # B480: only the copy in the project. Taking
-                           # the (global) setting as a fallback would put
-                           # the picture of another song in this video -
-                           # exactly the leak B470 had to fix for the
-                           # titles.
-                           background_path=str(background or ""),
-                           # B456: one level for every video, so the
-                           # amplifier does not have to be touched per
-                           # song.
-                           loudness_lufs=(
-                               context.config.advanced.video_loudness_lufs),
-                           true_peak_db=(
-                               context.config.advanced.video_true_peak_db))
+        shared_work.render(timed, audio, logo, title, target,
+                           progress=progress, **options)
     except video.VideoError as exc:
         raise PipelineError(str(exc)) from exc
     context.store.set_step("video", {"file": str(target),
@@ -7861,3 +8990,181 @@ def open_in_browser(path: Path) -> None:
         webbrowser.open(path.resolve().as_uri())
     except Exception:  # noqa: BLE001 - browser is nice-to-have
         logger.debug(t("log_open_browser_failed"), path)
+
+
+# --------------------------------------------------------------------------
+# v1.0.19: an ordinary karaoke from the original alone
+# --------------------------------------------------------------------------
+
+#: A pause between two words longer than this starts a new line.
+_LINE_PAUSE_S = 0.6
+#: A line this long starts a new one at the next small pause ...
+_LINE_WORDS = 9
+_LINE_SMALL_PAUSE_S = 0.25
+#: ... and at this length at any word.
+_LINE_MAX_WORDS = 14
+#: A pause this long between lines starts a new block.
+_BLOCK_PAUSE_S = 2.5
+#: The meta key of a project whose text came from what was heard.
+OWN_TEXT = "own_text"
+#: What a text set aside by "Full karaoke" is renamed to (name + this).
+SET_ASIDE_SUFFIX = ".before_full_karaoke"
+
+
+def text_from_words(words: Sequence[tuple[str, float, float]]
+                    ) -> list[dict]:
+    """Lines and blocks from heard words (v1.0.19): a new line at a pause
+    or when a line grows long, a new block at a long pause. Each line
+    ``{"text", "start", "end", "block"}``, times on the original's own
+    timeline."""
+    lines: list[dict] = []
+    current: list[tuple[str, float, float]] = []
+    block = 0
+
+    def close() -> None:
+        nonlocal block
+        if not current:
+            return
+        text = " ".join(word for word, _s, _e in current).strip()
+        text = re.sub(r"[♪♫]+", "", text).strip()
+        if text:
+            if lines and current[0][1] - lines[-1]["end"] > _BLOCK_PAUSE_S:
+                block += 1
+            lines.append({"text": text, "start": round(current[0][1], 3),
+                          "end": round(current[-1][2], 3), "block": block})
+        current.clear()
+
+    for word, start, end in words:
+        word = str(word).strip()
+        if not word:
+            continue
+        if current:
+            pause = start - current[-1][2]
+            if pause > _LINE_PAUSE_S or len(current) >= _LINE_MAX_WORDS or \
+                    (len(current) >= _LINE_WORDS and
+                     pause > _LINE_SMALL_PAUSE_S):
+                close()
+        current.append((word, float(start), float(end)))
+    close()
+    return lines
+
+
+def text_file_of(lines: Sequence[dict]) -> str:
+    """The text as a file: the lines, an empty line between blocks."""
+    rows, block = [], None
+    for line in lines:
+        if block is not None and line["block"] != block:
+            rows.append("")
+        rows.append(line["text"])
+        block = line["block"]
+    return "\n".join(rows) + "\n"
+
+
+def own_text(context: AppContext) -> bool:
+    """Did this project's text come from what was heard (the ordinary
+    karaoke path)? Then lyrics and karaoke text are meant to be equal."""
+    return bool(context.store.get_meta(OWN_TEXT))
+
+
+def _set_aside_name(path: Path) -> Path:
+    """Where a text is set aside: never over an earlier one."""
+    target = path.with_name(path.name + SET_ASIDE_SUFFIX)
+    number = 1
+    while target.exists():
+        number += 1
+        target = path.with_name(f"{path.name}{SET_ASIDE_SUFFIX}{number}")
+    return target
+
+
+def forget_own_text(context: AppContext) -> None:
+    """A text the owner chose himself replaces the heard one."""
+    if own_text(context):
+        context.store.set_meta(OWN_TEXT, False)
+
+
+def has_texts(context: AppContext) -> bool:
+    """Has the project lyrics or a karaoke text?"""
+    from . import karaoke_text
+
+    return any((context.paths.input_dir / name).exists()
+               for name in (song_text.LYRICS_FILENAME, karaoke_text.FILENAME))
+
+
+def full_karaoke_heard(context: AppContext) -> bool:
+    """Is the first half of "Full karaoke" done: a karaoke to sing on and
+    the text made of what was heard?"""
+    from . import karaoke_text
+
+    return (filesystem.find_audio_file(context.paths.input_dir,
+                                       TRACK_KARAOKE) is not None
+            and (context.paths.input_dir / karaoke_text.FILENAME).exists()
+            and bool(context.store.get_meta("own_text_times")))
+
+
+def normal_karaoke_start(context: AppContext, progress=None,
+                         cancelled=None) -> Path:
+    """The first half of "Full karaoke" (v1.0.19): the music from the
+    original, the words heard without a text, and a text made of them,
+    written as both lyrics and karaoke text - for the owner to check.
+    Returns the text file."""
+    from . import karaoke_text
+
+    if not own_text(context):
+        # Texts the owner had are set aside, not lost: as a hint they
+        # would steer what is heard towards the text being replaced.
+        for name in (song_text.LYRICS_FILENAME, karaoke_text.FILENAME):
+            path = context.paths.input_dir / name
+            if path.exists():
+                path.replace(_set_aside_name(path))
+    if filesystem.find_audio_file(context.paths.input_dir,
+                                  TRACK_KARAOKE) is None:
+        make_karaoke_from_original(context)
+    detect_track(context, TRACK_ORIGINAL, progress=progress,
+                 cancelled=cancelled)
+    words = [(w.text, float(w.start), float(w.end))
+             for segment in load_segments(context, TRACK_ORIGINAL)
+             for w in segment.words]
+    lines = text_from_words(words)
+    if not lines:
+        raise PipelineError(t("err_full_karaoke_no_words"))
+    text = text_file_of(lines)
+    for name in (song_text.LYRICS_FILENAME, karaoke_text.FILENAME):
+        (context.paths.input_dir / name).write_text(text, encoding="utf-8")
+    # New texts: what was made by hand for the old ones (block links,
+    # anchors, word corrections) lapses, as when a text is chosen.
+    invalidate(context, ["input:lyrics", "input:karaoke_text"])
+    context.store.set_meta(OWN_TEXT, True)
+    context.store.set_meta("own_text_times",
+                           [[line["start"], line["end"], line["text"]]
+                            for line in lines])
+    remember_sources(context)
+    logger.info(t("log_full_karaoke_text"), len(lines),
+                1 + max(line["block"] for line in lines))
+    return context.paths.input_dir / karaoke_text.FILENAME
+
+
+def save_own_text(context: AppContext, text: str) -> None:
+    """The owner's checked text, as both lyrics and karaoke text."""
+    from . import karaoke_text
+
+    text = text.replace("\r\n", "\n").rstrip("\n") + "\n"
+    for name in (song_text.LYRICS_FILENAME, karaoke_text.FILENAME):
+        (context.paths.input_dir / name).write_text(text, encoding="utf-8")
+    context.store.set_meta(OWN_TEXT, True)
+
+
+def normal_karaoke_finish(context: AppContext, progress=None,
+                          cancelled=None, message=lambda text: None) -> Path:
+    """The second half: listen once more with the checked text as hint
+    (so words the owner added get a heard time), then the timing and the
+    video with the ordinary choices. Returns the video."""
+    invalidate(context, ["input:lyrics", "input:karaoke_text"])
+    invalidate(context, ["whisper_original"], include_changed=True)
+    remember_sources(context)
+    message(t("full_karaoke_listening"))
+    detect_track(context, TRACK_ORIGINAL, progress=progress,
+                 cancelled=cancelled)
+    message(t("timing_making"))
+    generate_timing(context)
+    message(t("video_rendering"))
+    return run_video(context, progress=progress)

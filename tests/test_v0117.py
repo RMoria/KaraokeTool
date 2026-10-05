@@ -123,7 +123,7 @@ def test_a_real_percentage_does_silence_the_counter(qapp, tmp_path) -> None:
 def test_the_runner_writes_out_per_action() -> None:
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
     assert "_test_result.emit" in source
     # The log file first: that is the part that survives a crash.
     assert source.index("logger.info(t(\"log_gui\")") < \
@@ -133,7 +133,7 @@ def test_the_runner_writes_out_per_action() -> None:
 def test_on_done_does_not_dump_the_stack_a_second_time() -> None:
     from modules import gui
 
-    source = inspect.getsource(gui.MainWindow._do_fill_cache)
+    source = inspect.getsource(gui.MainWindow._start_tests)
     tail = source[source.index("def on_done"):]
     assert "splitlines()" not in tail, "then everything stands twice"
 
@@ -243,7 +243,10 @@ def test_the_heavy_action_stands_outside_the_ceiling_of_ten() -> None:
     # B563: 1.5.1 is a chore as well now. It is the only light-looking
     # action that starts Demucs and Whisper, and hours of that may not
     # hang on the 'all' button.
-    assert [a.code for a in chores] == ["1.5.1", "1.5.12"]
+    assert [a.code for a in chores] == ["1.5.1", "1.5.12", "1.5.13",
+                                        "1.5.14", "1.5.15", "1.5.16",
+                                        "1.5.17", "1.5.18", "1.5.19",
+                                        "1.5.20"]
 
 
 def test_ticking_everything_skips_the_heavy_one(qapp, monkeypatch) -> None:
